@@ -1,0 +1,103 @@
+# ›_ jotline
+
+**A little room to think.** A keyboard-first Linux terminal app for capturing thoughts, writing, and connecting notes. Inspired by the quick-capture spirit of Drafts, with an original terminal interface.
+
+![Jotline terminal workspace](docs/screenshot.svg)
+
+Jotline opens to a blank page. Start typing; your writing saves automatically to local Markdown files. Press `Ctrl+P` when you want to do something with it.
+
+## Install
+
+Requires Linux, Python 3.11+, and a terminal with Unicode and color support.
+
+With [uv](https://docs.astral.sh/uv/):
+
+```sh
+uv tool install git+https://github.com/CaulShiver/jotline.git
+jotline
+```
+
+Or with pipx:
+
+```sh
+pipx install git+https://github.com/CaulShiver/jotline.git
+jotline
+```
+
+For development:
+
+```sh
+git clone https://github.com/CaulShiver/jotline.git
+cd jotline
+uv sync --extra dev
+uv run jotline
+uv run pytest
+```
+
+## The everyday loop
+
+1. **Capture.** `Ctrl+N` starts a thought. No required title, folder, or tags.
+2. **Log.** `Ctrl+D` opens today's page. Mix observations with Markdown tasks: `- [ ] Follow up`.
+3. **Connect.** Keep durable ideas in separate notes. Insert links and follow backlinks through the command palette.
+4. **Review.** Run **Start weekly review** for a checklist. Move notes into projects, areas, resources, or archive when useful.
+
+These are optional practices, not a compulsory system. An inbox and search are enough to start.
+
+The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingstarted/), [GTD's capture and reflection](https://gettingthingsdone.com/what-is-gtd/), [Bullet Journal's daily rapid logging](https://bulletjournal.com/pages/how-to-bullet-journal), [Zettelkasten's connected ideas](https://zettelkasten.de/overview/), and [PARA's organization by use](https://fortelabs.com/blog/para/). Jotline is independent of these products and authors.
+
+## Keyboard
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+N` | New thought |
+| `Ctrl+P` | Searchable command palette |
+| `Ctrl+O` | Open a note by title |
+| `Ctrl+D` | Today's daily log |
+| `Ctrl+F` | Search across notes |
+| `Ctrl+B` | Toggle quiet focus mode |
+| `Ctrl+S` | Save immediately |
+| `Ctrl+Q` | Save and quit |
+| `Tab` / `Shift+Tab` | Move between controls |
+| `Escape` | Close palette / return to writing |
+
+The palette also offers star, move, restore from trash, task toggle, link insertion/navigation, backlinks, recovery copies, and a writing guide. Type words to narrow commands, use arrows to choose, then Enter. Standard text selection, undo, and redo are provided by the editor. Clipboard copy uses OSC 52 and depends on your terminal's permissions and support.
+
+## Search and links
+
+Search matches all entered words across note bodies. `#work` matches an exact tag; `planning #work` combines a word and a tag. Search includes archived notes and excludes trash unless the trash collection is selected. Tags are case-insensitive and can be nested, such as `#project/launch`.
+
+Inserted links use `[[stable-id|Readable title]]`. Renaming a heading does not break these links. Manually entered `[[Exact title]]` links also work, but ambiguous titles can match several notes. Use **Follow a link in this note** and **Open a backlink** in the palette.
+
+## Use it from your shell
+
+```sh
+jotline capture "A thought before I forget"
+printf 'Meeting notes\n\nNext step: draft the outline\n' | jotline capture
+jotline capture --daily "- [ ] Send the outline"
+jotline list '#work'
+jotline export NOTE_ID > note.md
+jotline path
+jotline --vault ~/Notes/Jotline
+```
+
+Set `JOTLINE_VAULT` to use a different vault by default. Otherwise notes live in `$XDG_DATA_HOME/jotline/notes` (normally `~/.local/share/jotline/notes`). Export emits the exact note body: redirect it to a file if it contains terminal control characters.
+
+## Your data
+
+- Local `.md` files; no account, telemetry, hosted backend, or network requirement at runtime.
+- Small YAML-compatible front matter stores collection, timestamps, and starred state.
+- Atomic, fsynced saves. Normal exit saves pending edits. Abrupt termination may lose the last autosave interval (about 0.7 seconds).
+- Jotline coordinates its own writers and detects external edits before saving. It will block navigation/exit on a save failure so the buffer remains available. **Save recovery copy** preserves your buffer as a new inbox note.
+- Trash is reversible. There is no permanent-delete command.
+- Keep a backup of your vault. Sync and encryption are up to your existing tools; simultaneous edits through an external editor or sync provider are not a collaborative editing protocol.
+- Only the source code is published to GitHub. Your notes are stored separately.
+
+External Markdown files can be placed directly in the vault with filenames containing letters, numbers, underscores, or hyphens. Existing non-Jotline front matter remains part of their body. Subdirectories and attachment management are not supported in this version. The file index is rebuilt on demand; very large vaults may need future indexing work.
+
+## Status
+
+Version 0.1 is a working first release. It offers plain-text Markdown editing, not a rendered Markdown preview or a full Vim emulation. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
+
+## Contributing
+
+Bug reports and focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under [MIT](LICENSE).

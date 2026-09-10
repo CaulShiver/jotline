@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jotline"
+version = "0.1.0"
+description = "A quiet terminal workspace for capturing thoughts and connecting notes."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "CaulShiver"}]
+dependencies = ["textual>=8.2.8,<9"]
+
+[project.scripts]
+jotline = "jotline.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jotline"]
