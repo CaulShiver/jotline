@@ -6,3 +6,9 @@ dist/
 notes/
 *.log
 audit/
+
+.jotline-history/
+.jotline-backups/
+.jotline-templates/
+.jotline-settings.json
+.jotline.lock

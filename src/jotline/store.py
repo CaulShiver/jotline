@@ -131,6 +131,7 @@ class Vault:
         self.path = path.expanduser().resolve()
         self.path.mkdir(parents=True, exist_ok=True)
         self.warnings: list[str] = []
+        self.backup_warning = ""
         self._cache: dict[str, tuple[FileSignature, Note, int]] = {}
 
     def locked(self):
@@ -147,6 +148,10 @@ class Vault:
 
     def read(self, note_id: str) -> Note:
         raw = read_regular_file(self.file(note_id))
+        return self.parse_note(note_id, raw)
+
+    @staticmethod
+    def parse_note(note_id: str, raw: str) -> Note:
         meta = {}
         body = raw
         if re.match(r"\A---\r?\njotline: 1\r?\n", raw):
@@ -223,18 +228,29 @@ class Vault:
             actual = None
         if actual != note.original:
             raise ConflictError("This note changed outside Jotline. Save a recovery copy to preserve your changes.")
+        if actual is not None:
+            previous = self.parse_note(note.id, actual)
+            if all(getattr(previous, key) == getattr(note, key)
+                   for key in ("body", "collection", "created", "starred", "workspace")):
+                return
         stamp = now()
         meta = {"collection": note.collection, "created": note.created or stamp,
                 "updated": stamp, "starred": note.starred, "workspace": note.workspace}
         raw = "---\njotline: 1\n" + "\n".join(f"{k}: {json.dumps(v)}" for k, v in meta.items()) + "\n---\n" + note.body
         if len(raw.encode("utf-8")) > MAX_NOTE_BYTES:
             raise ValueError(f"Note exceeds the {MAX_NOTE_BYTES}-byte file limit")
+        from . import history
         fd, temp = tempfile.mkstemp(prefix=".jotline-", dir=self.path)
+        candidate = None
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
                 stream.write(raw)
                 stream.flush()
                 os.fsync(stream.fileno())
+            history.backup(self, automatic=True)
+            if actual is not None:
+                history.snapshot(self, note.id, actual)
+            candidate = history.snapshot(self, note.id, raw)
             os.replace(temp, path)
             # Replacement has committed even if the directory durability check fails.
             # Keep the baseline current so retrying does not invent an edit conflict.
@@ -246,8 +262,49 @@ class Vault:
             finally:
                 os.close(directory)
         finally:
+            if note.original != raw and candidate is not None:
+                candidate.unlink(missing_ok=True)
             if os.path.exists(temp):
                 os.unlink(temp)
+        try:
+            history.prune_history(self, note.id)
+        except OSError as error:
+            self.warnings.append(f"History retention cleanup failed: {error}")
+
+    def history(self, note_id: str):
+        from .history import revisions
+        return revisions(self, note_id)
+
+    def read_revision(self, note_id: str, revision_id: str) -> Note:
+        from .history import REVISION_ID, revision_dir
+        if not REVISION_ID.fullmatch(revision_id):
+            raise ValueError("Invalid revision ID")
+        raw = read_regular_file(revision_dir(self, note_id, create=False) / f"{revision_id}.md")
+        return self.parse_note(note_id, raw)
+
+    def history_notes(self, workspace: str) -> list[Note]:
+        from .history import directory
+        validate_workspace(workspace)
+        try:
+            root = directory(self.path / ".jotline-history", create=False)
+        except FileNotFoundError:
+            return []
+        notes = []
+        for folder in root.iterdir():
+            try:
+                for revision in self.history(folder.name):
+                    note = self.read_revision(folder.name, revision.id)
+                    if note.workspace == workspace:
+                        notes.append(note)
+                        break
+            except (ValueError, OSError) as error:
+                self.warnings.append(f"History {folder.name}: {error}")
+        return sorted(notes, key=lambda note: (note.updated, note.id), reverse=True)
+
+    def backup(self) -> Path:
+        from .history import backup
+        with self.locked():
+            return backup(self)
 
     def daily(self, template: str = "# {{date}}\n\n", workspace: str = "default") -> Note:
         with self.locked():

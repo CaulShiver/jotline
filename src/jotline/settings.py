@@ -23,6 +23,13 @@ HOTKEY_ACTIONS = {
     "save": ("ctrl+s", "Save note"),
     "focus_mode": ("ctrl+b", "Focus mode"),
     "quit": ("ctrl+q", "Quit"),
+    "preview": ("", "Preview Markdown (optional)"),
+    "format_bold": ("", "Format bold (optional)"),
+    "format_italic": ("", "Format italic (optional)"),
+    "format_code": ("", "Format code (optional)"),
+    "format_heading": ("", "Format heading (optional)"),
+    "format_list": ("", "Format bullet list (optional)"),
+    "format_quote": ("", "Format quote (optional)"),
 }
 # Preserve editing controls and terminal aliases for Tab, Enter and Backspace.
 RESERVED_HOTKEYS = {"ctrl+" + letter for letter in "acehijkmuvxyz"}
@@ -61,6 +68,9 @@ class Settings:
         used = {}
         for action, key in self.effective_hotkeys.items():
             label = HOTKEY_ACTIONS[action][1]
+            # New Markdown actions start unassigned to preserve existing maps.
+            if not key and not HOTKEY_ACTIONS[action][0]:
+                continue
             if not re.fullmatch(r"(?:ctrl|alt)\+[a-z]|f(?:[2-9]|1[0-2])", key):
                 raise ValueError(f"{label}: use ctrl+letter, alt+letter, or f2–f12; F1 and Esc stay fixed")
             if key in RESERVED_HOTKEYS:

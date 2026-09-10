@@ -39,7 +39,17 @@ async def check(directory):
         await pilot.pause()
         assert isinstance(app.screen, MarkdownPreview)
         await pilot.press('escape')
-    print('Installed wheel: CLI capture/export, terminal writing, tags, workspaces, custom hotkeys and Markdown passed.')
+        app.save_template('smoke-template')
+        app.use_template('smoke-template')
+        assert app.current.body == '**text**'
+        assert app.vault.history(app.current.id)
+        app.save_settings(replace(app.settings, hotkeys={'preview': 'f3', 'format_bold': 'f4'}))
+        await pilot.press('f3')
+        assert isinstance(app.screen, MarkdownPreview)
+        await pilot.press('escape')
+        backup = subprocess.run(command + ['backup'], text=True, capture_output=True, check=True)
+        assert Path(backup.stdout.strip()).is_file()
+    print('Installed wheel: CLI capture/export, terminal writing, tags, workspaces, custom hotkeys Markdown, templates and backups passed.')
 
 
 if __name__ == '__main__':

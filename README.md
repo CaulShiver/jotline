@@ -129,6 +129,7 @@ interactive terminal refuses unsafe control characters unless you explicitly pas
 
 Open **F1 → Settings → Keyboard shortcuts**. Change shortcuts for new notes,
 tags, workspaces, commands, opening notes, daily logs, search, save, focus, and quit.
+Optional fields also support Markdown preview and formatting actions.
 Use `ctrl+letter`, `alt+letter`, or `f2`–`f12` (for example `alt+n` or `f4`).
 Duplicate assignments and reserved editing/navigation keys are rejected.
 
@@ -200,6 +201,47 @@ External Markdown files can be placed directly in the vault with filenames conta
 metadata for changes, and Refresh vault clears the cache. Very large vaults may
 still need further indexing work.
 
+## Local backups and note history
+
+Jotline automatically saves note revisions inside your vault's
+`.jotline-history/` folder. It retains the first saved version from each of the
+latest 30 minutes with edits, plus the two latest saves (up to 32 versions per note).
+Intermediate autosaves within a minute are consolidated. This begins with this
+release; it cannot recover edits made before history was enabled.
+
+Use `Ctrl+P` → **History of this note**, select a version, inspect its text, and
+choose **Restore as new note**. Restoration creates a separate inbox note and
+preserves your current writing. **Browse saved note history** also finds history
+for notes deleted outside Jotline, within the active workspace.
+
+A ZIP backup is created before the first changed note save each day. It contains
+the vault's current Markdown notes, settings and custom templates. Use `Ctrl+P` →
+**Back up vault now** or `jotline backup` for an immediate snapshot. The latest
+seven archives remain in `.jotline-backups/`, including today's automatic archive.
+Archives exclude history and other backups. Each archive has a manifest listing
+any unreadable or unsafe files that were skipped.
+
+For whole-vault recovery, extract a ZIP into a separate folder and launch
+`jotline --vault /path/to/recovered-folder`. All backups stay on this computer;
+copy an archive elsewhere if you want protection against disk loss.
+
+## Reusable templates
+
+`Ctrl+P` → **New note from template** offers meeting, project, and journal
+starters alongside your own templates. Templates create a new note in the active
+workspace and default collection, after saving your current writing.
+
+To make your own, write its structure in a note and choose **Save this note as a
+template**. Give it a unique lowercase name such as `weekly-planning`. Custom
+files live in `.jotline-templates/<name>.md` within your vault and are shared
+across workspaces. Existing names are never overwritten by this command.
+
+Use `{{date}}`, `{{time}}`, and `{{workspace}}` for the current local date, time,
+and workspace. **Copy template source to new note** preserves these placeholders
+so you can customize a starter and save it under a new name. You can also edit
+custom template files directly in your text editor. Built-in starters are bundled
+with the app; your saved templates stay local and are included in ZIP backups.
+
 ## Markdown formatting
 
 Select text with Shift + arrow keys, then open `Ctrl+P` and choose **Format bold**,
@@ -207,6 +249,11 @@ Select text with Shift + arrow keys, then open `Ctrl+P` and choose **Format bold
 placeholder is inserted. **Format heading**, **Format bullet list**, and
 **Format blockquote** apply to the current line or selected lines. Use the editor's
 normal Undo shortcut (`Ctrl+Z`) to reverse a formatting change.
+
+Open `F1` → **Keyboard shortcuts** to assign keys for preview, bold, italic,
+inline code, headings, bullet lists and quotes. These optional shortcuts start
+blank, preserving your existing key choices. Clear a field to unassign it;
+**Reset hotkeys** clears these additions and restores the original shortcuts.
 
 Choose **Preview rendered Markdown** from `Ctrl+P` to see headings, emphasis,
 lists, quotes, tables, and fenced code blocks inside the terminal. Preview includes
@@ -221,7 +268,7 @@ use **Follow a link** for Jotline's `[[note links]]`.
 
 ## Status
 
-Version 0.6 is an early release. It offers Markdown source editing and an in-app rendered preview. Full Vim emulation is not supported. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
+Version 0.7 is an early release. It offers Markdown source editing and an in-app rendered preview. Full Vim emulation is not supported. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
 
 ## Contributing
 

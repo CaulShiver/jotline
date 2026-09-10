@@ -17,6 +17,7 @@ from rich.text import Text
 from .store import COLLECTIONS, Note, Vault, tagged_body, validate_workspace
 from .settings import Settings, HOTKEY_ACTIONS
 from .preferences import Preferences
+from .templates import Templates
 
 
 class Palette(ModalScreen[str | None]):
@@ -141,6 +142,37 @@ class MarkdownPreview(ModalScreen[None]):
         self.app.query_one("#editor", TextArea).focus()
 
 
+class RevisionPreview(ModalScreen[bool]):
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    CSS = """
+    RevisionPreview { align: center middle; background: $background 80%; }
+    #revision-panel { width: 100; max-width: 96%; height: 90%;
+        border: round $accent; padding: 1 2; background: $surface; }
+    #revision-text { height: 1fr; }
+    #revision-buttons { height: 3; }
+    """
+
+    def __init__(self, note: Note):
+        super().__init__()
+        self.note = note
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="revision-panel"):
+            yield Static("Saved version · " + self.note.title, markup=False)
+            yield Static("Restore creates a separate inbox note and keeps the original.")
+            yield TextArea(self.note.body, read_only=True, soft_wrap=False, id="revision-text")
+            with Horizontal(id="revision-buttons"):
+                yield Button("Restore as new note", variant="primary", id="restore-revision")
+                yield Button("Cancel", id="cancel-revision")
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+    @on(Button.Pressed)
+    def button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "restore-revision")
+
+
 class FindInNote(ModalScreen[None]):
     BINDINGS = [Binding("escape", "done", "Done"), Binding("f3", "next", "Next"),
                 Binding("shift+f3", "previous", "Previous")]
@@ -253,7 +285,10 @@ class Jotline(App):
     Footer { background: $surface; }
     .hidden { display: none; }
     """
-    BINDINGS = [Binding(key, action, label, priority=True, id="jotline." + action)
+    # Textual requires a nonempty binding key; these placeholders cannot be typed.
+    BINDINGS = [Binding(key or "jotline_" + action + "_unassigned",
+                        "format_markdown(" + repr(action[7:]) + ")" if action.startswith("format_") else action,
+                        label, priority=True, show=bool(key), id="jotline." + action)
                 for action, (key, label) in HOTKEY_ACTIONS.items()] + [
         Binding("f1", "settings", "Settings", priority=True),
         Binding("escape", "editor_focus", "Write", show=False),
@@ -310,7 +345,8 @@ class Jotline(App):
 
     def apply_settings(self, *, startup: bool = False) -> None:
         settings = self.settings
-        self.set_keymap({"jotline." + action: key for action, key in settings.effective_hotkeys.items()})
+        self.set_keymap({"jotline." + action: key or "jotline_" + action + "_unassigned"
+                         for action, key in settings.effective_hotkeys.items()})
         self.query_one('#hint', Static).update(self.shortcut_text(
             "Capture first. Make sense of it later.   ctrl+p commands · ctrl+d daily log"))
         self.theme = settings.theme
@@ -410,6 +446,7 @@ class Jotline(App):
             return False
         self.dirty, self.last_error = False, ""
         self.status("Saved")
+        self.notify_backup_warning()
         self.refresh_notes()
         self.connections()
         return True
@@ -577,6 +614,110 @@ class Jotline(App):
         self.save_current()
         editor.focus()
 
+    def action_templates(self, source: bool = False) -> None:
+        try:
+            names = Templates(self.vault.path).names()
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity="error")
+            return
+        self.push_screen(Palette([(name, name) for name in names],
+                                 "Copy template source" if source else "New note from template"),
+                         lambda name: self.use_template(name, source=source))
+
+    def use_template(self, name: str | None, *, source: bool = False) -> None:
+        if not name or not self.save_current():
+            return
+        try:
+            templates = Templates(self.vault.path)
+            body = templates.read(name) if source else templates.render(name, self.workspace)
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity="error")
+            return
+        note = self.vault.new(body, workspace=self.workspace)
+        note.collection = self.settings.default_collection
+        self.collection = note.collection
+        self.query_one("#search", Input).value = ""
+        self.load(note)
+        self.dirty = True
+        self.save_current()
+
+    def save_template(self, name: str | None) -> None:
+        if not name:
+            return
+        try:
+            Templates(self.vault.path).save(name, self.query_one("#editor", TextArea).text)
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity="error")
+            return
+        self.notify("Template saved locally. Use New note from template to reuse it.")
+
+    def notify_backup_warning(self) -> None:
+        if self.vault.backup_warning:
+            self.notify(self.vault.backup_warning, severity="warning", timeout=10)
+            self.vault.backup_warning = ""
+
+    def action_backup(self) -> None:
+        if not self.save_current():
+            return
+        try:
+            path = self.vault.backup()
+        except (OSError, ValueError) as error:
+            self.notify(f"Backup failed: {error}", severity="error", timeout=10)
+            return
+        self.notify(f"Backup saved: {path}", timeout=10)
+        self.notify_backup_warning()
+
+    def browse_history(self) -> None:
+        try:
+            notes = self.vault.history_notes(self.workspace)
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity="error")
+            return
+        if not notes:
+            self.notify("No saved history in this workspace yet.")
+            return
+        self.push_screen(Palette([(n.id, n.title) for n in notes], "Saved note history"), self.show_history)
+
+    def show_history(self, note_id: str | None) -> None:
+        if not note_id:
+            return
+        try:
+            revisions = self.vault.history(note_id)
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity="error")
+            return
+        if not revisions:
+            self.notify("No saved versions for this note yet.")
+            return
+        self.push_screen(Palette([(r.id, r.saved_at) for r in revisions], "Choose a saved version"),
+                         lambda revision_id: self.preview_revision(note_id, revision_id))
+
+    def preview_revision(self, note_id: str, revision_id: str | None) -> None:
+        if not revision_id:
+            return
+        try:
+            note = self.vault.read_revision(note_id, revision_id)
+            if note.workspace != self.workspace:
+                raise ValueError("This version belongs to another workspace; switch workspaces to view it")
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity="error")
+            return
+        self.push_screen(RevisionPreview(note), lambda restore: self.restore_revision(note) if restore else None)
+
+    def restore_revision(self, note: Note) -> None:
+        if note.workspace != self.workspace or not self.save_current():
+            return
+        try:
+            restored = self.vault.recovery(note)
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity="error")
+            return
+        self.collection = "inbox"
+        self.query_one("#search", Input).value = ""
+        self.load(restored)
+        self.refresh_notes()
+        self.notify("Saved version restored as a new inbox note.")
+
     def action_preview(self) -> None:
         self.capture_current_buffer()
         if len(self.current.body.encode("utf-8")) > 256 * 1024:
@@ -584,7 +725,7 @@ class Jotline(App):
             return
         self.push_screen(MarkdownPreview(self.current.body))
 
-    def format_markdown(self, style: str) -> None:
+    def action_format_markdown(self, style: str) -> None:
         editor = self.query_one("#editor", TextArea)
         start, end = sorted((editor.selection.start, editor.selection.end))
         editor.history.checkpoint()
@@ -669,7 +810,10 @@ class Jotline(App):
             self.notify("Vault refreshed from disk.")
 
     def action_commands(self) -> None:
-        choices = [("preview", "Preview rendered Markdown"), ("tags", "Browse tags                     ctrl+t"), ("add-tags", "Add tags to this note"),
+        choices = [("templates", "New note from template"), ("save-template", "Save this note as a template"),
+                   ("template-source", "Copy template source to new note"),
+                   ("history", "History of this note"), ("browse-history", "Browse saved note history"),
+                   ("backup", "Back up vault now"), ("preview", "Preview rendered Markdown"), ("tags", "Browse tags                     ctrl+t"), ("add-tags", "Add tags to this note"),
                    ("workspaces", "Switch workspace                ctrl+w"), ("new-workspace", "Create workspace"),
                    ("move-workspace", "Move note to workspace"), ("settings", "Settings · appearance, editor, hotkeys · F1"), ("new", "New thought                    ctrl+n"), ("daily", "Open today's daily log         ctrl+d"),
                    ("open", "Open a note                    ctrl+o"), ("focus", "Toggle focus mode              ctrl+b"),
@@ -683,15 +827,32 @@ class Jotline(App):
             ("heading", "heading"), ("list", "bullet list"), ("quote", "blockquote"))]
         choices += [("view:" + c, "Show " + c) for c in ("all", "starred", *COLLECTIONS)]
         choices += [("move:" + c, "Move note to " + c) for c in COLLECTIONS]
-        self.push_screen(Palette([(key, self.shortcut_text(label)) for key, label in choices]), self.command)
+        hotkeys = self.settings.effective_hotkeys
+        choices = [(key, self.shortcut_text(label) +
+                    ("  " + hotkeys.get(key.replace("format:", "format_"), "")
+                     if key == "preview" or key.startswith("format:") else "")) for key, label in choices]
+        self.push_screen(Palette(choices), self.command)
 
     def command(self, key: str | None) -> None:
         if not key:
             return
-        if key == "preview":
+        if key == "templates":
+            self.action_templates()
+        elif key == "template-source":
+            self.action_templates(source=True)
+        elif key == "save-template":
+            self.push_screen(TextPrompt("Save a new template", "e.g. weekly-planning; placeholders: {{date}}, {{time}}, {{workspace}}"),
+                             self.save_template)
+        elif key == "history":
+            self.show_history(self.current.id)
+        elif key == "browse-history":
+            self.browse_history()
+        elif key == "backup":
+            self.action_backup()
+        elif key == "preview":
             self.action_preview()
         elif key.startswith("format:"):
-            self.format_markdown(key.removeprefix("format:"))
+            self.action_format_markdown(key.removeprefix("format:"))
         elif key == "tags":
             self.action_tags()
         elif key == "add-tags":
@@ -821,6 +982,15 @@ Ctrl+B hides the sidebar. Ctrl+O finds a note by title.
 Ctrl+F searches this workspace (except trash). Multiple words narrow results.
 Ctrl+P → Follow a link or Open a backlink moves between connected notes.
 Links inserted by Jotline use stable IDs, so changing titles is safe.
+
+## Templates and history
+Ctrl+P → New note from template starts a meeting, project, journal, or saved template.
+Save this note as a template keeps a reusable copy; use {{date}}, {{time}}, {{workspace}}.
+Copy template source to new note preserves placeholders for customization.
+F1 → Keyboard shortcuts includes optional Markdown formatting and preview keys.
+Ctrl+P → History of this note lets you inspect and restore a saved version as a new note.
+Browse saved note history includes externally deleted notes in this workspace.
+Back up vault now saves a local ZIP of notes, settings, and templates.
 
 ## Your files
 Everything stays in your local vault as readable Markdown.

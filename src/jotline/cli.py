@@ -64,6 +64,7 @@ def main() -> None:
     tagging = sub.add_parser("tag", help="Add inline tags to a note")
     tagging.add_argument("id")
     tagging.add_argument("tags", nargs="+")
+    sub.add_parser("backup", help="Back up notes, settings and templates to a local ZIP")
     sub.add_parser("path", help="Print the vault path")
     sub.add_parser("doctor", help="Check the vault for unreadable Markdown files")
     importing = sub.add_parser("import", help="Copy a UTF-8 Markdown file into the vault")
@@ -91,6 +92,8 @@ def main() -> None:
                 note.collection = settings.default_collection
                 vault.save(note)
             print(note.id)
+        elif args.command == "backup":
+            print(terminal_text(vault.backup()))
         elif args.command == "list":
             for note in vault.search(args.query, workspace=workspace):
                 # Escape control characters when printing untrusted note text to a terminal.
@@ -106,6 +109,8 @@ def main() -> None:
                 note.body = tagged_body(note.body, " ".join(args.tags))
                 vault.save(note)
                 print(note.id)
+                if vault.backup_warning:
+                    warning(vault.backup_warning)
                 return
             body = note.body
             if sys.stdout.isatty() and has_terminal_controls(body) and not args.raw:
@@ -138,6 +143,8 @@ def main() -> None:
         else:
             from .app import Jotline
             Jotline(vault, workspace=workspace).run()
+        if vault.backup_warning:
+            warning(vault.backup_warning)
     except (OSError, ValueError) as error:
         parser.exit(1, f"jotline: {terminal_text(error)}\n")
 

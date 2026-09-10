@@ -162,7 +162,7 @@ def test_atomic_replace_failure_keeps_file_and_baseline(tmp_path, monkeypatch):
         vault.save(note)
     assert vault.read(note.id).body == "original"
     assert note.original == original
-    assert not list(tmp_path.glob(".jotline-*"))
+    assert not [path for path in tmp_path.glob(".jotline-*") if path.is_file()]
 
 
 def test_settings_save_repairs_invalid_utf8_regular_file(tmp_path):
@@ -182,7 +182,8 @@ def test_directory_fsync_failure_does_not_create_false_conflict(tmp_path, monkey
     fsync = os.fsync
 
     def fail_directory(fd):
-        if stat.S_ISDIR(os.fstat(fd).st_mode):
+        info = os.fstat(fd)
+        if stat.S_ISDIR(info.st_mode) and info.st_ino == tmp_path.stat().st_ino:
             raise OSError("directory fsync failed")
         fsync(fd)
 
