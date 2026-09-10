@@ -2,6 +2,7 @@
 from dataclasses import asdict, dataclass, field, fields
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 
@@ -9,6 +10,22 @@ from .store import MAX_SETTINGS_BYTES, read_regular_file, validate_workspace, va
 
 THEMES = ('jotline', 'nord', 'gruvbox', 'catppuccin-mocha', 'dracula', 'tokyo-night',
           'solarized-dark', 'solarized-light', 'textual-light')
+
+
+HOTKEY_ACTIONS = {
+    "new": ("ctrl+n", "New thought"),
+    "tags": ("ctrl+t", "Browse tags"),
+    "workspaces": ("ctrl+w", "Switch workspace"),
+    "commands": ("ctrl+p", "Command palette"),
+    "open_note": ("ctrl+o", "Open note"),
+    "daily": ("ctrl+d", "Daily log"),
+    "search": ("ctrl+f", "Search notes"),
+    "save": ("ctrl+s", "Save note"),
+    "focus_mode": ("ctrl+b", "Focus mode"),
+    "quit": ("ctrl+q", "Quit"),
+}
+# Preserve editing controls and terminal aliases for Tab, Enter and Backspace.
+RESERVED_HOTKEYS = {"ctrl+" + letter for letter in "acehijkmuvxyz"}
 
 
 @dataclass
@@ -29,7 +46,29 @@ class Settings:
     active_workspace: str = "default"
     workspace_names: list[str] = field(default_factory=lambda: ["default"])
 
+    hotkeys: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def effective_hotkeys(self) -> dict[str, str]:
+        return {action: self.hotkeys.get(action, default).strip().lower()
+                for action, (default, _) in HOTKEY_ACTIONS.items()}
+
     def validate(self):
+        if not isinstance(self.hotkeys, dict) or set(self.hotkeys) - HOTKEY_ACTIONS.keys():
+            raise ValueError("Hotkeys must map known Jotline actions to keys")
+        if any(not isinstance(key, str) for key in self.hotkeys.values()):
+            raise ValueError("Each hotkey must be text")
+        used = {}
+        for action, key in self.effective_hotkeys.items():
+            label = HOTKEY_ACTIONS[action][1]
+            if not re.fullmatch(r"(?:ctrl|alt)\+[a-z]|f(?:[2-9]|1[0-2])", key):
+                raise ValueError(f"{label}: use ctrl+letter, alt+letter, or f2–f12; F1 and Esc stay fixed")
+            if key in RESERVED_HOTKEYS:
+                raise ValueError(f"{key} is reserved for editing or terminal navigation")
+            if key in used:
+                raise ValueError(f"{key} is assigned to both {used[key]} and {label}")
+            used[key] = label
+
         validate_workspace(self.active_workspace)
         if not isinstance(self.workspace_names, list) or len(self.workspace_names) > 256:
             raise ValueError("At most 256 workspace names may be saved")

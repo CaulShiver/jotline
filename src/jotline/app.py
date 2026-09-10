@@ -15,7 +15,7 @@ from textual.widgets.option_list import Option
 from rich.text import Text
 
 from .store import COLLECTIONS, Note, Vault, tagged_body, validate_workspace
-from .settings import Settings
+from .settings import Settings, HOTKEY_ACTIONS
 from .preferences import Preferences
 
 
@@ -223,17 +223,9 @@ class Jotline(App):
     Footer { background: $surface; }
     .hidden { display: none; }
     """
-    BINDINGS = [
-        Binding("ctrl+n", "new", "New", priority=True),
-        Binding("ctrl+t", "tags", "Tags", priority=True),
-        Binding("ctrl+w", "workspaces", "Spaces", priority=True),
-        Binding("ctrl+p", "commands", "Commands", priority=True),
-        Binding("ctrl+o", "open_note", "Open", priority=True),
-        Binding("ctrl+d", "daily", "Today", priority=True),
-        Binding("ctrl+f", "search", "Search", priority=True),
-        Binding("ctrl+s", "save", "Save", priority=True),
-        Binding("ctrl+b", "focus_mode", "Focus", priority=True),
-        Binding("ctrl+q", "quit", "Quit", priority=True),
+    BINDINGS = [Binding(key, action, label, priority=True, id="jotline." + action)
+                for action, (key, label) in HOTKEY_ACTIONS.items()] + [
+        Binding("f1", "settings", "Settings", priority=True),
         Binding("escape", "editor_focus", "Write", show=False),
     ]
 
@@ -288,6 +280,9 @@ class Jotline(App):
 
     def apply_settings(self, *, startup: bool = False) -> None:
         settings = self.settings
+        self.set_keymap({"jotline." + action: key for action, key in settings.effective_hotkeys.items()})
+        self.query_one('#hint', Static).update(self.shortcut_text(
+            "Capture first. Make sense of it later.   ctrl+p commands · ctrl+d daily log"))
         self.theme = settings.theme
         editor = self.query_one('#editor', TextArea)
         editor.soft_wrap = settings.soft_wrap
@@ -298,6 +293,15 @@ class Jotline(App):
             self.focused_writing = settings.focus_on_start
         self.query_one('#sidebar').set_class(self.focused_writing, 'hidden')
         self.query_one('#hint').set_class(self.focused_writing or not settings.show_hints, 'hidden')
+
+    def shortcut_text(self, text: str) -> str:
+        effective = self.settings.effective_hotkeys
+        keys = {default: effective[action]
+                for action, (default, _) in HOTKEY_ACTIONS.items()}
+        return re.sub(r"ctrl\+[a-z]", lambda match: keys.get(match[0].lower(), match[0]), text, flags=re.I)
+
+    def action_settings(self) -> None:
+        self.push_screen(Preferences(self.settings), self.save_settings)
 
     def save_settings(self, settings: Settings | None) -> None:
         if settings is None:
@@ -312,6 +316,7 @@ class Jotline(App):
         self.autosave_timer.stop()
         self.autosave_timer = self.set_interval(settings.autosave_seconds, self.autosave)
         self.refresh_notes()
+        self.connections()
         self.query_one('#editor', TextArea).focus()
         self.notify('Settings saved. Startup choices apply next launch.')
 
@@ -331,7 +336,8 @@ class Jotline(App):
                 listing.highlighted = index
                 break
         self.query_one("#collection", Static).update(f"{self.collection.upper()}  /  {len(notes)}")
-        self.query_one("#brand", Static).update(f"›_ jotline     /     {self.workspace}     ·     ctrl+w workspaces · ctrl+t tags")
+        self.query_one("#brand", Static).update(self.shortcut_text(
+            f"›_ jotline     /     {self.workspace}     ·     ctrl+w workspaces · ctrl+t tags"))
 
     @on(Input.Changed, "#search")
     def search_changed(self) -> None:
@@ -388,7 +394,7 @@ class Jotline(App):
     def connections(self) -> None:
         backlinks = self.vault.backlinks(self.current)
         summary = " · ".join(n.title for n in backlinks[:3])
-        self.query_one("#connections", Static).update(f"← {len(backlinks)} backlinks" + (f"  {summary}" if summary else "  ·  ctrl+p → Insert note link"))
+        self.query_one("#connections", Static).update(f"← {len(backlinks)} backlinks" + (f"  {summary}" if summary else self.shortcut_text("  ·  ctrl+p → Insert note link")))
 
     def load(self, note: Note) -> None:
         if note.workspace != self.workspace:
@@ -609,7 +615,7 @@ class Jotline(App):
     def action_commands(self) -> None:
         choices = [("tags", "Browse tags                     ctrl+t"), ("add-tags", "Add tags to this note"),
                    ("workspaces", "Switch workspace                ctrl+w"), ("new-workspace", "Create workspace"),
-                   ("move-workspace", "Move note to workspace"), ("settings", "Settings · appearance, editor, workflow"), ("new", "New thought                    ctrl+n"), ("daily", "Open today's daily log         ctrl+d"),
+                   ("move-workspace", "Move note to workspace"), ("settings", "Settings · appearance, editor, hotkeys · F1"), ("new", "New thought                    ctrl+n"), ("daily", "Open today's daily log         ctrl+d"),
                    ("open", "Open a note                    ctrl+o"), ("focus", "Toggle focus mode              ctrl+b"),
                    ("find", "Find within current note"), ("refresh", "Refresh vault from disk"),
                    ("star", "Toggle star on this note"), ("link", "Insert note link"), ("follow", "Follow a link in this note"),
@@ -618,7 +624,7 @@ class Jotline(App):
                    ("review", "Start weekly review"), ("help", "Open writing and workflow guide")]
         choices += [("view:" + c, "Show " + c) for c in ("all", "starred", *COLLECTIONS)]
         choices += [("move:" + c, "Move note to " + c) for c in COLLECTIONS]
-        self.push_screen(Palette(choices), self.command)
+        self.push_screen(Palette([(key, self.shortcut_text(label)) for key, label in choices]), self.command)
 
     def command(self, key: str | None) -> None:
         if not key:
@@ -635,7 +641,7 @@ class Jotline(App):
             self.push_screen(Palette([(name, name) for name in self.workspace_names()
                                       if name != self.workspace], "Move note to workspace"), self.move_workspace)
         elif key == 'settings':
-            self.push_screen(Preferences(self.settings), self.save_settings)
+            self.action_settings()
         elif key == "find":
             self.push_screen(FindInNote())
         elif key == "refresh":
@@ -704,7 +710,7 @@ class Jotline(App):
             self.push_screen(Palette([(n.id, n.title) for n in notes], "Choose a note"), picked)
         elif key in {"help", "review"}:
             if self.save_current():
-                body = GUIDE if key == "help" else REVIEW
+                body = self.shortcut_text(GUIDE if key == "help" else REVIEW)
                 self.load(self.vault.new(body, workspace=self.workspace))
                 self.dirty = True
                 self.save_current()
@@ -723,7 +729,8 @@ The first line becomes the title. Your words save automatically.
 - Archive what is finished. Trash is reversible; move a note back to restore it.
 
 ## Make it yours
-Ctrl+P → Settings changes themes, editor, layout, startup, and daily templates.
+F1 opens Settings for themes, editor, layout, keyboard shortcuts, and daily templates.
+Hotkey changes apply on Save. F1 and Esc stay fixed; Reset hotkeys restores defaults.
 Preferences are saved for this vault.
 
 ## Writing

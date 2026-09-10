@@ -1,5 +1,6 @@
 """Check the installed wheel, with Python isolated from the source checkout."""
 import asyncio
+from dataclasses import replace
 from pathlib import Path
 import subprocess
 import sys
@@ -28,7 +29,11 @@ async def check(directory):
         app.add_tags('#release')
         assert app.vault.tags('work') == {'release': 1}
         assert not app.vault.tags('default')
-    print('Installed wheel: CLI capture/export, terminal writing, tags and workspaces passed.')
+        app.save_settings(replace(app.settings, hotkeys={'new': 'f2'}))
+        original = app.current.id
+        await pilot.press('f2')
+        assert app.current.id != original
+    print('Installed wheel: CLI capture/export, terminal writing, tags, workspaces and custom hotkeys passed.')
 
 
 if __name__ == '__main__':

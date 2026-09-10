@@ -49,6 +49,7 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 
 | Shortcut | Action |
 | --- | --- |
+| `F1` | Open Settings (always available) |
 | `Ctrl+N` | New thought |
 | `Ctrl+T` | Browse workspace tags |
 | `Ctrl+W` | Switch or create workspace |
@@ -124,6 +125,23 @@ Redirected export preserves the note body, including line endings. Export to an
 interactive terminal refuses unsafe control characters unless you explicitly pass
 `--raw`. Diagnostics escape terminal control characters.
 
+## Customize hotkeys
+
+Open **F1 → Settings → Keyboard shortcuts**. Change shortcuts for new notes,
+tags, workspaces, commands, opening notes, daily logs, search, save, focus, and quit.
+Use `ctrl+letter`, `alt+letter`, or `f2`–`f12` (for example `alt+n` or `f4`).
+Duplicate assignments and reserved editing/navigation keys are rejected.
+
+Choose **Save** (or Ctrl+S inside Settings) to apply immediately; the footer and
+command hints update too. **Reset hotkeys** restores shortcut defaults without
+changing your other preferences; save to apply or Escape to cancel. **F1** always
+opens Settings, and **Escape** remains fixed for closing dialogs. Editor shortcuts
+and dialog navigation are unchanged. Your terminal may intercept some combinations;
+use another supported key if it does.
+
+Hotkeys persist locally in `.jotline-settings.json` inside the vault and apply to
+all its workspaces. The shortcut table above shows the defaults.
+
 ## Tags and workspaces
 
 Press **Ctrl+T** to browse tags and note counts in the current workspace. Select a
@@ -184,7 +202,7 @@ still need further indexing work.
 
 ## Status
 
-Version 0.4 is an early release. It offers plain-text Markdown editing, not a rendered Markdown preview or a full Vim emulation. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
+Version 0.5 is an early release. It offers plain-text Markdown editing, not a rendered Markdown preview or a full Vim emulation. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
 
 ## Contributing
 

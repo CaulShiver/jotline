@@ -5,7 +5,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, Static, Switch, TextArea
-from .settings import Settings, THEMES
+from .settings import Settings, THEMES, HOTKEY_ACTIONS
 
 
 class Preferences(ModalScreen[Settings | None]):
@@ -52,6 +52,13 @@ class Preferences(ModalScreen[Settings | None]):
                 yield Input(str(s.sidebar_width), type='integer', id='pref-sidebar_width')
                 yield Label('Autosave interval · 0.2–5 seconds', classes='pref-label')
                 yield Input(str(s.autosave_seconds), type='number', id='pref-autosave_seconds')
+                yield Label('Keyboard shortcuts', classes='pref-label')
+                yield Static('Use ctrl+letter, alt+letter, or f2–f12. Editing keys are reserved. '
+                             'F1 always opens Settings; Esc closes dialogs. Ctrl+S saves this dialog. Changes apply when saved.')
+                for action, (_, label) in HOTKEY_ACTIONS.items():
+                    yield Label(label, classes='pref-label')
+                    yield Input(s.effective_hotkeys[action], id='hotkey-' + action)
+                yield Button('Reset hotkeys', id='reset-hotkeys')
                 yield Label('Daily template · {{date}} becomes today’s date; existing logs stay unchanged', classes='pref-label')
                 yield TextArea(s.daily_template, tab_behavior='focus', id='daily-template')
             yield Static('', id='preferences-error', markup=False)
@@ -84,6 +91,8 @@ class Preferences(ModalScreen[Settings | None]):
                 data['autosave_seconds'] = float(autosave_seconds)
             except ValueError:
                 raise ValueError('Autosave interval must be a number') from None
+            data['hotkeys'] = {action: self.query_one('#hotkey-' + action, Input).value.strip().lower()
+                               for action in HOTKEY_ACTIONS}
             data['daily_template'] = self.query_one('#daily-template', TextArea).text
             settings = Settings(**data)
             settings.validate()
@@ -92,14 +101,24 @@ class Preferences(ModalScreen[Settings | None]):
             return
         self.dismiss(settings)
 
+    def reset_hotkeys(self):
+        for action, (key, _) in HOTKEY_ACTIONS.items():
+            self.query_one('#hotkey-' + action, Input).value = key
+
     def on_button_pressed(self, event: Button.Pressed):
         if event.button.id == 'save-preferences':
             self.action_save()
         elif event.button.id == 'cancel-preferences':
             self.action_cancel()
+        elif event.button.id == 'reset-hotkeys':
+            self.reset_hotkeys()
+            self.query_one('#preferences-error', Static).update('Default hotkeys loaded. Save to apply.')
         elif event.button.id == 'default-preferences':
             defaults = Settings()
             for name, value in asdict(defaults).items():
+                if name == 'hotkeys':
+                    self.reset_hotkeys()
+                    continue
                 if name in ('active_workspace', 'workspace_names'):
                     continue
                 if name == 'daily_template':
