@@ -100,6 +100,8 @@ class Preferences(ModalScreen[Settings | None]):
         elif event.button.id == 'default-preferences':
             defaults = Settings()
             for name, value in asdict(defaults).items():
+                if name in ('active_workspace', 'workspace_names'):
+                    continue
                 if name == 'daily_template':
                     self.query_one('#daily-template', TextArea).load_text(value)
                 else:

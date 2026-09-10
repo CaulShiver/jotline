@@ -23,7 +23,12 @@ async def check(directory):
         await pilot.press('ctrl+n')
         assert any(n.body == 'wheel' for n in app.vault.notes())
         assert app.query_one('#editor', TextArea).text == ''
-    print('Installed wheel: CLI capture/export and terminal writing passed.')
+        app.switch_workspace('work')
+        app.query_one('#editor', TextArea).insert('Workspace smoke')
+        app.add_tags('#release')
+        assert app.vault.tags('work') == {'release': 1}
+        assert not app.vault.tags('default')
+    print('Installed wheel: CLI capture/export, terminal writing, tags and workspaces passed.')
 
 
 if __name__ == '__main__':

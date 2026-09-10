@@ -1,11 +1,11 @@
 """Validated per-vault preferences, stored separately from notes."""
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 import json
 import os
 from pathlib import Path
 import tempfile
 
-from .store import MAX_SETTINGS_BYTES, read_regular_file, vault_lock
+from .store import MAX_SETTINGS_BYTES, read_regular_file, validate_workspace, vault_lock
 
 THEMES = ('jotline', 'nord', 'gruvbox', 'catppuccin-mocha', 'dracula', 'tokyo-night',
           'solarized-dark', 'solarized-light', 'textual-light')
@@ -26,7 +26,15 @@ class Settings:
     default_collection: str = 'inbox'
     daily_template: str = '# {{date}}\n\n'
 
+    active_workspace: str = "default"
+    workspace_names: list[str] = field(default_factory=lambda: ["default"])
+
     def validate(self):
+        validate_workspace(self.active_workspace)
+        if not isinstance(self.workspace_names, list) or len(self.workspace_names) > 256:
+            raise ValueError("At most 256 workspace names may be saved")
+        for name in self.workspace_names:
+            validate_workspace(name)
         for name in ('line_numbers', 'soft_wrap', 'highlight_line', 'focus_on_start', 'show_hints'):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f'{name} must be true or false')

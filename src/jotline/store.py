@@ -1,6 +1,7 @@
 """Portable Markdown storage with atomic writes and optimistic concurrency."""
 from __future__ import annotations
 
+from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, date
@@ -27,6 +28,20 @@ FileSignature = tuple[int, int, int, int, int]
 
 LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|[^\[\]]*)?\]\]")
 TAG = re.compile(r"(?<![\w#])#([\w][\w/-]*)", re.UNICODE)
+
+
+def validate_workspace(name: str) -> str:
+    if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,47}", name):
+        raise ValueError("Workspace names need 1–48 lowercase letters, numbers, hyphens or underscores")
+    return name
+
+
+def tagged_body(body: str, tags: str) -> str:
+    names = {tag.removeprefix("#").casefold() for tag in tags.split()}
+    if not names or any(not re.fullmatch(r"[\w][\w/-]*", tag) for tag in names):
+        raise ValueError("Enter tags separated by spaces; use letters, numbers, underscores, / or -")
+    missing = names - {tag.casefold() for tag in TAG.findall(body)}
+    return body + ("\n\n" + " ".join("#" + tag for tag in sorted(missing)) if missing else "")
 
 
 class ConflictError(OSError):
@@ -95,6 +110,7 @@ class Note:
     updated: str = ""
     starred: bool = False
     original: str | None = None
+    workspace: str = "default"
 
     @property
     def title(self) -> str:
@@ -125,9 +141,9 @@ class Vault:
             raise ValueError("Invalid note ID")
         return self.path / f"{note_id}.md"
 
-    def new(self, body: str = "") -> Note:
+    def new(self, body: str = "", workspace: str = "default") -> Note:
         stamp = now()
-        return Note(uuid4().hex, body, created=stamp, updated=stamp)
+        return Note(uuid4().hex, body, created=stamp, updated=stamp, workspace=validate_workspace(workspace))
 
     def read(self, note_id: str) -> Note:
         raw = read_regular_file(self.file(note_id))
@@ -140,7 +156,7 @@ class Vault:
             header = raw[raw.index("\n") + 1:boundary.start()]
             for line in header.splitlines():
                 key, sep, value = line.partition(": ")
-                if sep and key in {"collection", "created", "updated", "starred"}:
+                if sep and key in {"collection", "created", "updated", "starred", "workspace"}:
                     try:
                         meta[key] = json.loads(value)
                     except RecursionError:
@@ -152,6 +168,7 @@ class Vault:
             raise ValueError("Invalid timestamps")
         if not isinstance(meta.get("starred", False), bool):
             raise ValueError("Invalid starred value")
+        validate_workspace(meta.get("workspace", "default"))
         return Note(note_id, body, original=raw, **meta)
 
     def invalidate_cache(self) -> None:
@@ -192,6 +209,7 @@ class Vault:
             self._save_locked(note)
 
     def _save_locked(self, note: Note) -> None:
+        validate_workspace(note.workspace)
         if note.collection not in COLLECTIONS:
             raise ValueError("Unknown collection")
         if not isinstance(note.body, str) or not isinstance(note.starred, bool):
@@ -207,7 +225,7 @@ class Vault:
             raise ConflictError("This note changed outside Jotline. Save a recovery copy to preserve your changes.")
         stamp = now()
         meta = {"collection": note.collection, "created": note.created or stamp,
-                "updated": stamp, "starred": note.starred}
+                "updated": stamp, "starred": note.starred, "workspace": note.workspace}
         raw = "---\njotline: 1\n" + "\n".join(f"{k}: {json.dumps(v)}" for k, v in meta.items()) + "\n---\n" + note.body
         if len(raw.encode("utf-8")) > MAX_NOTE_BYTES:
             raise ValueError(f"Note exceeds the {MAX_NOTE_BYTES}-byte file limit")
@@ -231,23 +249,27 @@ class Vault:
             if os.path.exists(temp):
                 os.unlink(temp)
 
-    def daily(self, template: str = "# {{date}}\n\n") -> Note:
+    def daily(self, template: str = "# {{date}}\n\n", workspace: str = "default") -> Note:
         with self.locked():
-            return self._daily_locked(template)
+            return self._daily_locked(template, workspace)
 
-    def _daily_locked(self, template: str) -> Note:
+    def _daily_locked(self, template: str, workspace: str = "default") -> Note:
         today = date.today().isoformat()
-        note_id = f"daily-{today}"
+        validate_workspace(workspace)
+        note_id = f"daily-{today}" + (f"-{workspace}" if workspace != "default" else "")
         try:
-            return self.read(note_id)
+            note = self.read(note_id)
+            if note.workspace != workspace:
+                raise ValueError("This daily log was moved to another workspace; move it back or create a regular note")
+            return note
         except FileNotFoundError:
             stamp = now()
-            return Note(note_id, template.replace("{{date}}", today), "inbox", stamp, stamp)
+            return Note(note_id, template.replace("{{date}}", today), "inbox", stamp, stamp, workspace=workspace)
 
-    def append_daily(self, body: str, template: str = "# {{date}}\n\n") -> Note:
+    def append_daily(self, body: str, template: str = "# {{date}}\n\n", workspace: str = "default") -> Note:
         """Append a shell capture atomically with respect to other Jotline writers."""
         with self.locked():
-            note = self._daily_locked(template)
+            note = self._daily_locked(template, workspace)
             note.body = note.body.rstrip() + "\n\n" + body + "\n"
             self._save_locked(note)
             return note
@@ -255,14 +277,17 @@ class Vault:
     def backlinks(self, target: Note) -> list[Note]:
         targets = {target.id, target.title}
         return [n for n in self.notes() if n.id != target.id and n.collection != "trash"
+                and n.workspace == target.workspace
                 and targets.intersection(n.links)]
 
-    def search(self, query: str = "", collection: str = "all") -> list[Note]:
+    def search(self, query: str = "", collection: str = "all", workspace: str | None = None) -> list[Note]:
         terms = query.casefold().split()
         words = [t for t in terms if not t.startswith("#")]
         tags = {t[1:] for t in terms if t.startswith("#")}
         matches = []
         for note in self.notes():
+            if workspace is not None and note.workspace != workspace:
+                continue
             if collection == "all":
                 included = note.collection != "trash"
             elif collection == "starred":
@@ -275,6 +300,12 @@ class Vault:
             if all(word in body or word in note.id for word in words):
                 matches.append(note)
         return matches
+
+    def tags(self, workspace: str) -> Counter:
+        return Counter(tag for note in self.search(workspace=workspace) for tag in note.tags)
+
+    def workspaces(self) -> set[str]:
+        return {"default", *(note.workspace for note in self.notes())}
 
     def recovery(self, note: Note) -> Note:
         recovered = replace(note, id=uuid4().hex, original=None, created=now(), collection="inbox")

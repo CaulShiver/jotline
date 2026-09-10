@@ -1,6 +1,7 @@
 """Keyboard-first writing UI. No shell commands are executed by the palette."""
 from __future__ import annotations
 
+from dataclasses import replace
 import re
 
 from textual import on
@@ -13,7 +14,7 @@ from textual.widgets import Button, Footer, Input, Label, OptionList, Static, Te
 from textual.widgets.option_list import Option
 from rich.text import Text
 
-from .store import COLLECTIONS, Note, Vault
+from .store import COLLECTIONS, Note, Vault, tagged_body, validate_workspace
 from .settings import Settings
 from .preferences import Preferences
 
@@ -76,6 +77,35 @@ class Palette(ModalScreen[str | None]):
                 options.action_cursor_up()
             event.prevent_default()
             event.stop()
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class TextPrompt(ModalScreen[str | None]):
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    CSS = """
+    TextPrompt { align: center top; background: $background 70%; }
+    #text-prompt { width: 72; max-width: 95%; height: auto; margin-top: 3;
+        border: round $accent; padding: 1 2; background: $surface; }
+    """
+
+    def __init__(self, title: str, placeholder: str):
+        super().__init__()
+        self.heading, self.placeholder = title, placeholder
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="text-prompt"):
+            yield Label(self.heading)
+            yield Input(placeholder=self.placeholder, id="prompt-value")
+            yield Static("Enter to apply · Esc to cancel")
+
+    def on_mount(self) -> None:
+        self.query_one(Input).focus()
+
+    @on(Input.Submitted)
+    def submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value.strip() or None)
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -195,6 +225,8 @@ class Jotline(App):
     """
     BINDINGS = [
         Binding("ctrl+n", "new", "New", priority=True),
+        Binding("ctrl+t", "tags", "Tags", priority=True),
+        Binding("ctrl+w", "workspaces", "Spaces", priority=True),
         Binding("ctrl+p", "commands", "Commands", priority=True),
         Binding("ctrl+o", "open_note", "Open", priority=True),
         Binding("ctrl+d", "daily", "Today", priority=True),
@@ -205,14 +237,15 @@ class Jotline(App):
         Binding("escape", "editor_focus", "Write", show=False),
     ]
 
-    def __init__(self, vault: Vault):
+    def __init__(self, vault: Vault, workspace: str | None = None):
         super().__init__()
         self.vault = vault
         self.settings_path = vault.path / '.jotline-settings.json'
         self.settings, self.settings_warning = Settings.load(self.settings_path)
+        self.workspace = validate_workspace(self.settings.active_workspace if workspace is None else workspace)
         self.register_theme(Theme(name='jotline', primary='#a8d5a2', accent='#a8d5a2',
                                   foreground='#d6ddd8', background='#101619', surface='#162024', panel='#162024'))
-        self.current = vault.new()
+        self.current = vault.new(workspace=self.workspace)
         self.current.collection = self.settings.default_collection
         self.collection = self.settings.default_collection
         self.dirty = False
@@ -220,7 +253,7 @@ class Jotline(App):
         self.focused_writing = False
 
     def compose(self) -> ComposeResult:
-        yield Static("›_ jotline     /     a little room to think", id="brand")
+        yield Static("›_ jotline     /     " + self.workspace, id="brand", markup=False)
         with Horizontal(id="workspace"):
             with Vertical(id="sidebar"):
                 yield Static("INBOX", id="collection")
@@ -283,7 +316,7 @@ class Jotline(App):
         self.notify('Settings saved. Startup choices apply next launch.')
 
     def refresh_notes(self) -> None:
-        notes = self.vault.search(self.query_one("#search", Input).value, self.collection)
+        notes = self.vault.search(self.query_one("#search", Input).value, self.collection, self.workspace)
         if self.settings.sort_order == 'title':
             notes.sort(key=lambda n: (not n.starred, n.title.casefold(), n.id))
         elif self.settings.sort_order == 'created':
@@ -298,6 +331,7 @@ class Jotline(App):
                 listing.highlighted = index
                 break
         self.query_one("#collection", Static).update(f"{self.collection.upper()}  /  {len(notes)}")
+        self.query_one("#brand", Static).update(f"›_ jotline     /     {self.workspace}     ·     ctrl+w workspaces · ctrl+t tags")
 
     @on(Input.Changed, "#search")
     def search_changed(self) -> None:
@@ -323,7 +357,9 @@ class Jotline(App):
         return True
 
     def status(self, message: str) -> None:
-        self.query_one("#status", Static).update(f"{message}  ·  {len(self.current.body.split())} words  ·  {self.current.collection}")
+        tags = sorted(self.current.tags)[:5]
+        self.query_one("#status", Static).update(f"{message}  ·  {len(self.current.body.split())} words  ·  {self.current.collection}  ·  {self.workspace}" +
+            ("  ·  " + " ".join("#" + tag for tag in tags) if tags else ""))
         self.query_one("#note-heading", Static).update(Text(self.current.title + " / " + self.current.collection))
 
     def save_current(self) -> bool:
@@ -355,6 +391,8 @@ class Jotline(App):
         self.query_one("#connections", Static).update(f"← {len(backlinks)} backlinks" + (f"  {summary}" if summary else "  ·  ctrl+p → Insert note link"))
 
     def load(self, note: Note) -> None:
+        if note.workspace != self.workspace:
+            raise ValueError("Note moved to another workspace; save a recovery copy if needed")
         self.current, self.dirty, self.last_error = note, False, ""
         self.query_one("#editor", TextArea).load_text(note.body)
         self.query_one("#editor", TextArea).focus()
@@ -365,13 +403,16 @@ class Jotline(App):
         if not self.save_current():
             return
         try:
-            self.load(self.vault.read(note_id))
+            note = self.vault.read(note_id)
+            if note.workspace != self.workspace:
+                raise ValueError("This note is in another workspace; switch workspaces to open it")
+            self.load(note)
         except (OSError, ValueError) as error:
             self.notify(str(error), severity="error")
 
     def action_new(self) -> None:
         if self.save_current():
-            note = self.vault.new()
+            note = self.vault.new(workspace=self.workspace)
             note.collection = self.settings.default_collection
             self.collection = note.collection
             self.load(note)
@@ -380,7 +421,7 @@ class Jotline(App):
     def action_daily(self) -> None:
         if self.save_current():
             try:
-                note = self.vault.daily(self.settings.daily_template)
+                note = self.vault.daily(self.settings.daily_template, self.workspace)
             except (OSError, ValueError) as error:
                 self.notify(f"Could not open today's daily log: {error}", severity="error", timeout=10)
                 return
@@ -419,9 +460,94 @@ class Jotline(App):
         self.query_one("#hint").set_class(not self.settings.show_hints, "hidden")
 
     def action_open_note(self) -> None:
-        notes = self.vault.search()
+        notes = self.vault.search(workspace=self.workspace)
         self.push_screen(Palette([(n.id, n.title + " · " + n.collection) for n in notes], "Open a note"),
                          lambda key: self.load_id(key) if key else None)
+
+    def workspace_names(self) -> list[str]:
+        return sorted(self.vault.workspaces() | set(self.settings.workspace_names) | {self.workspace})
+
+    def action_workspaces(self) -> None:
+        self.push_screen(Palette([(name, name + (" · current" if name == self.workspace else ""))
+                                  for name in self.workspace_names()] + [("+", "Create workspace…")],
+                                 "Switch workspace"), self.pick_workspace)
+
+    def pick_workspace(self, name: str | None) -> None:
+        if name == "+":
+            self.command("new-workspace")
+        else:
+            self.switch_workspace(name)
+
+    def switch_workspace(self, name: str | None) -> None:
+        if not name:
+            return
+        try:
+            name = validate_workspace(name)
+            if not self.save_current():
+                return
+            settings = replace(self.settings, active_workspace=name,
+                               workspace_names=sorted(set(self.settings.workspace_names) | {name}))
+            settings.save(self.settings_path)
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity="error")
+            return
+        self.settings, self.workspace = settings, name
+        self.collection = self.settings.default_collection
+        self.query_one("#search", Input).value = ""
+        self.load(self.vault.new(workspace=name))
+        self.current.collection = self.collection
+        self.status("Ready")
+        self.refresh_notes()
+        self.show_sidebar()
+
+    def move_workspace(self, name: str | None) -> None:
+        if not name or not self.save_current():
+            return
+        try:
+            validate_workspace(name)
+            if self.current.id.startswith("daily-"):
+                raise ValueError("Daily logs belong to their workspace; copy their text into a regular note to move it")
+            moved = replace(self.current, workspace=name)
+            self.vault.save(moved)
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity="error")
+            return
+        self.load(self.vault.new(workspace=self.workspace))
+        self.current.collection = self.settings.default_collection
+        self.status("Ready")
+        self.refresh_notes()
+        self.notify(f"Note moved to {name}")
+
+    def action_tags(self) -> None:
+        if not self.save_current():
+            return
+        counts = self.vault.tags(self.workspace)
+        self.push_screen(Palette([(tag, f"#{tag} · {count} notes") for tag, count in sorted(counts.items())]
+                                 + [("+", "Add tags to this note…")], "Tags in " + self.workspace), self.pick_tag)
+
+    def pick_tag(self, tag: str | None) -> None:
+        if tag == "+":
+            self.command("add-tags")
+        elif tag:
+            self.collection = "all"
+            self.query_one("#search", Input).value = "#" + tag
+            self.refresh_notes()
+            self.show_sidebar()
+            self.query_one("#notes").focus()
+
+    def add_tags(self, tags: str | None) -> None:
+        if not tags:
+            return
+        editor = self.query_one("#editor", TextArea)
+        try:
+            body = tagged_body(editor.text, tags)
+        except ValueError as error:
+            self.notify(str(error), severity="error")
+            return
+        # Insert only the suffix, retaining the editor's undo history.
+        editor.insert(body[len(editor.text):], self.editor_location(len(editor.text), editor.text))
+        self.save_current()
+        editor.focus()
 
     @staticmethod
     def editor_offset(location: tuple[int, int], text: str) -> int:
@@ -481,7 +607,9 @@ class Jotline(App):
             self.notify("Vault refreshed from disk.")
 
     def action_commands(self) -> None:
-        choices = [("settings", "Settings · appearance, editor, workflow"), ("new", "New thought                    ctrl+n"), ("daily", "Open today's daily log         ctrl+d"),
+        choices = [("tags", "Browse tags                     ctrl+t"), ("add-tags", "Add tags to this note"),
+                   ("workspaces", "Switch workspace                ctrl+w"), ("new-workspace", "Create workspace"),
+                   ("move-workspace", "Move note to workspace"), ("settings", "Settings · appearance, editor, workflow"), ("new", "New thought                    ctrl+n"), ("daily", "Open today's daily log         ctrl+d"),
                    ("open", "Open a note                    ctrl+o"), ("focus", "Toggle focus mode              ctrl+b"),
                    ("find", "Find within current note"), ("refresh", "Refresh vault from disk"),
                    ("star", "Toggle star on this note"), ("link", "Insert note link"), ("follow", "Follow a link in this note"),
@@ -495,7 +623,18 @@ class Jotline(App):
     def command(self, key: str | None) -> None:
         if not key:
             return
-        if key == 'settings':
+        if key == "tags":
+            self.action_tags()
+        elif key == "add-tags":
+            self.push_screen(TextPrompt("Add tags to this note", "#work #ideas or project/topic"), self.add_tags)
+        elif key == "workspaces":
+            self.action_workspaces()
+        elif key == "new-workspace":
+            self.push_screen(TextPrompt("Create a workspace", "e.g. personal, work, research"), self.switch_workspace)
+        elif key == "move-workspace":
+            self.push_screen(Palette([(name, name) for name in self.workspace_names()
+                                      if name != self.workspace], "Move note to workspace"), self.move_workspace)
+        elif key == 'settings':
             self.push_screen(Preferences(self.settings), self.save_settings)
         elif key == "find":
             self.push_screen(FindInNote())
@@ -543,7 +682,7 @@ class Jotline(App):
                 self.notify(str(error), severity="error")
         elif key in {"link", "follow", "backlinks"}:
             self.capture_current_buffer()
-            notes = self.vault.search()
+            notes = self.vault.search(workspace=self.workspace)
             if key == "follow":
                 links = self.current.links
                 notes = [n for n in notes if n.id in links or n.title in links]
@@ -566,7 +705,7 @@ class Jotline(App):
         elif key in {"help", "review"}:
             if self.save_current():
                 body = GUIDE if key == "help" else REVIEW
-                self.load(self.vault.new(body))
+                self.load(self.vault.new(body, workspace=self.workspace))
                 self.dirty = True
                 self.save_current()
 
@@ -590,9 +729,21 @@ Preferences are saved for this vault.
 ## Writing
 Use Markdown: # headings, **emphasis**, - lists, and - [ ] tasks.
 Add #tags anywhere; search #tag to find exact tag matches.
+Ctrl+T browses workspace tags and counts. Ctrl+P → Add tags appends tags.
+Edit or remove inline tags directly in the note; no separate tag database is needed.
+
+## Workspaces
+Ctrl+W switches workspaces or creates one, such as work or personal.
+Ctrl+P → Move note to workspace moves a regular note without changing its file ID.
+Each workspace has its own daily logs, collections, search results, and links.
+Existing notes are in default. Workspace names use lowercase letters, numbers, - or _.
+All Markdown stays in the same vault folder; workspace is saved in note metadata.
+Appearance and editor settings are shared across this vault.
+
+## Navigation
 Ctrl+P → Toggle task checks or unchecks the current line.
 Ctrl+B hides the sidebar. Ctrl+O finds a note by title.
-Ctrl+F searches all notes (except trash). Multiple words narrow results.
+Ctrl+F searches this workspace (except trash). Multiple words narrow results.
 Ctrl+P → Follow a link or Open a backlink moves between connected notes.
 Links inserted by Jotline use stable IDs, so changing titles is safe.
 

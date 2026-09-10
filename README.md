@@ -50,6 +50,8 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+N` | New thought |
+| `Ctrl+T` | Browse workspace tags |
+| `Ctrl+W` | Switch or create workspace |
 | `Ctrl+P` | Searchable command palette |
 | `Ctrl+O` | Open a note by title |
 | `Ctrl+D` | Today's daily log |
@@ -122,6 +124,46 @@ Redirected export preserves the note body, including line endings. Export to an
 interactive terminal refuses unsafe control characters unless you explicitly pass
 `--raw`. Diagnostics escape terminal control characters.
 
+## Tags and workspaces
+
+Press **Ctrl+T** to browse tags and note counts in the current workspace. Select a
+tag to filter notes, or use **Ctrl+P → Add tags to this note** to append tags such
+as `#work #ideas #project/topic`. Tags are case-insensitive and stay in the Markdown
+body: edit or remove them directly in the note. Search can combine words and tags.
+
+Press **Ctrl+W** to switch or create a workspace, such as `work`, `personal`, or
+`research`. **Ctrl+P → Move note to workspace** moves the current regular note.
+Switching saves pending edits first and stops if saving fails. Jotline remembers
+the workspace for your next launch and shell captures.
+
+Each workspace scopes its collections, tag browser, search, note pickers, and
+links. Daily logs are separate per workspace and stay in their original workspace;
+copy their text into a regular note if you want to move that content. Appearance
+and editor preferences remain shared for the vault.
+
+Existing notes belong to `default`. Workspaces are organization, not access control:
+**all Markdown files remain directly in your existing local notes folder**, with
+workspace membership recorded in their front matter. Moving a note preserves its
+filename and contents. A link to a moved note becomes visible again when both
+notes are in the same workspace. No account, database, or new dependency is needed.
+Workspace names use 1–48 lowercase letters, numbers, hyphens, or underscores,
+starting with a letter or number. Use this version or later when editing workspace
+notes; older versions do not preserve the new metadata field.
+
+```bash
+jotline workspaces
+jotline --workspace work                  # open the terminal app
+jotline --workspace work capture 'Meeting #team'
+jotline --workspace work capture --daily 'Today’s progress'
+jotline --workspace work tags
+jotline --workspace work list '#team'
+jotline --workspace work tag NOTE_ID ideas project/topic
+```
+
+Put `--workspace` before the subcommand. Without it, commands use the last
+workspace selected in the app. `path` reports the shared vault folder and `doctor`
+checks the entire vault.
+
 ## Your data
 
 - Local `.md` files; no account, telemetry, hosted backend, or network requirement at runtime.
@@ -142,7 +184,7 @@ still need further indexing work.
 
 ## Status
 
-Version 0.3 is an early release. It offers plain-text Markdown editing, not a rendered Markdown preview or a full Vim emulation. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
+Version 0.4 is an early release. It offers plain-text Markdown editing, not a rendered Markdown preview or a full Vim emulation. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
 
 ## Contributing
 
