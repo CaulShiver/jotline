@@ -6,11 +6,14 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
+from textual.theme import Theme
 from textual.widgets import Footer, Input, Label, OptionList, Static, TextArea
 from textual.widgets.option_list import Option
 from rich.text import Text
 
 from .store import COLLECTIONS, Note, Vault
+from .settings import Settings
+from .preferences import Preferences
 
 
 class Palette(ModalScreen[str | None]):
@@ -80,21 +83,21 @@ class Jotline(App):
     TITLE = "jotline"
     ENABLE_COMMAND_PALETTE = False
     CSS = """
-    Screen { background: #101619; color: #d6ddd8; }
-    #brand { height: 3; padding: 1 2 0 2; color: #a8d5a2; text-style: bold; }
+    Screen { background: $background; color: $foreground; }
+    #brand { height: 3; padding: 1 2 0 2; color: $accent; text-style: bold; }
     #workspace { height: 1fr; }
-    #sidebar { width: 32; min-width: 22; border-right: solid #2c3a3d; padding: 0 1; }
-    #collection { height: 2; padding-left: 1; color: #96a8ab; }
-    #search { margin-bottom: 1; border: tall #2c3a3d; background: #162024; }
-    #notes { border: none; background: #101619; height: 1fr; }
-    #notes > .option-list--option-highlighted { background: #233b36; color: #c9ebbf; }
+    #sidebar { width: 32; min-width: 22; border-right: solid $primary-muted; padding: 0 1; }
+    #collection { height: 2; padding-left: 1; color: $text-muted; }
+    #search { margin-bottom: 1; border: tall $primary-muted; background: $surface; }
+    #notes { border: none; background: $background; height: 1fr; }
+    #notes > .option-list--option-highlighted { background: $primary-muted; color: $foreground; }
     #writing { width: 1fr; padding: 0 2; }
-    #note-heading { height: 2; color: #a8d5a2; }
-    #editor { height: 1fr; border: none; background: #101619; }
-    #status { height: 2; padding-top: 1; color: #96a8ab; }
-    #connections { height: auto; max-height: 5; padding-top: 1; color: #96a8ab; }
-    #hint { height: 2; padding: 0 2; color: #96a8ab; }
-    Footer { background: #162024; }
+    #note-heading { height: 2; color: $accent; }
+    #editor { height: 1fr; border: none; background: $background; }
+    #status { height: 2; padding-top: 1; color: $text-muted; }
+    #connections { height: auto; max-height: 5; padding-top: 1; color: $text-muted; }
+    #hint { height: 2; padding: 0 2; color: $text-muted; }
+    Footer { background: $surface; }
     .hidden { display: none; }
     """
     BINDINGS = [
@@ -112,7 +115,12 @@ class Jotline(App):
     def __init__(self, vault: Vault):
         super().__init__()
         self.vault = vault
+        self.settings_path = vault.path / '.jotline-settings.json'
+        self.settings, self.settings_warning = Settings.load(self.settings_path)
+        self.register_theme(Theme(name='jotline', primary='#a8d5a2', accent='#a8d5a2',
+                                  foreground='#d6ddd8', background='#101619', surface='#162024', panel='#162024'))
         self.current = vault.new()
+        self.current.collection = self.settings.default_collection
         self.collection = "inbox"
         self.dirty = False
         self.last_error = ""
@@ -134,15 +142,57 @@ class Jotline(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.theme = "textual-dark"
+        self.apply_settings()
         self.refresh_notes()
-        self.set_interval(0.7, self.autosave)
-        self.query_one(TextArea).focus()
+        self.autosave_timer = self.set_interval(self.settings.autosave_seconds, self.autosave)
+        if self.settings.startup == 'daily':
+            self.action_daily()
+        if self.settings_warning:
+            self.notify(self.settings_warning, severity='warning', timeout=10)
+        self.query_one("#editor", TextArea).focus()
         if self.vault.warnings:
             self.notify("Some Markdown files could not be read. Run jotline list to inspect warnings.", severity="warning")
 
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        # Let the settings screen own its keyboard; never run editor shortcuts underneath it.
+        if isinstance(self.screen, Preferences):
+            return False
+        return super().check_action(action, parameters)
+
+    def apply_settings(self) -> None:
+        settings = self.settings
+        self.theme = settings.theme
+        editor = self.query_one('#editor', TextArea)
+        editor.soft_wrap = settings.soft_wrap
+        editor.show_line_numbers = settings.line_numbers
+        editor.highlight_cursor_line = settings.highlight_line
+        self.query_one('#sidebar').styles.width = settings.sidebar_width
+        self.focused_writing = settings.focus_on_start
+        self.query_one('#sidebar').set_class(self.focused_writing, 'hidden')
+        self.query_one('#hint').set_class(self.focused_writing or not settings.show_hints, 'hidden')
+
+    def save_settings(self, settings: Settings | None) -> None:
+        if settings is None:
+            return
+        try:
+            settings.save(self.settings_path)
+        except (OSError, ValueError) as error:
+            self.notify(f'Settings were not saved: {error}', severity='error', timeout=10)
+            return
+        self.settings = settings
+        self.apply_settings()
+        self.autosave_timer.stop()
+        self.autosave_timer = self.set_interval(settings.autosave_seconds, self.autosave)
+        self.refresh_notes()
+        self.query_one('#editor', TextArea).focus()
+        self.notify('Settings saved. Startup choices apply next launch.')
+
     def refresh_notes(self) -> None:
         notes = self.vault.search(self.query_one("#search", Input).value, self.collection)
+        if self.settings.sort_order == 'title':
+            notes.sort(key=lambda n: (not n.starred, n.title.casefold(), n.id))
+        elif self.settings.sort_order == 'created':
+            notes.sort(key=lambda n: (n.starred, n.created, n.id), reverse=True)
         listing = self.query_one("#notes", OptionList)
         listing.clear_options()
         listing.add_options([Option(Text(("★ " if n.starred else "") + n.title + "\n" +
@@ -165,7 +215,7 @@ class Jotline(App):
 
     @on(TextArea.Changed, "#editor")
     def edited(self) -> None:
-        text = self.query_one(TextArea).text
+        text = self.query_one("#editor", TextArea).text
         if text != self.current.body:
             self.current.body = text
             self.dirty = True
@@ -177,7 +227,7 @@ class Jotline(App):
 
     def save_current(self) -> bool:
         # Capture the buffer synchronously even when its Changed message is pending.
-        body = self.query_one(TextArea).text
+        body = self.query_one("#editor", TextArea).text
         if body != self.current.body:
             self.current.body, self.dirty = body, True
         if not self.dirty:
@@ -207,8 +257,8 @@ class Jotline(App):
 
     def load(self, note: Note) -> None:
         self.current, self.dirty, self.last_error = note, False, ""
-        self.query_one(TextArea).load_text(note.body)
-        self.query_one(TextArea).focus()
+        self.query_one("#editor", TextArea).load_text(note.body)
+        self.query_one("#editor", TextArea).focus()
         self.status("Saved" if note.original is not None else "Ready")
         self.connections()
 
@@ -222,12 +272,14 @@ class Jotline(App):
 
     def action_new(self) -> None:
         if self.save_current():
-            self.load(self.vault.new())
+            note = self.vault.new()
+            note.collection = self.settings.default_collection
+            self.load(note)
 
     def action_daily(self) -> None:
         if self.save_current():
-            self.load(self.vault.daily())
-            editor = self.query_one(TextArea)
+            self.load(self.vault.daily(self.settings.daily_template))
+            editor = self.query_one("#editor", TextArea)
             lines = editor.text.split("\n")
             editor.move_cursor((len(lines) - 1, len(lines[-1])))
 
@@ -239,7 +291,7 @@ class Jotline(App):
         self.query_one("#search", Input).focus()
 
     def action_editor_focus(self) -> None:
-        self.query_one(TextArea).focus()
+        self.query_one("#editor", TextArea).focus()
 
     def action_save(self) -> None:
         self.save_current()
@@ -251,8 +303,8 @@ class Jotline(App):
     def action_focus_mode(self) -> None:
         self.focused_writing = not self.focused_writing
         self.query_one("#sidebar").set_class(self.focused_writing, "hidden")
-        self.query_one("#hint").set_class(self.focused_writing, "hidden")
-        self.query_one(TextArea).focus()
+        self.query_one("#hint").set_class(self.focused_writing or not self.settings.show_hints, "hidden")
+        self.query_one("#editor", TextArea).focus()
 
     def action_open_note(self) -> None:
         notes = self.vault.search()
@@ -260,7 +312,7 @@ class Jotline(App):
                          lambda key: self.load_id(key) if key else None)
 
     def action_commands(self) -> None:
-        choices = [("new", "New thought                    ctrl+n"), ("daily", "Open today's daily log         ctrl+d"),
+        choices = [("settings", "Settings · appearance, editor, workflow"), ("new", "New thought                    ctrl+n"), ("daily", "Open today's daily log         ctrl+d"),
                    ("open", "Open a note                    ctrl+o"), ("focus", "Toggle focus mode              ctrl+b"),
                    ("star", "Toggle star on this note"), ("link", "Insert note link"), ("follow", "Follow a link in this note"),
                    ("backlinks", "Open a backlink"), ("task", "Toggle task on current line"),
@@ -273,7 +325,9 @@ class Jotline(App):
     def command(self, key: str | None) -> None:
         if not key:
             return
-        if key.startswith("view:"):
+        if key == 'settings':
+            self.push_screen(Preferences(self.settings), self.save_settings)
+        elif key.startswith("view:"):
             self.collection = key[5:]
             self.query_one("#search", Input).value = ""
             self.refresh_notes()
@@ -293,10 +347,10 @@ class Jotline(App):
             {"new": self.action_new, "daily": self.action_daily, "focus": self.action_focus_mode,
              "open": self.action_open_note}[key]()
         elif key == "copy":
-            self.copy_to_clipboard(self.query_one(TextArea).text)
+            self.copy_to_clipboard(self.query_one("#editor", TextArea).text)
             self.notify("Copy requested. Your terminal must allow OSC 52 clipboard access.")
         elif key == "task":
-            editor = self.query_one(TextArea)
+            editor = self.query_one("#editor", TextArea)
             row, _ = editor.cursor_location
             line = editor.text.split("\n")[row]
             if line.lstrip().startswith("- [ ] "):
@@ -307,7 +361,7 @@ class Jotline(App):
                 updated = "- [ ] " + line
             editor.replace(updated, (row, 0), (row, len(line)))
         elif key == "recovery":
-            self.current.body = self.query_one(TextArea).text
+            self.current.body = self.query_one("#editor", TextArea).text
             try:
                 self.load(self.vault.recovery(self.current))
                 self.refresh_notes()
@@ -315,7 +369,7 @@ class Jotline(App):
             except OSError as error:
                 self.notify(str(error), severity="error")
         elif key in {"link", "follow", "backlinks"}:
-            self.current.body = self.query_one(TextArea).text
+            self.current.body = self.query_one("#editor", TextArea).text
             notes = self.vault.search()
             if key == "follow":
                 notes = [n for n in notes if n.id in self.current.links or n.title in self.current.links]
@@ -330,8 +384,8 @@ class Jotline(App):
                 if note_id and key == "link":
                     note = next(n for n in notes if n.id == note_id)
                     label = note.title.replace("]", "").replace("|", "")
-                    self.query_one(TextArea).insert(f"[[{note.id}|{label}]]")
-                    self.query_one(TextArea).focus()
+                    self.query_one("#editor", TextArea).insert(f"[[{note.id}|{label}]]")
+                    self.query_one("#editor", TextArea).focus()
                 elif note_id:
                     self.load_id(note_id)
             self.push_screen(Palette([(n.id, n.title) for n in notes], "Choose a note"), picked)
@@ -354,6 +408,10 @@ The first line becomes the title. Your words save automatically.
 - Keep a useful idea in its own note. Ctrl+P → Insert note link connects it.
 - Review the inbox regularly. Move useful notes to projects, areas, or resources.
 - Archive what is finished. Trash is reversible; move a note back to restore it.
+
+## Make it yours
+Ctrl+P → Settings changes themes, editor, layout, startup, and daily templates.
+Preferences are saved for this vault.
 
 ## Writing
 Use Markdown: # headings, **emphasis**, - lists, and - [ ] tasks.

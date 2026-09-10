@@ -6,6 +6,7 @@ import sys
 
 from . import __version__
 from .store import Vault
+from .settings import Settings
 
 
 def default_vault() -> Path:
@@ -37,11 +38,15 @@ def main() -> None:
             body = " ".join(args.text) if args.text else (sys.stdin.read() if not sys.stdin.isatty() else "")
             if not body.strip():
                 parser.error("Provide text or pipe text to jotline capture")
+            settings, warning = Settings.load(vault.path / '.jotline-settings.json')
+            if warning:
+                print(warning, file=sys.stderr)
             if args.daily:
-                note = vault.daily()
+                note = vault.daily(settings.daily_template)
                 note.body = note.body.rstrip() + "\n\n" + body + "\n"
             else:
                 note = vault.new(body)
+                note.collection = settings.default_collection
             vault.save(note)
             print(note.id)
         elif args.command == "list":

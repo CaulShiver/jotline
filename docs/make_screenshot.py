@@ -19,6 +19,9 @@ async def main():
             app.load_id(daily.id)
             await pilot.pause()
             app.save_screenshot('screenshot.svg', path='docs')
+            app.command('settings')
+            await pilot.pause()
+            app.save_screenshot('settings.svg', path='docs')
 
 
 asyncio.run(main())

@@ -131,14 +131,14 @@ class Vault:
                     os.unlink(temp)
             note.original, note.updated, note.created = raw, stamp, meta["created"]
 
-    def daily(self) -> Note:
+    def daily(self, template: str = "# {{date}}\n\n") -> Note:
         note_id = f"daily-{date.today().isoformat()}"
         with self.locked():
             # Return an unsaved note; save() protects concurrent creation.
             if self.file(note_id).exists():
                 return self.read(note_id)
             stamp = now()
-            return Note(note_id, f"# {date.today().isoformat()}\n\n", "inbox", stamp, stamp)
+            return Note(note_id, template.replace("{{date}}", date.today().isoformat()), "inbox", stamp, stamp)
 
     def backlinks(self, target: Note) -> list[Note]:
         return [n for n in self.notes() if n.id != target.id and n.collection != "trash"

@@ -62,6 +62,28 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 
 The palette also offers star, move, restore from trash, task toggle, link insertion/navigation, backlinks, recovery copies, and a writing guide. Type words to narrow commands, use arrows to choose, then Enter. Standard text selection, undo, and redo are provided by the editor. Clipboard copy uses OSC 52 and depends on your terminal's permissions and support.
 
+## Make it yours
+
+Open **Ctrl+P → Settings**. Change preferences with Tab, arrows, and Space; choose
+**Save** (or Ctrl+S) to apply them. Escape cancels. **Use defaults** fills the form
+with the original settings; nothing changes until you save.
+
+- **Nine themes**, including Jotline, Nord, Gruvbox, Dracula, Tokyo Night,
+  Catppuccin Mocha, Solarized dark/light, and Textual light.
+- **Editor:** line numbers, wrapping, and current-line highlighting.
+- **Layout:** sidebar width, writing hints, and starting in focus mode.
+- **Workflow:** open a blank thought or today's log, choose the collection for new
+  thoughts, and sort notes by last edit, creation date, or title (stars stay first).
+- **Autosave:** choose an interval from 0.2 to 5 seconds.
+- **Daily template:** write your own Markdown structure. `{{date}}` inserts the
+  current date. Existing daily logs are never replaced when the template changes.
+
+Settings live in `.jotline-settings.json` inside each vault and survive restarts.
+Shell capture uses the same default collection and daily template. Daily logs stay
+in the inbox unless you move them. Font family and size come from your terminal.
+
+![Jotline settings](docs/settings.svg)
+
 ## Search and links
 
 Search matches all entered words across note bodies. `#work` matches an exact tag; `planning #work` combines a word and a tag. Search includes archived notes and excludes trash unless the trash collection is selected. Tags are case-insensitive and can be nested, such as `#project/launch`.
@@ -86,7 +108,7 @@ Set `JOTLINE_VAULT` to use a different vault by default. Otherwise notes live in
 
 - Local `.md` files; no account, telemetry, hosted backend, or network requirement at runtime.
 - Small YAML-compatible front matter stores collection, timestamps, and starred state.
-- Atomic, fsynced saves. Normal exit saves pending edits. Abrupt termination may lose the last autosave interval (about 0.7 seconds).
+- Atomic, fsynced saves. Normal exit saves pending edits. Abrupt termination may lose the last autosave interval (0.7 seconds by default; configurable).
 - Jotline coordinates its own writers and detects external edits before saving. It will block navigation/exit on a save failure so the buffer remains available. **Save recovery copy** preserves your buffer as a new inbox note.
 - Trash is reversible. There is no permanent-delete command.
 - Keep a backup of your vault. Sync and encryption are up to your existing tools; simultaneous edits through an external editor or sync provider are not a collaborative editing protocol.
@@ -96,7 +118,7 @@ External Markdown files can be placed directly in the vault with filenames conta
 
 ## Status
 
-Version 0.1 is a working first release. It offers plain-text Markdown editing, not a rendered Markdown preview or a full Vim emulation. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
+Version 0.2 is a working first release. It offers plain-text Markdown editing, not a rendered Markdown preview or a full Vim emulation. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
 
 ## Contributing
 
