@@ -70,8 +70,20 @@ class Preferences(ModalScreen[Settings | None]):
                 data[name] = self.query_one('#pref-' + name, Select).value
             for name in ('line_numbers', 'soft_wrap', 'highlight_line', 'focus_on_start', 'show_hints'):
                 data[name] = self.query_one('#pref-' + name, Switch).value
-            data['sidebar_width'] = int(self.query_one('#pref-sidebar_width', Input).value)
-            data['autosave_seconds'] = float(self.query_one('#pref-autosave_seconds', Input).value)
+            sidebar_width = self.query_one('#pref-sidebar_width', Input).value.strip()
+            autosave_seconds = self.query_one('#pref-autosave_seconds', Input).value.strip()
+            if not sidebar_width:
+                raise ValueError('Sidebar width is required')
+            if not autosave_seconds:
+                raise ValueError('Autosave interval is required')
+            try:
+                data['sidebar_width'] = int(sidebar_width)
+            except ValueError:
+                raise ValueError('Sidebar width must be a whole number') from None
+            try:
+                data['autosave_seconds'] = float(autosave_seconds)
+            except ValueError:
+                raise ValueError('Autosave interval must be a number') from None
             data['daily_template'] = self.query_one('#daily-template', TextArea).text
             settings = Settings(**data)
             settings.validate()

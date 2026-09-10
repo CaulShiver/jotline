@@ -22,6 +22,12 @@ async def main():
             app.command('settings')
             await pilot.pause()
             app.save_screenshot('settings.svg', path='docs')
+            await pilot.press('escape')
+            app.command('find')
+            await pilot.pause()
+            await pilot.press(*'thought')
+            await pilot.pause()
+            app.save_screenshot('find.svg', path='docs')
 
 
 asyncio.run(main())

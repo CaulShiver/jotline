@@ -1,13 +1,15 @@
 """Keyboard-first writing UI. No shell commands are executed by the palette."""
 from __future__ import annotations
 
+import re
+
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.theme import Theme
-from textual.widgets import Footer, Input, Label, OptionList, Static, TextArea
+from textual.widgets import Button, Footer, Input, Label, OptionList, Static, TextArea
 from textual.widgets.option_list import Option
 from rich.text import Text
 
@@ -79,6 +81,97 @@ class Palette(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class FindInNote(ModalScreen[None]):
+    BINDINGS = [Binding("escape", "done", "Done"), Binding("f3", "next", "Next"),
+                Binding("shift+f3", "previous", "Previous")]
+    CSS = """
+    FindInNote { align: center top; background: $background 70%; }
+    #find-panel { width: 68; max-width: 95%; height: auto; margin-top: 3;
+        border: round $accent; padding: 1 2; background: $surface; }
+    #find-title { color: $accent; margin-bottom: 1; }
+    #find-status { height: 2; padding-top: 1; color: $text-muted; }
+    #find-context { height: auto; max-height: 3; color: $foreground; background: $background;
+        padding: 0 1; }
+    #find-buttons { height: 3; margin-top: 1; }
+    #find-buttons Button { margin-right: 1; }
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.anchor = 0
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="find-panel"):
+            yield Label("Find within this note", id="find-title")
+            yield Input(placeholder="Type text to find…", id="find-query")
+            yield Static("Enter / F3 next · Shift+F3 previous · Esc done", id="find-status")
+            yield Static("", id="find-context", markup=False)
+            with Horizontal(id="find-buttons"):
+                yield Button("Next", variant="primary", id="find-next")
+                yield Button("Previous", id="find-previous")
+                yield Button("Done", id="find-done")
+
+    def on_mount(self) -> None:
+        editor = self.app.query_one("#editor", TextArea)
+        self.anchor = self.app.editor_offset(editor.cursor_location, editor.text)
+        self.query_one(Input).focus()
+
+    def show_match(self, *, reverse: bool = False, initial: bool = False) -> None:
+        query = self.query_one("#find-query", Input).value
+        status = self.query_one("#find-status", Static)
+        if not query:
+            status.update("Enter / F3 next · Shift+F3 previous · Esc done")
+            self.query_one("#find-context", Static).update("")
+            return
+        result = self.app.select_editor_match(query, reverse=reverse,
+                                              anchor=self.anchor if initial else None)
+        if result is None:
+            status.update("No matches · keep typing or Esc to return")
+            self.query_one("#find-context", Static).update("")
+        else:
+            current, total = result
+            status.update(f"Match {current} of {total} · Enter / F3 next · Shift+F3 previous")
+            self.update_context()
+
+    def update_context(self) -> None:
+        editor = self.app.query_one("#editor", TextArea)
+        row, start = editor.selection.start
+        _, end = editor.selection.end
+        line = editor.text.split("\n")[row]
+        preview = Text(f"Line {row + 1} · ", style="dim")
+        preview.append(line[:start])
+        preview.append(line[start:end], style="bold reverse")
+        preview.append(line[end:])
+        self.query_one("#find-context", Static).update(preview)
+
+    @on(Input.Changed, "#find-query")
+    def query_changed(self) -> None:
+        self.show_match(initial=True)
+
+    @on(Input.Submitted, "#find-query")
+    def query_submitted(self) -> None:
+        self.show_match()
+
+    @on(Button.Pressed)
+    def button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "find-next":
+            self.show_match()
+        elif event.button.id == "find-previous":
+            self.show_match(reverse=True)
+        else:
+            self.action_done()
+
+    def action_next(self) -> None:
+        self.show_match()
+
+    def action_previous(self) -> None:
+        self.show_match(reverse=True)
+
+    def action_done(self) -> None:
+        self.dismiss(None)
+        self.app.query_one("#editor", TextArea).focus()
+
+
 class Jotline(App):
     TITLE = "jotline"
     ENABLE_COMMAND_PALETTE = False
@@ -121,7 +214,7 @@ class Jotline(App):
                                   foreground='#d6ddd8', background='#101619', surface='#162024', panel='#162024'))
         self.current = vault.new()
         self.current.collection = self.settings.default_collection
-        self.collection = "inbox"
+        self.collection = self.settings.default_collection
         self.dirty = False
         self.last_error = ""
         self.focused_writing = False
@@ -134,7 +227,7 @@ class Jotline(App):
                 yield Input(placeholder="Search words or #tags", id="search")
                 yield OptionList(id="notes")
             with Vertical(id="writing"):
-                yield Static("new thought / inbox", id="note-heading")
+                yield Static(self.current.title + " / " + self.current.collection, id="note-heading")
                 yield TextArea("", soft_wrap=True, tab_behavior="focus", show_line_numbers=False, id="editor")
                 yield Static("", id="connections", markup=False)
                 yield Static("Ready · local Markdown", id="status", markup=False)
@@ -142,7 +235,8 @@ class Jotline(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.apply_settings()
+        self.apply_settings(startup=True)
+        self.status("Ready")
         self.refresh_notes()
         self.autosave_timer = self.set_interval(self.settings.autosave_seconds, self.autosave)
         if self.settings.startup == 'daily':
@@ -154,12 +248,12 @@ class Jotline(App):
             self.notify("Some Markdown files could not be read. Run jotline list to inspect warnings.", severity="warning")
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        # Let the settings screen own its keyboard; never run editor shortcuts underneath it.
-        if isinstance(self.screen, Preferences):
+        # Let modal screens own the keyboard; never run editor shortcuts underneath them.
+        if isinstance(self.screen, ModalScreen):
             return False
         return super().check_action(action, parameters)
 
-    def apply_settings(self) -> None:
+    def apply_settings(self, *, startup: bool = False) -> None:
         settings = self.settings
         self.theme = settings.theme
         editor = self.query_one('#editor', TextArea)
@@ -167,7 +261,8 @@ class Jotline(App):
         editor.show_line_numbers = settings.line_numbers
         editor.highlight_cursor_line = settings.highlight_line
         self.query_one('#sidebar').styles.width = settings.sidebar_width
-        self.focused_writing = settings.focus_on_start
+        if startup:
+            self.focused_writing = settings.focus_on_start
         self.query_one('#sidebar').set_class(self.focused_writing, 'hidden')
         self.query_one('#hint').set_class(self.focused_writing or not settings.show_hints, 'hidden')
 
@@ -215,11 +310,17 @@ class Jotline(App):
 
     @on(TextArea.Changed, "#editor")
     def edited(self) -> None:
-        text = self.query_one("#editor", TextArea).text
-        if text != self.current.body:
-            self.current.body = text
-            self.dirty = True
-            self.status("Saving…")
+        self.capture_current_buffer()
+
+    def capture_current_buffer(self) -> bool:
+        """Copy the editor into the note while preserving its unsaved state."""
+        body = self.query_one("#editor", TextArea).text
+        if body == self.current.body:
+            return False
+        self.current.body = body
+        self.dirty = True
+        self.status("Saving…")
+        return True
 
     def status(self, message: str) -> None:
         self.query_one("#status", Static).update(f"{message}  ·  {len(self.current.body.split())} words  ·  {self.current.collection}")
@@ -227,9 +328,7 @@ class Jotline(App):
 
     def save_current(self) -> bool:
         # Capture the buffer synchronously even when its Changed message is pending.
-        body = self.query_one("#editor", TextArea).text
-        if body != self.current.body:
-            self.current.body, self.dirty = body, True
+        self.capture_current_buffer()
         if not self.dirty:
             return True
         try:
@@ -274,19 +373,27 @@ class Jotline(App):
         if self.save_current():
             note = self.vault.new()
             note.collection = self.settings.default_collection
+            self.collection = note.collection
             self.load(note)
+            self.refresh_notes()
 
     def action_daily(self) -> None:
         if self.save_current():
-            self.load(self.vault.daily(self.settings.daily_template))
+            try:
+                note = self.vault.daily(self.settings.daily_template)
+            except (OSError, ValueError) as error:
+                self.notify(f"Could not open today's daily log: {error}", severity="error", timeout=10)
+                return
+            self.collection = note.collection
+            self.load(note)
+            self.refresh_notes()
             editor = self.query_one("#editor", TextArea)
             lines = editor.text.split("\n")
             editor.move_cursor((len(lines) - 1, len(lines[-1])))
 
     def action_search(self) -> None:
         self.collection = "all"
-        self.focused_writing = False
-        self.query_one("#sidebar").remove_class("hidden")
+        self.show_sidebar()
         self.refresh_notes()
         self.query_one("#search", Input).focus()
 
@@ -306,14 +413,77 @@ class Jotline(App):
         self.query_one("#hint").set_class(self.focused_writing or not self.settings.show_hints, "hidden")
         self.query_one("#editor", TextArea).focus()
 
+    def show_sidebar(self) -> None:
+        self.focused_writing = False
+        self.query_one("#sidebar").remove_class("hidden")
+        self.query_one("#hint").set_class(not self.settings.show_hints, "hidden")
+
     def action_open_note(self) -> None:
         notes = self.vault.search()
         self.push_screen(Palette([(n.id, n.title + " · " + n.collection) for n in notes], "Open a note"),
                          lambda key: self.load_id(key) if key else None)
 
+    @staticmethod
+    def editor_offset(location: tuple[int, int], text: str) -> int:
+        row, column = location
+        lines = text.split("\n")
+        return sum(len(line) + 1 for line in lines[:row]) + column
+
+    @staticmethod
+    def editor_location(offset: int, text: str) -> tuple[int, int]:
+        before = text[:offset]
+        row = before.count("\n")
+        return row, len(before.rsplit("\n", 1)[-1])
+
+    def select_editor_match(self, query: str, *, reverse: bool = False,
+                            anchor: int | None = None) -> tuple[int, int] | None:
+        editor = self.query_one("#editor", TextArea)
+        text = editor.text
+        matches = list(re.finditer(re.escape(query), text, re.IGNORECASE))
+        if not matches:
+            return None
+        if anchor is None:
+            location = editor.selection.start if reverse else editor.selection.end
+            anchor = self.editor_offset(location, text)
+        if reverse:
+            match = next((item for item in reversed(matches) if item.start() < anchor), matches[-1])
+        else:
+            match = next((item for item in matches if item.start() >= anchor), matches[0])
+        start = self.editor_location(match.start(), text)
+        end = self.editor_location(match.end(), text)
+        editor.move_cursor(start)
+        editor.move_cursor(end, select=True, center=True)
+        return matches.index(match) + 1, len(matches)
+
+    def refresh_vault(self) -> None:
+        self.vault.invalidate_cache()
+        self.capture_current_buffer()
+        kept_unsaved = self.dirty
+        reload_failed = False
+        if not kept_unsaved and self.current.original is not None:
+            try:
+                self.load(self.vault.read(self.current.id))
+            except FileNotFoundError:
+                self.dirty = kept_unsaved = reload_failed = True
+                self.status("File removed outside Jotline · recovery available")
+            except (OSError, ValueError) as error:
+                self.dirty = kept_unsaved = reload_failed = True
+                self.status("Could not reload file · recovery available")
+                self.notify(f"Could not reload this note: {error}", severity="error", timeout=10)
+        self.refresh_notes()
+        self.connections()
+        if kept_unsaved and not reload_failed:
+            self.status("Refreshed · unsaved changes kept")
+        if self.vault.warnings:
+            self.notify("Some Markdown files could not be read. Run jotline list to inspect warnings.",
+                        severity="warning", timeout=10)
+        elif not reload_failed:
+            self.notify("Vault refreshed from disk.")
+
     def action_commands(self) -> None:
         choices = [("settings", "Settings · appearance, editor, workflow"), ("new", "New thought                    ctrl+n"), ("daily", "Open today's daily log         ctrl+d"),
                    ("open", "Open a note                    ctrl+o"), ("focus", "Toggle focus mode              ctrl+b"),
+                   ("find", "Find within current note"), ("refresh", "Refresh vault from disk"),
                    ("star", "Toggle star on this note"), ("link", "Insert note link"), ("follow", "Follow a link in this note"),
                    ("backlinks", "Open a backlink"), ("task", "Toggle task on current line"),
                    ("copy", "Copy note to clipboard (terminal OSC 52)"), ("recovery", "Save recovery copy"),
@@ -327,12 +497,15 @@ class Jotline(App):
             return
         if key == 'settings':
             self.push_screen(Preferences(self.settings), self.save_settings)
+        elif key == "find":
+            self.push_screen(FindInNote())
+        elif key == "refresh":
+            self.refresh_vault()
         elif key.startswith("view:"):
             self.collection = key[5:]
             self.query_one("#search", Input).value = ""
             self.refresh_notes()
-            self.query_one("#sidebar").remove_class("hidden")
-            self.focused_writing = False
+            self.show_sidebar()
             self.query_one("#notes").focus()
         elif key.startswith("move:") or key == "star":
             if not self.save_current():
@@ -361,15 +534,15 @@ class Jotline(App):
                 updated = "- [ ] " + line
             editor.replace(updated, (row, 0), (row, len(line)))
         elif key == "recovery":
-            self.current.body = self.query_one("#editor", TextArea).text
+            self.capture_current_buffer()
             try:
                 self.load(self.vault.recovery(self.current))
                 self.refresh_notes()
                 self.notify("Saved a separate recovery copy in the inbox.")
-            except OSError as error:
+            except (OSError, ValueError) as error:
                 self.notify(str(error), severity="error")
         elif key in {"link", "follow", "backlinks"}:
-            self.current.body = self.query_one("#editor", TextArea).text
+            self.capture_current_buffer()
             notes = self.vault.search()
             if key == "follow":
                 notes = [n for n in notes if n.id in self.current.links or n.title in self.current.links]

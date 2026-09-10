@@ -88,6 +88,13 @@ in the inbox unless you move them. Font family and size come from your terminal.
 
 Search matches all entered words across note bodies. `#work` matches an exact tag; `planning #work` combines a word and a tag. Search includes archived notes and excludes trash unless the trash collection is selected. Tags are case-insensitive and can be nested, such as `#project/launch`.
 
+Use **Ctrl+P → Find within current note** to search the current document without
+changing the vault search. Enter or F3 advances to the next match, Shift+F3 goes
+back, and Escape returns to writing. **Refresh vault** updates the list and backlinks after
+shell captures or external changes while retaining the current editor buffer.
+
+![Find within a note](docs/find.svg)
+
 Inserted links use `[[stable-id|Readable title]]`. Renaming a heading does not break these links. Manually entered `[[Exact title]]` links also work, but ambiguous titles can match several notes. Use **Follow a link in this note** and **Open a backlink** in the palette.
 
 ## Use it from your shell
@@ -97,12 +104,23 @@ jotline capture "A thought before I forget"
 printf 'Meeting notes\n\nNext step: draft the outline\n' | jotline capture
 jotline capture --daily "- [ ] Send the outline"
 jotline list '#work'
+jotline doctor
+jotline import ~/Downloads/meeting.md
 jotline export NOTE_ID > note.md
 jotline path
 jotline --vault ~/Notes/Jotline
 ```
 
-Set `JOTLINE_VAULT` to use a different vault by default. Otherwise notes live in `$XDG_DATA_HOME/jotline/notes` (normally `~/.local/share/jotline/notes`). Export emits the exact note body: redirect it to a file if it contains terminal control characters.
+Set `JOTLINE_VAULT` to use a different vault by default. Otherwise notes live in `$XDG_DATA_HOME/jotline/notes` (normally `~/.local/share/jotline/notes`).
+
+`jotline doctor` checks the vault and settings, printing counts and diagnostics rather
+than note bodies. It exits nonzero when it finds a problem. `jotline import FILE`
+copies a regular UTF-8 file into a new note in your default collection; the original
+file is left untouched.
+
+Redirected export preserves the note body, including line endings. Export to an
+interactive terminal refuses unsafe control characters unless you explicitly pass
+`--raw`. Diagnostics escape terminal control characters.
 
 ## Your data
 
@@ -114,12 +132,20 @@ Set `JOTLINE_VAULT` to use a different vault by default. Otherwise notes live in
 - Keep a backup of your vault. Sync and encryption are up to your existing tools; simultaneous edits through an external editor or sync provider are not a collaborative editing protocol.
 - Only the source code is published to GitHub. Your notes are stored separately.
 
-External Markdown files can be placed directly in the vault with filenames containing letters, numbers, underscores, or hyphens. Existing non-Jotline front matter remains part of their body. Subdirectories and attachment management are not supported in this version. The file index is rebuilt on demand; very large vaults may need future indexing work.
+Notes are limited to 10 MiB including metadata; settings to 256 KiB. Symbolic links
+and special files are skipped and reported. A busy vault lock returns an error after
+about one second so the app can recover instead of hanging.
+
+External Markdown files can be placed directly in the vault with filenames containing letters, numbers, underscores, or hyphens. Existing non-Jotline front matter remains part of their body. Subdirectories and attachment management are not supported in this version. An in-memory cache avoids reparsing unchanged notes. Each scan still checks file
+metadata for changes, and Refresh vault clears the cache. Very large vaults may
+still need further indexing work.
 
 ## Status
 
-Version 0.2 is a working first release. It offers plain-text Markdown editing, not a rendered Markdown preview or a full Vim emulation. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
+Version 0.3 is an early release. It offers plain-text Markdown editing, not a rendered Markdown preview or a full Vim emulation. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
 
 ## Contributing
+
+See the [multi-model review](docs/redteam-review.md) for findings, fixes, and test coverage.
 
 Bug reports and focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under [MIT](LICENSE).

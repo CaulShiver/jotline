@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import tempfile
 
+from .store import MAX_SETTINGS_BYTES, read_regular_file, vault_lock
+
 THEMES = ('jotline', 'nord', 'gruvbox', 'catppuccin-mocha', 'dracula', 'tokyo-night',
           'solarized-dark', 'solarized-light', 'textual-light')
 
@@ -42,24 +44,36 @@ class Settings:
             raise ValueError('Unknown default collection')
         if not isinstance(self.daily_template, str) or len(self.daily_template) > 20000:
             raise ValueError('Daily template must be text under 20,000 characters')
+        self.daily_template.encode('utf-8')
 
     @classmethod
     def load(cls, path: Path):
-        if not path.exists():
-            return cls(), ''
         try:
-            data = json.loads(path.read_text(encoding='utf-8'))
+            data = json.loads(read_regular_file(path, MAX_SETTINGS_BYTES))
             if not isinstance(data, dict):
                 raise ValueError('Settings must be an object')
             known = {f.name for f in fields(cls)}
             settings = cls(**{k: v for k, v in data.items() if k in known})
             settings.validate()
             return settings, ''
-        except (ValueError, TypeError, OSError) as error:
+        except FileNotFoundError:
+            return cls(), ''
+        except (ValueError, TypeError, OSError, RecursionError) as error:
             return cls(), f'Could not load settings; using defaults. {error}'
 
     def save(self, path: Path):
         self.validate()
+        with vault_lock(path.parent):
+            # Reject existing links and special files before replacing the path.
+            try:
+                read_regular_file(path, MAX_SETTINGS_BYTES)
+            except (FileNotFoundError, UnicodeError):
+                # An explicit save can repair malformed UTF-8 preferences. The
+                # reader checks file type and size before attempting to decode.
+                pass
+            self._save_locked(path)
+
+    def _save_locked(self, path: Path):
         fd, temp = tempfile.mkstemp(prefix='.settings-', dir=path.parent)
         try:
             with os.fdopen(fd, 'w', encoding='utf-8') as stream:
@@ -68,6 +82,11 @@ class Settings:
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temp, path)
+            directory = os.open(path.parent, os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
         finally:
             if os.path.exists(temp):
                 os.unlink(temp)
