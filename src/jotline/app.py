@@ -289,10 +289,7 @@ class Jotline(App):
         editor.show_line_numbers = settings.line_numbers
         editor.highlight_cursor_line = settings.highlight_line
         self.query_one('#sidebar').styles.width = settings.sidebar_width
-        if startup:
-            self.focused_writing = settings.focus_on_start
-        self.query_one('#sidebar').set_class(self.focused_writing, 'hidden')
-        self.query_one('#hint').set_class(self.focused_writing or not settings.show_hints, 'hidden')
+        self.set_focus_mode(settings.focus_on_start if startup else self.focused_writing)
 
     def shortcut_text(self, text: str) -> str:
         effective = self.settings.effective_hotkeys
@@ -409,10 +406,7 @@ class Jotline(App):
         if not self.save_current():
             return
         try:
-            note = self.vault.read(note_id)
-            if note.workspace != self.workspace:
-                raise ValueError("This note is in another workspace; switch workspaces to open it")
-            self.load(note)
+            self.load(self.vault.read(note_id))
         except (OSError, ValueError) as error:
             self.notify(str(error), severity="error")
 
@@ -440,7 +434,7 @@ class Jotline(App):
 
     def action_search(self) -> None:
         self.collection = "all"
-        self.show_sidebar()
+        self.set_focus_mode(False)
         self.refresh_notes()
         self.query_one("#search", Input).focus()
 
@@ -455,15 +449,13 @@ class Jotline(App):
             self.exit()
 
     def action_focus_mode(self) -> None:
-        self.focused_writing = not self.focused_writing
-        self.query_one("#sidebar").set_class(self.focused_writing, "hidden")
-        self.query_one("#hint").set_class(self.focused_writing or not self.settings.show_hints, "hidden")
+        self.set_focus_mode(not self.focused_writing)
         self.query_one("#editor", TextArea).focus()
 
-    def show_sidebar(self) -> None:
-        self.focused_writing = False
-        self.query_one("#sidebar").remove_class("hidden")
-        self.query_one("#hint").set_class(not self.settings.show_hints, "hidden")
+    def set_focus_mode(self, enabled: bool) -> None:
+        self.focused_writing = enabled
+        self.query_one("#sidebar").set_class(enabled, "hidden")
+        self.query_one("#hint").set_class(enabled or not self.settings.show_hints, "hidden")
 
     def action_open_note(self) -> None:
         notes = self.vault.search(workspace=self.workspace)
@@ -504,7 +496,7 @@ class Jotline(App):
         self.current.collection = self.collection
         self.status("Ready")
         self.refresh_notes()
-        self.show_sidebar()
+        self.set_focus_mode(False)
 
     def move_workspace(self, name: str | None) -> None:
         if not name or not self.save_current():
@@ -538,7 +530,7 @@ class Jotline(App):
             self.collection = "all"
             self.query_one("#search", Input).value = "#" + tag
             self.refresh_notes()
-            self.show_sidebar()
+            self.set_focus_mode(False)
             self.query_one("#notes").focus()
 
     def add_tags(self, tags: str | None) -> None:
@@ -650,7 +642,7 @@ class Jotline(App):
             self.collection = key[5:]
             self.query_one("#search", Input).value = ""
             self.refresh_notes()
-            self.show_sidebar()
+            self.set_focus_mode(False)
             self.query_one("#notes").focus()
         elif key.startswith("move:") or key == "star":
             if not self.save_current():
@@ -688,14 +680,15 @@ class Jotline(App):
                 self.notify(str(error), severity="error")
         elif key in {"link", "follow", "backlinks"}:
             self.capture_current_buffer()
-            notes = self.vault.search(workspace=self.workspace)
-            if key == "follow":
-                links = self.current.links
-                notes = [n for n in notes if n.id in links or n.title in links]
-            elif key == "backlinks":
+            if key == "backlinks":
                 notes = self.vault.backlinks(self.current)
             else:
-                notes = [n for n in notes if n.id != self.current.id]
+                notes = self.vault.search(workspace=self.workspace)
+                if key == "follow":
+                    links = self.current.links
+                    notes = [n for n in notes if n.id in links or n.title in links]
+                else:
+                    notes = [n for n in notes if n.id != self.current.id]
             if not notes:
                 self.notify("No matching notes yet.")
                 return

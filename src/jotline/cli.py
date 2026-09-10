@@ -77,11 +77,14 @@ def main() -> None:
             warning(settings_warning)
         if args.command == "path":
             print(terminal_text(vault.path))
-        elif args.command == "capture":
-            body = " ".join(args.text) if args.text else (read_capture_input() if not sys.stdin.isatty() else "")
-            if not body.strip():
-                parser.error("Provide text or pipe text to jotline capture")
-            if args.daily:
+        elif args.command in {"capture", "import"}:
+            if args.command == "import":
+                body = read_regular_file(args.file, MAX_NOTE_BYTES)
+            else:
+                body = " ".join(args.text) if args.text else (read_capture_input() if not sys.stdin.isatty() else "")
+                if not body.strip():
+                    parser.error("Provide text or pipe text to jotline capture")
+            if args.command == "capture" and args.daily:
                 note = vault.append_daily(body, settings.daily_template, workspace)
             else:
                 note = vault.new(body, workspace=workspace)
@@ -132,12 +135,6 @@ def main() -> None:
                 warning(item)
             if warnings:
                 parser.exit(1)
-        elif args.command == "import":
-            body = read_regular_file(args.file, MAX_NOTE_BYTES)
-            note = vault.new(body, workspace=workspace)
-            note.collection = settings.default_collection
-            vault.save(note)
-            print(note.id)
         else:
             from .app import Jotline
             Jotline(vault, workspace=workspace).run()

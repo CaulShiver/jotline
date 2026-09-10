@@ -55,9 +55,10 @@ class Preferences(ModalScreen[Settings | None]):
                 yield Label('Keyboard shortcuts', classes='pref-label')
                 yield Static('Use ctrl+letter, alt+letter, or f2–f12. Editing keys are reserved. '
                              'F1 always opens Settings; Esc closes dialogs. Ctrl+S saves this dialog. Changes apply when saved.')
+                hotkeys = s.effective_hotkeys
                 for action, (_, label) in HOTKEY_ACTIONS.items():
                     yield Label(label, classes='pref-label')
-                    yield Input(s.effective_hotkeys[action], id='hotkey-' + action)
+                    yield Input(hotkeys[action], id='hotkey-' + action)
                 yield Button('Reset hotkeys', id='reset-hotkeys')
                 yield Label('Daily template · {{date}} becomes today’s date; existing logs stay unchanged', classes='pref-label')
                 yield TextArea(s.daily_template, tab_behavior='focus', id='daily-template')
