@@ -125,7 +125,7 @@ interactive terminal refuses unsafe control characters unless you explicitly pas
 ## Your data
 
 - Local `.md` files; no account, telemetry, hosted backend, or network requirement at runtime.
-- Small YAML-compatible front matter stores collection, timestamps, and starred state.
+- Small Jotline front matter with JSON-valued fields stores collection, timestamps, and starred state.
 - Atomic, fsynced saves. Normal exit saves pending edits. Abrupt termination may lose the last autosave interval (0.7 seconds by default; configurable).
 - Jotline coordinates its own writers and detects external edits before saving. It will block navigation/exit on a save failure so the buffer remains available. **Save recovery copy** preserves your buffer as a new inbox note.
 - Trash is reversible. There is no permanent-delete command.

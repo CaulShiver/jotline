@@ -85,3 +85,28 @@ The vault is user-owned local storage, not a security boundary against a malicio
 process running as the same user. Advisory locks coordinate Jotline instances;
 external editors and synchronization tools do not participate in that protocol.
 Terminal-specific clipboard and rendering behavior still depend on the terminal.
+
+
+## September 10 follow-up — 0.3.1
+
+A fresh review with GPT-6 Astra, GPT-5.6 Terra, and GPT-5.6 Sol covered all 28
+tracked files. It found one low-severity availability issue: malformed wiki links
+could trigger quadratic regex work during navigation. Targets and labels now
+exclude opening brackets, preventing overlapping suffix scans. Generated link
+labels use the same grammar. Ordinary links remain supported.
+
+Backlinks and Follow parse each relevant link set once; search folds each body
+and extracts each tag set at most once per query. Three unused test imports were
+removed. No runtime subsystem or dependency was found to be removable. Existing
+security controls and regression tests were retained.
+
+Validation: 67 tests passed, including bounded malformed-target and label
+regressions. The 8,192-opening-bracket reproduction fell from 0.908 seconds to
+0.000060 seconds on the review machine (illustrative, not a performance guarantee).
+A fresh pip-audit check found no known vulnerabilities in 14 third-party packages;
+Jotline itself was skipped by the database because it is not published on PyPI.
+
+Detailed scan and reviewer artifacts remain locally under
+`audit/2026-09-10/`, excluded from Git and distribution packages. The canonical
+scan describes baseline commit `6f25e60`; the local README records remediation.
+Scan token usage was not reported by the tools.

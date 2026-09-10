@@ -25,7 +25,7 @@ MAX_CACHED_NOTES = 2048
 
 FileSignature = tuple[int, int, int, int, int]
 
-LINK = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
+LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|[^\[\]]*)?\]\]")
 TAG = re.compile(r"(?<![\w#])#([\w][\w/-]*)", re.UNICODE)
 
 
@@ -253,17 +253,28 @@ class Vault:
             return note
 
     def backlinks(self, target: Note) -> list[Note]:
+        targets = {target.id, target.title}
         return [n for n in self.notes() if n.id != target.id and n.collection != "trash"
-                and (target.id in n.links or target.title in n.links)]
+                and targets.intersection(n.links)]
 
     def search(self, query: str = "", collection: str = "all") -> list[Note]:
         terms = query.casefold().split()
-        return [n for n in self.notes()
-                if (n.collection != "trash" if collection == "all" else
-                    n.starred and n.collection != "trash" if collection == "starred" else
-                    n.collection == collection)
-                and all(t[1:] in n.tags if t.startswith("#") else t in n.body.casefold() or t in n.id
-                        for t in terms)]
+        words = [t for t in terms if not t.startswith("#")]
+        tags = {t[1:] for t in terms if t.startswith("#")}
+        matches = []
+        for note in self.notes():
+            if collection == "all":
+                included = note.collection != "trash"
+            elif collection == "starred":
+                included = note.starred and note.collection != "trash"
+            else:
+                included = note.collection == collection
+            if not included or (tags and not tags.issubset(note.tags)):
+                continue
+            body = note.body.casefold() if words else ""
+            if all(word in body or word in note.id for word in words):
+                matches.append(note)
+        return matches
 
     def recovery(self, note: Note) -> Note:
         recovered = replace(note, id=uuid4().hex, original=None, created=now(), collection="inbox")

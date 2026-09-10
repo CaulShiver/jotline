@@ -1,4 +1,3 @@
-from pathlib import Path
 import subprocess
 import sys
 
@@ -79,3 +78,25 @@ def test_cli_capture_export_and_daily(tmp_path):
     second = cli('capture', '--daily', 'two').stdout.strip()
     assert first == second
     assert cli('export', first).stdout.endswith('one\n\ntwo\n')
+
+
+@pytest.mark.parametrize("body", ["[" * 100_000, "[[x|" * 25_000])
+def test_malformed_wiki_links_finish_promptly(body):
+    # Isolate the parser so a regression fails instead of hanging the suite.
+    result = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; from jotline.store import LINK; assert LINK.findall(sys.stdin.read()) == []"],
+        input=body, text=True, capture_output=True, timeout=3,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_link_grammar_and_multiple_search_terms(tmp_path):
+    vault = Vault(tmp_path)
+    note = vault.new("# Mixed CASE\nBlue sky #work #ideas\n[[plain]] [[target|label]] [[other|]]")
+    vault.save(note)
+    assert note.links == {"plain", "target", "other"}
+    assert [n.id for n in vault.search("BLUE sky #work #ideas")] == [note.id]
+    assert not vault.search("blue #missing")
+    assert not vault.search("blue absent")
+    assert [n.id for n in vault.search(note.id)] == [note.id]

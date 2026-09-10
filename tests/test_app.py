@@ -1,4 +1,4 @@
-from textual.widgets import Input, OptionList, TextArea
+from textual.widgets import Input, TextArea
 from jotline.app import Jotline, Palette
 from jotline.store import Vault
 

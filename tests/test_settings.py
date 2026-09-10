@@ -1,5 +1,4 @@
 from datetime import date
-import json
 import pytest
 from textual.widgets import Input, Select, Switch, TextArea
 from jotline.app import Jotline

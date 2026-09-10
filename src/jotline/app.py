@@ -545,7 +545,8 @@ class Jotline(App):
             self.capture_current_buffer()
             notes = self.vault.search()
             if key == "follow":
-                notes = [n for n in notes if n.id in self.current.links or n.title in self.current.links]
+                links = self.current.links
+                notes = [n for n in notes if n.id in links or n.title in links]
             elif key == "backlinks":
                 notes = self.vault.backlinks(self.current)
             else:
@@ -556,7 +557,7 @@ class Jotline(App):
             def picked(note_id):
                 if note_id and key == "link":
                     note = next(n for n in notes if n.id == note_id)
-                    label = note.title.replace("]", "").replace("|", "")
+                    label = note.title.replace("[", "").replace("]", "").replace("|", "")
                     self.query_one("#editor", TextArea).insert(f"[[{note.id}|{label}]]")
                     self.query_one("#editor", TextArea).focus()
                 elif note_id:
