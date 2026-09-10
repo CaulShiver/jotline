@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 
-from jotline.app import Jotline
+from jotline.app import Jotline, MarkdownPreview
 from jotline.store import Vault
 from textual.widgets import TextArea
 
@@ -33,7 +33,13 @@ async def check(directory):
         original = app.current.id
         await pilot.press('f2')
         assert app.current.id != original
-    print('Installed wheel: CLI capture/export, terminal writing, tags, workspaces and custom hotkeys passed.')
+        app.command('format:bold')
+        assert app.query_one('#editor', TextArea).text == '**text**'
+        app.command('preview')
+        await pilot.pause()
+        assert isinstance(app.screen, MarkdownPreview)
+        await pilot.press('escape')
+    print('Installed wheel: CLI capture/export, terminal writing, tags, workspaces, custom hotkeys and Markdown passed.')
 
 
 if __name__ == '__main__':

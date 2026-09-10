@@ -200,9 +200,28 @@ External Markdown files can be placed directly in the vault with filenames conta
 metadata for changes, and Refresh vault clears the cache. Very large vaults may
 still need further indexing work.
 
+## Markdown formatting
+
+Select text with Shift + arrow keys, then open `Ctrl+P` and choose **Format bold**,
+**Format italic**, or **Format inline code**. With no selection, a selected `text`
+placeholder is inserted. **Format heading**, **Format bullet list**, and
+**Format blockquote** apply to the current line or selected lines. Use the editor's
+normal Undo shortcut (`Ctrl+Z`) to reverse a formatting change.
+
+Choose **Preview rendered Markdown** from `Ctrl+P` to see headings, emphasis,
+lists, quotes, tables, and fenced code blocks inside the terminal. Preview includes
+unsaved writing. Scroll with the arrow/Page Up/Page Down keys or mouse; press
+`Esc` to return to the same editor selection. Preview is a read-only snapshot;
+reopen it after editing. Notes stay plain Markdown on disk.
+
+Preview supports notes up to 256 KiB to keep rendering responsive. Larger notes
+remain editable and saveable. Images, raw HTML, and interactive task checkboxes
+are not rendered as browser content. Preview links do not open files or browsers;
+use **Follow a link** for Jotline's `[[note links]]`.
+
 ## Status
 
-Version 0.5 is an early release. It offers plain-text Markdown editing, not a rendered Markdown preview or a full Vim emulation. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
+Version 0.6 is an early release. It offers Markdown source editing and an in-app rendered preview. Full Vim emulation is not supported. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
 
 ## Contributing
 

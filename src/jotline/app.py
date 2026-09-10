@@ -7,10 +7,10 @@ import re
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.theme import Theme
-from textual.widgets import Button, Footer, Input, Label, OptionList, Static, TextArea
+from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, Static, TextArea
 from textual.widgets.option_list import Option
 from rich.text import Text
 
@@ -109,6 +109,36 @@ class TextPrompt(ModalScreen[str | None]):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+
+class MarkdownPreview(ModalScreen[None]):
+    BINDINGS = [Binding("escape", "done", "Back to writing")]
+    CSS = """
+    MarkdownPreview { align: center middle; background: $background 80%; }
+    #markdown-panel { width: 100; max-width: 96%; height: 94%;
+        border: round $accent; padding: 1 2; background: $surface; }
+    #markdown-scroll { height: 1fr; }
+    """
+
+    def __init__(self, body: str):
+        super().__init__()
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="markdown-panel"):
+            yield Label("Markdown preview · Esc to return to writing")
+            with VerticalScroll(id="markdown-scroll"):
+                yield Markdown(open_links=False)
+            yield Button("Back to writing", id="close-preview")
+
+    async def on_mount(self) -> None:
+        await self.query_one(Markdown).update(self.body)
+        self.query_one(VerticalScroll).focus()
+
+    @on(Button.Pressed, "#close-preview")
+    def action_done(self) -> None:
+        self.dismiss(None)
+        self.app.query_one("#editor", TextArea).focus()
 
 
 class FindInNote(ModalScreen[None]):
@@ -547,6 +577,40 @@ class Jotline(App):
         self.save_current()
         editor.focus()
 
+    def action_preview(self) -> None:
+        self.capture_current_buffer()
+        if len(self.current.body.encode("utf-8")) > 256 * 1024:
+            self.notify("Preview supports notes up to 256 KiB. You can still edit and save this note.", severity="warning")
+            return
+        self.push_screen(MarkdownPreview(self.current.body))
+
+    def format_markdown(self, style: str) -> None:
+        editor = self.query_one("#editor", TextArea)
+        start, end = sorted((editor.selection.start, editor.selection.end))
+        editor.history.checkpoint()
+        if style in {"heading", "list", "quote"}:
+            first, last = start[0], end[0]
+            if end[1] == 0 and last > first:
+                last -= 1
+            lines = editor.text.split("\n")
+            prefix = {"heading": "## ", "list": "- ", "quote": "> "}[style]
+            body = "\n".join(prefix + line for line in lines[first:last + 1])
+            editor.replace(body, (first, 0), (last, len(lines[last])))
+        else:
+            body = editor.selected_text or "text"
+            marker = {"bold": "**", "italic": "*", "code": "`"}[style]
+            if style == "code":
+                marker = "`" * (max((len(m[0]) for m in re.finditer(r"`+", body)), default=0) + 1)
+            padding = " " if style == "code" and (body.startswith("`") or body.endswith("`")) else ""
+            replacement = marker + padding + body + padding + marker
+            offset = self.editor_offset(start, editor.text) + len(marker + padding)
+            editor.replace(replacement, start, end)
+            editor.move_cursor(self.editor_location(offset, editor.text))
+            editor.move_cursor(self.editor_location(offset + len(body), editor.text), select=True)
+        editor.history.checkpoint()
+        self.capture_current_buffer()
+        editor.focus()
+
     @staticmethod
     def editor_offset(location: tuple[int, int], text: str) -> int:
         row, column = location
@@ -605,7 +669,7 @@ class Jotline(App):
             self.notify("Vault refreshed from disk.")
 
     def action_commands(self) -> None:
-        choices = [("tags", "Browse tags                     ctrl+t"), ("add-tags", "Add tags to this note"),
+        choices = [("preview", "Preview rendered Markdown"), ("tags", "Browse tags                     ctrl+t"), ("add-tags", "Add tags to this note"),
                    ("workspaces", "Switch workspace                ctrl+w"), ("new-workspace", "Create workspace"),
                    ("move-workspace", "Move note to workspace"), ("settings", "Settings · appearance, editor, hotkeys · F1"), ("new", "New thought                    ctrl+n"), ("daily", "Open today's daily log         ctrl+d"),
                    ("open", "Open a note                    ctrl+o"), ("focus", "Toggle focus mode              ctrl+b"),
@@ -614,6 +678,9 @@ class Jotline(App):
                    ("backlinks", "Open a backlink"), ("task", "Toggle task on current line"),
                    ("copy", "Copy note to clipboard (terminal OSC 52)"), ("recovery", "Save recovery copy"),
                    ("review", "Start weekly review"), ("help", "Open writing and workflow guide")]
+        choices += [("format:" + style, "Format " + label) for style, label in (
+            ("bold", "bold"), ("italic", "italic"), ("code", "inline code"),
+            ("heading", "heading"), ("list", "bullet list"), ("quote", "blockquote"))]
         choices += [("view:" + c, "Show " + c) for c in ("all", "starred", *COLLECTIONS)]
         choices += [("move:" + c, "Move note to " + c) for c in COLLECTIONS]
         self.push_screen(Palette([(key, self.shortcut_text(label)) for key, label in choices]), self.command)
@@ -621,7 +688,11 @@ class Jotline(App):
     def command(self, key: str | None) -> None:
         if not key:
             return
-        if key == "tags":
+        if key == "preview":
+            self.action_preview()
+        elif key.startswith("format:"):
+            self.format_markdown(key.removeprefix("format:"))
+        elif key == "tags":
             self.action_tags()
         elif key == "add-tags":
             self.push_screen(TextPrompt("Add tags to this note", "#work #ideas or project/topic"), self.add_tags)
@@ -728,6 +799,10 @@ Preferences are saved for this vault.
 
 ## Writing
 Use Markdown: # headings, **emphasis**, - lists, and - [ ] tasks.
+Ctrl+P → Preview rendered Markdown displays your current text; Esc returns to editing.
+Select text, then Ctrl+P → Format bold, italic, or inline code. Without a selection,
+a selected placeholder is inserted. Format heading, bullet list, and blockquote
+apply to the current line or selected lines. Undo works normally.
 Add #tags anywhere; search #tag to find exact tag matches.
 Ctrl+T browses workspace tags and counts. Ctrl+P → Add tags appends tags.
 Edit or remove inline tags directly in the note; no separate tag database is needed.
