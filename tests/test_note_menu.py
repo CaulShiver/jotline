@@ -23,14 +23,19 @@ async def test_right_click_moves_clicked_note_and_preserves_open_buffer(tmp_path
         editor.insert('unfinished\n', (1, 0))
         before = editor.text
         await pilot.pause()
-        await pilot.click('#notes', offset=(3, 3), button=3)
+        assert await pilot.click('#notes', offset=(3, 3), button=3)
+        await pilot.pause()
         assert isinstance(app.screen, NoteMenu)
         assert app.screen.title_text == 'B'
         assert app.current.id == first.id
         assert editor.text == before
-        await pilot.click('#note-menu-options', offset=(2, 0))
+        assert await pilot.click('#note-menu-options', offset=(2, 0))
+        # A submenu is a newly mounted screen. Wait for its offset/layout before
+        # calculating the next mouse position (Windows runners expose this race).
+        await pilot.pause()
         assert app.screen.title_text == 'Move to collection'
-        await pilot.click('#note-menu-options', offset=(2, 0))
+        assert await pilot.click('#note-menu-options', offset=(2, 0))
+        await pilot.pause()
         assert vault.read(second.id).collection == 'projects'
         assert vault.read(first.id).body == before
         assert app.current.id == first.id and editor.text == before
