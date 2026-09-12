@@ -1,11 +1,11 @@
 """Validated per-vault preferences, stored separately from notes."""
 from dataclasses import asdict, dataclass, field, fields
 import json
-import os
 import re
 from pathlib import Path
 import weakref
 
+from .filesystem import fs as os
 from .store import (MAX_SETTINGS_BYTES, create_private_temp, read_regular_at,
                     read_regular_file, validate_workspace, vault_lock)
 
@@ -220,7 +220,7 @@ class Settings:
                 os.close(directory)
             raise
         try:
-            with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            with os.fdopen(fd, 'w', encoding='utf-8', newline='') as stream:
                 json.dump(_settings_values(self) if data is None else data, stream, indent=2, ensure_ascii=False)
                 stream.write('\n')
                 stream.flush()

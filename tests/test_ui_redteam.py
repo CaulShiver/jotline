@@ -6,6 +6,18 @@ from jotline.settings import Settings
 from jotline.store import Vault
 
 
+async def test_late_editor_event_after_shutdown_keeps_saved_note(tmp_path):
+    vault = Vault(tmp_path)
+    app = Jotline(vault)
+    async with app.run_test() as pilot:
+        app.query_one('#editor', TextArea).insert('save before shutdown')
+        await pilot.press('ctrl+q')
+    # A queued Changed message may arrive after shutdown has removed the editor.
+    app.edited()
+    assert app.current.body == 'save before shutdown'
+    assert vault.read(app.current.id).body == 'save before shutdown'
+
+
 async def test_palette_blocks_global_shortcuts(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test(size=(100, 30)) as pilot:

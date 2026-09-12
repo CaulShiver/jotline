@@ -9,6 +9,13 @@ installed-wheel smoke run. For local release checks, build with `uv build --clea
 and run `scripts/smoke_install.py` from a fresh venv containing the built wheel and
 its dependencies.
 
+CI runs the complete suite and installed-wheel CLI/TUI smoke checks on Linux,
+macOS, and Windows with Python 3.11–3.13. POSIX-only filesystem cases are marked
+explicitly; Windows has separate native handle, junction, and locking coverage.
+Storage code uses `jotline.filesystem.fs`: native `os` on Unix and a pinned-handle
+backend on Windows. Keep file I/O UTF-8 with explicit newlines; do not substitute
+unprotected path operations for descriptor-relative storage calls.
+
 Storage changes should cover round trips, external edits, failed saves, and doctor
 diagnostics. UI changes should exercise the relevant keyboard workflow with Textual's
 Pilot. Use temporary vaults for testing; never include personal notes in commits or

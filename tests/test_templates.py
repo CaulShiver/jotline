@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-import os
+from jotline.filesystem import fs as os
 
 import pytest
 
@@ -17,7 +17,8 @@ def test_defaults_are_lazy_and_custom_templates_persist(tmp_path):
     assert (templates.path / 'my-template.md').read_bytes() == body.encode()
     assert Templates(tmp_path).read('my-template') == body
     assert 'my-template' in templates.names()
-    assert (templates.path / 'my-template.md').stat().st_mode & 0o777 == 0o600
+    if os.name != 'nt':
+        assert (templates.path / 'my-template.md').stat().st_mode & 0o777 == 0o600
     assert not list(templates.path.glob('.tmp-*'))
     with pytest.raises(FileExistsError, match='^Template already exists; choose a different name$'):
         templates.save('my-template', 'replacement')
@@ -65,13 +66,25 @@ def test_missing_and_bounded_utf8(tmp_path, monkeypatch):
         templates.read('broken')
 
 
-def test_missing_template_reads_do_not_leak_vault_descriptors(tmp_path):
+def test_missing_template_reads_do_not_leak_vault_descriptors(tmp_path, resource_count):
     templates = Templates(tmp_path)
-    before = len(os.listdir('/proc/self/fd'))
+    before = resource_count()
     for _ in range(32):
         with pytest.raises(FileNotFoundError):
             templates.read('missing')
-    assert len(os.listdir('/proc/self/fd')) == before
+    assert resource_count() == before
+
+
+def test_failed_template_creation_closes_owned_vault_handle(tmp_path, monkeypatch, resource_count):
+    templates = Templates(tmp_path)
+    before = resource_count()
+    monkeypatch.setattr(os, 'mkdir',
+                        lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError('directory removed')))
+    for _ in range(16):
+        with pytest.raises(FileNotFoundError):
+            with templates._directory(create=True):
+                pytest.fail('creation should fail')
+    assert resource_count() == before
 
 
 @pytest.mark.parametrize('kind', ['symlink', 'file', 'fifo'])

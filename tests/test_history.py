@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import json
-import os
+from jotline.filesystem import fs as os
 import zipfile
 
 import pytest
@@ -71,7 +71,10 @@ def test_backup_contains_local_data_manifest_and_no_unsafe_files(tmp_path):
     outside = tmp_path / 'private'
     outside.write_text('private')
     (vault.path / 'unsafe.md').symlink_to(outside)
-    os.mkfifo(vault.path / 'pipe.md')
+    if hasattr(os, 'mkfifo'):
+        os.mkfifo(vault.path / 'pipe.md')
+    else:
+        (vault.path / 'pipe.md').mkdir()
     backup = vault.backup()
     with zipfile.ZipFile(backup) as archive:
         assert archive.read('plain.md') == b'# Plain\r\n'
@@ -209,7 +212,10 @@ def test_note_tempfile_failure_does_not_leave_phantom_revision(tmp_path, monkeyp
 
 def test_backup_warning_survives_note_scan(tmp_path):
     vault = Vault(tmp_path)
-    os.mkfifo(tmp_path / 'pipe.md')
+    if hasattr(os, 'mkfifo'):
+        os.mkfifo(tmp_path / 'pipe.md')
+    else:
+        (tmp_path / 'pipe.md').mkdir()
     vault.backup()
     vault.notes()
     assert 'skipped 1' in vault.backup_warning
@@ -294,6 +300,7 @@ def test_backup_template_bytes_count_toward_aggregate_budget(tmp_path, monkeypat
     assert any(item['path'] == '.jotline-templates/large.md' for item in skipped)
 
 
+@pytest.mark.skipif(os.name == 'nt', reason='Windows pins directories against rename; covered by native tests')
 def test_history_stays_on_pinned_vault_during_root_swap(tmp_path, monkeypatch):
     original = tmp_path / 'vault'
     vault = Vault(original)
@@ -318,6 +325,7 @@ def test_history_stays_on_pinned_vault_during_root_swap(tmp_path, monkeypatch):
     assert not (original / f'{note.id}.md').exists()
 
 
+@pytest.mark.skipif(os.name == 'nt', reason='Windows pins directories against rename; covered by native tests')
 def test_backup_stays_on_pinned_folder_during_folder_swap(tmp_path, monkeypatch):
     vault = Vault(tmp_path)
     (tmp_path / 'plain.md').write_text('data')
@@ -339,6 +347,7 @@ def test_backup_stays_on_pinned_folder_during_folder_swap(tmp_path, monkeypatch)
         assert opened.read('plain.md') == b'data'
 
 
+@pytest.mark.skipif(os.name == 'nt', reason='Windows pins directories against rename; covered by native tests')
 def test_history_browsing_stays_on_pinned_vault_during_root_swap(tmp_path, monkeypatch):
     original = tmp_path / 'vault'
     vault = Vault(original)
@@ -372,15 +381,15 @@ def test_history_browsing_stays_on_pinned_vault_during_root_swap(tmp_path, monke
     assert any('trusted' in note.body for note in recovered)
 
 
-def test_backup_temp_failure_closes_template_descriptor(tmp_path, monkeypatch):
+def test_backup_temp_failure_closes_template_descriptor(tmp_path, monkeypatch, resource_count):
     vault = Vault(tmp_path)
     templates = tmp_path / '.jotline-templates'
     templates.mkdir()
     (templates / 'custom.md').write_text('template')
-    before = len(os.listdir('/proc/self/fd'))
+    before = resource_count()
     monkeypatch.setattr(history, '_temp_at',
                         lambda *args, **kwargs: (_ for _ in ()).throw(OSError('disk full')))
     for _ in range(16):
         with pytest.raises(OSError, match='disk full'):
             vault.backup()
-    assert len(os.listdir('/proc/self/fd')) == before
+    assert resource_count() == before

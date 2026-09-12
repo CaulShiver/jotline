@@ -5,16 +5,16 @@ from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime, date
-import fcntl
 import io
 import json
-import os
 from pathlib import Path
 import re
 import stat
 import sys
 import time
 from uuid import uuid4
+
+from .filesystem import fs as os, lock_file
 
 COLLECTIONS = ("inbox", "projects", "areas", "resources", "archive", "trash")
 # Limits protect the interactive app from accidentally imported huge files.
@@ -133,8 +133,23 @@ def vault_lock(path: Path):
     """Coordinate local writers without hanging the UI indefinitely."""
     directory = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        fd = os.open(".jotline.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
-                     0o600, dir_fd=directory)
+        # APFS can report ENOENT for concurrent O_CREAT | O_NOFOLLOW opens.
+        # Separate existing-file opens from exclusive creation and retry only
+        # when another writer wins creation. Links still fail without following.
+        flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
+        for _ in range(100):
+            try:
+                fd = os.open(".jotline.lock", flags, dir_fd=directory)
+                break
+            except FileNotFoundError:
+                try:
+                    fd = os.open(".jotline.lock", flags | os.O_CREAT | os.O_EXCL,
+                                 0o600, dir_fd=directory)
+                    break
+                except FileExistsError:
+                    continue
+        else:
+            raise OSError("Vault lock changed repeatedly; try saving again")
     except BaseException:
         os.close(directory)
         raise
@@ -144,7 +159,7 @@ def vault_lock(path: Path):
         deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
         while True:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                lock_file(fd)
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
@@ -153,7 +168,7 @@ def vault_lock(path: Path):
         try:
             yield directory
         finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            lock_file(fd, unlock=True)
     finally:
         os.close(fd)
         os.close(directory)
@@ -164,6 +179,8 @@ def now() -> str:
 
 
 def file_signature(path: Path) -> FileSignature:
+    if os.name == "nt":
+        return os.file_signature(path)
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode):
         raise OSError(f"Not a regular file: {path.name}")
@@ -212,7 +229,7 @@ class Vault:
         self.backup_warning = ""
         self._cache: dict[str, tuple[FileSignature, Note, int]] = {}
         self.permission_warning = ("Vault is writable by other users; use chmod go-w to protect note replacement"
-                                   if self.path.stat().st_mode & 0o022 else "")
+                                   if os.name != "nt" and self.path.stat().st_mode & 0o022 else "")
         if self.permission_warning:
             self.warnings.append(self.permission_warning)
 
@@ -345,7 +362,7 @@ class Vault:
         fd, temp = create_private_temp(directory, ".jotline-")
         candidate = None
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
                 stream.write(raw)
                 stream.flush()
                 os.fsync(stream.fileno())

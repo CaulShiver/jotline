@@ -31,7 +31,13 @@ def default_vault() -> Path:
     override = os.environ.get("JOTLINE_VAULT")
     if override:
         return Path(override)
-    return Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share"))) / "jotline/notes"
+    if sys.platform == "win32":
+        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "jotline/notes"
+    # Keep existing XDG vaults discoverable when upgrading on macOS.
+    xdg = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "jotline/notes"
+    if sys.platform == "darwin" and not os.environ.get("XDG_DATA_HOME") and not xdg.exists():
+        return Path.home() / "Library/Application Support/jotline/notes"
+    return xdg
 
 
 def terminal_text(value: object) -> str:
@@ -66,7 +72,7 @@ def check_managed_directory(path: Path, label: str, warnings: list[str]) -> Path
         return None
     try:
         info = path.lstat()
-        if not stat.S_ISDIR(info.st_mode):
+        if not stat.S_ISDIR(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
             warnings.append(f"{label}: Not a safe directory: {path.name}")
             return None
         return path
@@ -279,6 +285,10 @@ def has_terminal_controls(body: str) -> bool:
 
 
 def main() -> None:
+    if sys.platform == "win32":
+        for stream in (sys.stdout, sys.stderr):
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", newline="")
     parser = argparse.ArgumentParser(description="Jotline — a terminal home for your thoughts")
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--vault", type=Path, default=default_vault(), help="Markdown vault directory")

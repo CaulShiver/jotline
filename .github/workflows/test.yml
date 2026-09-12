@@ -4,11 +4,18 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python: ['3.11', '3.12', '3.13']
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -27,7 +34,7 @@ jobs:
         timeout-minutes: 4
         run: uv lock --upgrade --dry-run --python '${{ matrix.python }}'
       - name: Check direct lower bounds
-        if: matrix.python == '3.11'
+        if: matrix.python == '3.11' && matrix.os == 'ubuntu-latest'
         timeout-minutes: 5
         run: |
           uv venv /tmp/jotline-lower-bound --python '${{ matrix.python }}'
@@ -46,5 +53,10 @@ jobs:
         timeout-minutes: 4
         run: |
           uv venv .smoke-venv --python '${{ matrix.python }}'
-          uv pip install --python .smoke-venv/bin/python --strict dist/*.whl
-          .smoke-venv/bin/python -I scripts/smoke_install.py
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            smoke_python=.smoke-venv/Scripts/python.exe
+          else
+            smoke_python=.smoke-venv/bin/python
+          fi
+          uv pip install --python "$smoke_python" --strict dist/*.whl
+          "$smoke_python" -I scripts/smoke_install.py

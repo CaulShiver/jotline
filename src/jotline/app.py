@@ -483,7 +483,8 @@ class Jotline(App):
 
     @on(TextArea.Changed, "#editor")
     def edited(self) -> None:
-        self.capture_current_buffer()
+        if self.is_running:
+            self.capture_current_buffer()
 
     def capture_current_buffer(self) -> bool:
         """Copy the editor into the note while preserving its unsaved state."""

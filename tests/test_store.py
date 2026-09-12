@@ -80,7 +80,7 @@ def test_cli_capture_export_and_daily(tmp_path):
     assert cli('export', first).stdout.endswith('one\n\ntwo\n')
 
 
-@pytest.mark.parametrize("body", ["[" * 100_000, "[[x|" * 25_000])
+@pytest.mark.parametrize("body", ["[" * 100_000, "[[x|" * 25_000], ids=['unclosed', 'repeated-alias'])
 def test_malformed_wiki_links_finish_promptly(body):
     # Isolate the parser so a regression fails instead of hanging the suite.
     result = subprocess.run(
