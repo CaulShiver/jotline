@@ -267,7 +267,11 @@ def test_directory_fsync_failure_does_not_create_false_conflict(tmp_path, monkey
     assert vault.read(note.id).body == "second"
 
 
-def test_concurrent_daily_appends_preserve_every_capture(tmp_path):
+def test_concurrent_daily_appends_preserve_every_capture(tmp_path, monkeypatch):
+    # This checks atomic preservation across eight serialized writers, not the
+    # speed of the runner's backup/history/fsync work. Timeout behavior has
+    # separate tests using the normal or deliberately shortened deadline.
+    monkeypatch.setattr(store, "LOCK_TIMEOUT_SECONDS", 10.0)
     barrier = Barrier(8)
 
     def capture(index):

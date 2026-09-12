@@ -3,6 +3,7 @@
 Run with the isolated wheel environment's Python. This checks the terminal
 protocol and persistence, not a terminal emulator or screen reader.
 """
+import errno
 import json
 import os
 from pathlib import Path
@@ -39,7 +40,14 @@ def main():
                 if select.select([master], [], [], 0.05)[0]:
                     try:
                         chunk = os.read(master, 65536)
-                    except OSError:
+                    except OSError as error:
+                        if error.errno != errno.EIO:
+                            raise
+                        chunk = b''
+                    if not chunk:
+                        # PTY EOF can precede waitpid observing child exit.
+                        # Reap within the existing deadline before checking it.
+                        process.wait(timeout=max(0.001, deadline - time.monotonic()))
                         break
                     output.extend(chunk)
                 if process.poll() is not None:
