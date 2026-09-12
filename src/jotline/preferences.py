@@ -9,12 +9,18 @@ from .settings import Settings, THEMES, HOTKEY_ACTIONS
 
 
 class Preferences(ModalScreen[Settings | None]):
-    BINDINGS = [Binding('escape', 'cancel', 'Cancel'), Binding('ctrl+s', 'save', 'Save settings', priority=True)]
+    BINDINGS = [Binding('escape', 'cancel', 'Cancel'), Binding('ctrl+s', 'save', 'Save settings', priority=True),
+                Binding('alt+1', 'jump("appearance")', 'Appearance'),
+                Binding('alt+2', 'jump("editor")', 'Editor'),
+                Binding('alt+3', 'jump("shortcuts")', 'Shortcuts'),
+                Binding('alt+4', 'jump("template")', 'Daily template')]
     CSS = '''
     Preferences { align: center middle; background: $background 80%; }
     #preferences { width: 78; max-width: 96%; height: 90%; border: round $accent; padding: 1 2; background: $surface; }
     #preferences-title { height: 2; color: $accent; text-style: bold; }
+    #preferences-outline { height: auto; color: $text-muted; margin-bottom: 1; }
     #preferences-scroll { height: 1fr; }
+    .pref-section { color: $accent; text-style: bold; margin-top: 2; }
     .pref-label { margin-top: 1; }
     .pref-toggle { height: 3; align-vertical: middle; }
     .pref-toggle Label { width: 1fr; padding-top: 1; }
@@ -32,7 +38,10 @@ class Preferences(ModalScreen[Settings | None]):
         s = self.settings
         with Vertical(id='preferences'):
             yield Label('Make Jotline yours', id='preferences-title')
+            yield Static('Alt+1 Appearance · Alt+2 Editor · Alt+3 Shortcuts · Alt+4 Daily template',
+                         id='preferences-outline')
             with VerticalScroll(id='preferences-scroll'):
+                yield Label('Appearance', id='section-appearance', classes='pref-section')
                 yield Label('Theme', classes='pref-label')
                 yield Select([(t.replace('-', ' ').title(), t) for t in THEMES], value=s.theme, allow_blank=False, id='pref-theme')
                 for name, title, options in (
@@ -42,6 +51,7 @@ class Preferences(ModalScreen[Settings | None]):
                 ):
                     yield Label(title, classes='pref-label')
                     yield Select(options, value=getattr(s, name), allow_blank=False, id='pref-' + name)
+                yield Label('Editor and layout', id='section-editor', classes='pref-section')
                 for name, title in (('line_numbers', 'Line numbers'), ('soft_wrap', 'Wrap long lines'),
                                     ('highlight_line', 'Highlight current line'), ('focus_on_start', 'Start in focus mode'),
                                     ('show_hints', 'Show writing hints')):
@@ -52,7 +62,7 @@ class Preferences(ModalScreen[Settings | None]):
                 yield Input(str(s.sidebar_width), type='integer', id='pref-sidebar_width')
                 yield Label('Autosave interval · 0.2–5 seconds', classes='pref-label')
                 yield Input(str(s.autosave_seconds), type='number', id='pref-autosave_seconds')
-                yield Label('Keyboard shortcuts', classes='pref-label')
+                yield Label('Keyboard shortcuts', id='section-shortcuts', classes='pref-section')
                 yield Static('Use ctrl+letter, alt+letter, or f2–f12. Editing keys are reserved. '
                              'Leave optional Markdown shortcuts blank to keep them unassigned. '
                              'F1 always opens Settings; Esc closes dialogs. Ctrl+S saves this dialog. Changes apply when saved.')
@@ -61,6 +71,7 @@ class Preferences(ModalScreen[Settings | None]):
                     yield Label(label, classes='pref-label')
                     yield Input(hotkeys[action], placeholder='Unassigned' if not default else '', id='hotkey-' + action)
                 yield Button('Reset hotkeys', id='reset-hotkeys')
+                yield Label('Daily template', id='section-template', classes='pref-section')
                 yield Label('Daily template · {{date}} becomes today’s date; existing logs stay unchanged', classes='pref-label')
                 yield TextArea(s.daily_template, tab_behavior='focus', id='daily-template')
             yield Static('', id='preferences-error', markup=False)
@@ -71,6 +82,16 @@ class Preferences(ModalScreen[Settings | None]):
 
     def action_cancel(self):
         self.dismiss(None)
+
+    def action_jump(self, section: str):
+        targets = {
+            'appearance': '#pref-theme',
+            'editor': '#pref-sidebar_width',
+            'shortcuts': '#hotkey-new',
+            'template': '#daily-template',
+        }
+        if target := targets.get(section):
+            self.query_one(target).focus(scroll_visible=True)
 
     def action_save(self):
         try:

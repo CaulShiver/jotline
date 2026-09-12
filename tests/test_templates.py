@@ -65,6 +65,15 @@ def test_missing_and_bounded_utf8(tmp_path, monkeypatch):
         templates.read('broken')
 
 
+def test_missing_template_reads_do_not_leak_vault_descriptors(tmp_path):
+    templates = Templates(tmp_path)
+    before = len(os.listdir('/proc/self/fd'))
+    for _ in range(32):
+        with pytest.raises(FileNotFoundError):
+            templates.read('missing')
+    assert len(os.listdir('/proc/self/fd')) == before
+
+
 @pytest.mark.parametrize('kind', ['symlink', 'file', 'fifo'])
 def test_unsafe_template_directory(tmp_path, kind):
     templates = Templates(tmp_path)

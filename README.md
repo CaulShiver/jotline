@@ -108,6 +108,7 @@ printf 'Meeting notes\n\nNext step: draft the outline\n' | jotline capture
 jotline capture --daily "- [ ] Send the outline"
 jotline list '#work'
 jotline doctor
+jotline doctor --json
 jotline import ~/Downloads/meeting.md
 jotline export NOTE_ID > note.md
 jotline path
@@ -116,10 +117,13 @@ jotline --vault ~/Notes/Jotline
 
 Set `JOTLINE_VAULT` to use a different vault by default. Otherwise notes live in `$XDG_DATA_HOME/jotline/notes` (normally `~/.local/share/jotline/notes`).
 
-`jotline doctor` checks the vault and settings, printing counts and diagnostics rather
-than note bodies. It exits nonzero when it finds a problem. `jotline import FILE`
-copies a regular UTF-8 file into a new note in your default collection; the original
-file is left untouched.
+`jotline doctor` checks the runtime, vault path, settings, lock, templates, history,
+backups, limits, and readable note counts. It prints diagnostics rather than note
+bodies, reports unsafe or broken local state, and exits nonzero when it finds a
+problem. Use `jotline doctor --json` for machine-readable output in bug reports or
+scripts. `jotline import FILE` copies a regular UTF-8 file into a new note in your
+default collection; the original file is left untouched. Imports refuse symlinked
+files and symlinked source directories.
 
 Redirected export preserves the note body, including line endings. Export to an
 interactive terminal refuses unsafe control characters unless you explicitly pass
@@ -195,7 +199,9 @@ checks the entire vault.
 
 Notes are limited to 10 MiB including metadata; settings to 256 KiB. Symbolic links
 and special files are skipped and reported. A busy vault lock returns an error after
-about one second so the app can recover instead of hanging.
+about one second so the app can recover instead of hanging. `jotline doctor` also
+warns when the vault directory is not writable, because capture and app saves need
+write permission even though reading existing notes may still work.
 
 External Markdown files can be placed directly in the vault with filenames containing letters, numbers, underscores, or hyphens. Existing non-Jotline front matter remains part of their body. Subdirectories and attachment management are not supported in this version. An in-memory cache avoids reparsing unchanged notes. Each scan still checks file
 metadata for changes, and Refresh vault clears the cache. Very large vaults may
@@ -274,4 +280,6 @@ Version 0.7 is an early release. It offers Markdown source editing and an in-app
 
 See the [multi-model review](docs/redteam-review.md) for findings, fixes, and test coverage.
 
-Bug reports and focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under [MIT](LICENSE).
+Bug reports and focused pull requests are welcome. The package version is sourced
+from `src/jotline/__init__.py`; release builds and `jotline --version` use that same
+value. See [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under [MIT](LICENSE).

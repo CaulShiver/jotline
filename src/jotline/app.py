@@ -1,8 +1,9 @@
 """Keyboard-first writing UI. No shell commands are executed by the palette."""
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import re
+from typing import Callable
 
 from textual import on
 from textual.app import App, ComposeResult
@@ -14,20 +15,35 @@ from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, 
 from textual.widgets.option_list import Option
 from rich.text import Text
 
-from .store import COLLECTIONS, Note, Vault, tagged_body, validate_workspace
+from .store import COLLECTIONS, ConflictError, Note, Vault, tagged_body, validate_workspace
 from .settings import Settings, HOTKEY_ACTIONS
 from .preferences import Preferences
 from .templates import Templates
+
+
+@dataclass(frozen=True)
+class Command:
+    """One user-visible palette action.
+
+    Keeping its label and handler together prevents the palette from drifting
+    away from the action dispatcher as features are added.
+    """
+
+    key: str
+    label: str
+    handler: Callable[[], None]
+    hotkey_action: str | None = None
 
 
 class Palette(ModalScreen[str | None]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
     CSS = """
     Palette { align: center top; background: $background 70%; }
-    #palette { width: 76; max-width: 95%; height: auto; max-height: 80%; margin-top: 3;
+    #palette { width: 76; max-width: 95%; height: 80%; max-height: 80%; margin-top: 3;
         border: round $accent; padding: 1 2; background: $surface; }
     #palette-title { color: $accent; margin-bottom: 1; }
-    #commands { height: auto; max-height: 18; border: none; }
+    #palette-help, #command-count { color: $text-muted; }
+    #commands { height: 1fr; min-height: 3; border: none; }
     """
 
     def __init__(self, choices: list[tuple[str, str]], title: str = "Run a command"):
@@ -40,6 +56,8 @@ class Palette(ModalScreen[str | None]):
         with Vertical(id="palette"):
             yield Label(self.heading, id="palette-title")
             yield Input(placeholder="Type to filter…", id="command-query")
+            yield Static("Type to filter · ↑↓ choose · Enter run · Esc cancel", id="palette-help")
+            yield Static("", id="command-count", markup=False)
             yield OptionList(id="commands")
 
     def on_mount(self) -> None:
@@ -52,6 +70,9 @@ class Palette(ModalScreen[str | None]):
         options = self.query_one(OptionList)
         options.clear_options()
         options.add_options([Option(Text(label), id=key) for key, label in self.filtered])
+        count = self.query_one("#command-count", Static)
+        count.update(f"{len(self.filtered)} result" + ("" if len(self.filtered) == 1 else "s")
+                     if self.filtered else "No matching commands · adjust the filter or press Esc")
         if self.filtered:
             options.highlighted = 0
 
@@ -68,6 +89,12 @@ class Palette(ModalScreen[str | None]):
     @on(OptionList.OptionSelected)
     def selected(self, event: OptionList.OptionSelected) -> None:
         self.dismiss(event.option.id)
+
+    @on(OptionList.OptionHighlighted)
+    def highlighted(self) -> None:
+        # Arrow navigation starts in the query field, so keep the selected row
+        # in the independently scrollable result region explicitly visible.
+        self.query_one(OptionList).scroll_to_highlight()
 
     def on_key(self, event) -> None:
         if event.key in ("down", "up") and self.query_one(Input).has_focus:
@@ -284,6 +311,7 @@ class Jotline(App):
     #hint { height: 2; padding: 0 2; color: $text-muted; }
     Footer { background: $surface; }
     .hidden { display: none; }
+    .compact-footer { display: none; }
     """
     # Textual requires a nonempty binding key; these placeholders cannot be typed.
     BINDINGS = [Binding(key or "jotline_" + action + "_unassigned",
@@ -308,6 +336,10 @@ class Jotline(App):
         self.dirty = False
         self.last_error = ""
         self.focused_writing = False
+        self.compact_layout = False
+        self.compact_navigation = False
+        self._shown_storage_warnings: set[str] = set()
+        self.command_registry = self.build_command_registry()
 
     def compose(self) -> ComposeResult:
         yield Static("›_ jotline     /     " + self.workspace, id="brand", markup=False)
@@ -326,6 +358,7 @@ class Jotline(App):
 
     def on_mount(self) -> None:
         self.apply_settings(startup=True)
+        self.update_responsive_layout()
         self.status("Ready")
         self.refresh_notes()
         self.autosave_timer = self.set_interval(self.settings.autosave_seconds, self.autosave)
@@ -334,8 +367,44 @@ class Jotline(App):
         if self.settings_warning:
             self.notify(self.settings_warning, severity='warning', timeout=10)
         self.query_one("#editor", TextArea).focus()
-        if self.vault.warnings:
-            self.notify("Some Markdown files could not be read. Run jotline list to inspect warnings.", severity="warning")
+        self.notify_storage_warnings()
+
+    def on_resize(self, event) -> None:
+        self.update_responsive_layout()
+
+    def update_responsive_layout(self) -> None:
+        """Keep writing usable before a terminal has room for the full chrome."""
+        size = self.size
+        self.compact_layout = size.width <= 80 or size.height <= 24
+        very_short = size.height <= 24
+        sidebar = self.query_one("#sidebar")
+        hint = self.query_one("#hint", Static)
+        connections = self.query_one("#connections", Static)
+        sidebar.set_class(self.focused_writing or (self.compact_layout and not self.compact_navigation), "hidden")
+        hint.set_class(self.focused_writing or self.compact_layout or not self.settings.show_hints, "hidden")
+        connections.set_class(very_short, "hidden")
+        self.query_one(Footer).set_class(very_short, "compact-footer")
+
+    def storage_warnings(self) -> list[str]:
+        """Read optional storage safety warnings without coupling the UI to one API."""
+        messages: list[str] = []
+        for name in ("warnings", "partial_warnings", "budget_warnings"):
+            value = getattr(self.vault, name, ())
+            if isinstance(value, str):
+                messages.append(value)
+            elif isinstance(value, (list, tuple, set)):
+                messages.extend(item for item in value if isinstance(item, str))
+        for name in ("partial_warning", "budget_warning", "cache_warning", "permission_warning"):
+            value = getattr(self.vault, name, "")
+            if isinstance(value, str) and value:
+                messages.append(value)
+        return list(dict.fromkeys(message for message in messages if message))
+
+    def notify_storage_warnings(self) -> None:
+        for warning in self.storage_warnings():
+            if warning not in self._shown_storage_warnings:
+                self.notify("Storage warning: " + warning, severity="warning", timeout=10)
+                self._shown_storage_warnings.add(warning)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         # Let modal screens own the keyboard; never run editor shortcuts underneath them.
@@ -401,6 +470,7 @@ class Jotline(App):
         self.query_one("#collection", Static).update(f"{self.collection.upper()}  /  {len(notes)}")
         self.query_one("#brand", Static).update(self.shortcut_text(
             f"›_ jotline     /     {self.workspace}     ·     ctrl+w workspaces · ctrl+t tags"))
+        self.notify_storage_warnings()
 
     @on(Input.Changed, "#search")
     def search_changed(self) -> None:
@@ -427,8 +497,11 @@ class Jotline(App):
 
     def status(self, message: str) -> None:
         tags = sorted(self.current.tags)[:5]
-        self.query_one("#status", Static).update(f"{message}  ·  {len(self.current.body.split())} words  ·  {self.current.collection}  ·  {self.workspace}" +
-            ("  ·  " + " ".join("#" + tag for tag in tags) if tags else ""))
+        details = f"{message}  ·  {len(self.current.body.split())} words"
+        if not self.compact_layout:
+            details += f"  ·  {self.current.collection}  ·  {self.workspace}"
+            details += "  ·  " + " ".join("#" + tag for tag in tags) if tags else ""
+        self.query_one("#status", Static).update(details)
         self.query_one("#note-heading", Static).update(Text(self.current.title + " / " + self.current.collection))
 
     def save_current(self) -> bool:
@@ -439,14 +512,19 @@ class Jotline(App):
         try:
             self.vault.save(self.current)
         except (OSError, ValueError) as error:
-            self.status("NOT SAVED · " + str(error))
-            if str(error) != self.last_error:
-                self.notify(str(error), severity="error", timeout=10)
-                self.last_error = str(error)
+            conflict = isinstance(error, ConflictError) or "changed outside Jotline" in str(error)
+            guidance = ("Your on-screen draft is safe. Open Commands → Save recovery copy, then Refresh vault "
+                        "to review the external version.") if conflict else str(error)
+            message = "NOT SAVED · " + ("External change detected" if conflict else str(error))
+            self.status(message)
+            if guidance != self.last_error:
+                self.notify(guidance, severity="error", timeout=12)
+                self.last_error = guidance
             return False
         self.dirty, self.last_error = False, ""
         self.status("Saved")
         self.notify_backup_warning()
+        self.notify_storage_warnings()
         self.refresh_notes()
         self.connections()
         return True
@@ -503,9 +581,11 @@ class Jotline(App):
         self.collection = "all"
         self.set_focus_mode(False)
         self.refresh_notes()
-        self.query_one("#search", Input).focus()
+        self.show_navigation("search")
 
     def action_editor_focus(self) -> None:
+        self.compact_navigation = False
+        self.update_responsive_layout()
         self.query_one("#editor", TextArea).focus()
 
     def action_save(self) -> None:
@@ -521,13 +601,46 @@ class Jotline(App):
 
     def set_focus_mode(self, enabled: bool) -> None:
         self.focused_writing = enabled
-        self.query_one("#sidebar").set_class(enabled, "hidden")
-        self.query_one("#hint").set_class(enabled or not self.settings.show_hints, "hidden")
+        if enabled:
+            self.compact_navigation = False
+        self.update_responsive_layout()
+
+    def show_navigation(self, target: str = "notes") -> None:
+        """Temporarily reveal compact navigation before focusing its controls."""
+        self.compact_navigation = True
+        self.update_responsive_layout()
+        self.query_one("#" + target).focus()
 
     def action_open_note(self) -> None:
         notes = self.vault.search(workspace=self.workspace)
-        self.push_screen(Palette([(n.id, n.title + " · " + n.collection) for n in notes], "Open a note"),
+        self.push_screen(Palette(self.note_choices(notes), "Open a note"),
                          lambda key: self.load_id(key) if key else None)
+
+    @staticmethod
+    def note_excerpt(note: Note) -> str:
+        lines = [line.strip().lstrip("# ") for line in note.body.splitlines() if line.strip()]
+        excerpt = next((line for line in lines if line != note.title), "")
+        return re.sub(r"\s+", " ", excerpt)[:44]
+
+    def note_choices(self, notes: list[Note]) -> list[tuple[str, str]]:
+        """Only add noisy metadata when a title alone would be ambiguous."""
+        titles: dict[str, int] = {}
+        for note in notes:
+            title = note.title.casefold()
+            titles[title] = titles.get(title, 0) + 1
+        choices = []
+        for note in notes:
+            label = note.title
+            if titles[note.title.casefold()] > 1:
+                context = [note.collection, note.updated[:10] or "imported"]
+                if excerpt := self.note_excerpt(note):
+                    context.append(excerpt)
+                context.append("ID " + note.id[:8])
+                label += " · " + " · ".join(context)
+            else:
+                label += " · " + note.collection
+            choices.append((note.id, label))
+        return choices
 
     def workspace_names(self) -> list[str]:
         return sorted(self.vault.workspaces() | set(self.settings.workspace_names) | {self.workspace})
@@ -598,7 +711,7 @@ class Jotline(App):
             self.query_one("#search", Input).value = "#" + tag
             self.refresh_notes()
             self.set_focus_mode(False)
-            self.query_one("#notes").focus()
+            self.show_navigation()
 
     def add_tags(self, tags: str | None) -> None:
         if not tags:
@@ -676,7 +789,7 @@ class Jotline(App):
         if not notes:
             self.notify("No saved history in this workspace yet.")
             return
-        self.push_screen(Palette([(n.id, n.title) for n in notes], "Saved note history"), self.show_history)
+        self.push_screen(Palette(self.note_choices(notes), "Saved note history"), self.show_history)
 
     def show_history(self, note_id: str | None) -> None:
         if not note_id:
@@ -768,21 +881,34 @@ class Jotline(App):
                             anchor: int | None = None) -> tuple[int, int] | None:
         editor = self.query_one("#editor", TextArea)
         text = editor.text
-        matches = list(re.finditer(re.escape(query), text, re.IGNORECASE))
-        if not matches:
-            return None
         if anchor is None:
             location = editor.selection.start if reverse else editor.selection.end
             anchor = self.editor_offset(location, text)
-        if reverse:
-            match = next((item for item in reversed(matches) if item.start() < anchor), matches[-1])
+        # Scan once and retain only the candidate, wrap target, and counters.
+        # Notes can be large; materialising every match is unnecessary memory use.
+        first = last = candidate = None
+        first_ordinal = last_ordinal = candidate_ordinal = 0
+        total = 0
+        for total, match in enumerate(re.finditer(re.escape(query), text, re.IGNORECASE), start=1):
+            if first is None:
+                first, first_ordinal = match, total
+            last, last_ordinal = match, total
+            if (reverse and match.start() < anchor) or (not reverse and match.start() >= anchor):
+                if reverse:
+                    candidate, candidate_ordinal = match, total
+                elif candidate is None:
+                    candidate, candidate_ordinal = match, total
+        if first is None:
+            return None
+        if candidate is None:
+            match, ordinal = (last, last_ordinal) if reverse else (first, first_ordinal)
         else:
-            match = next((item for item in matches if item.start() >= anchor), matches[0])
+            match, ordinal = candidate, candidate_ordinal
         start = self.editor_location(match.start(), text)
         end = self.editor_location(match.end(), text)
         editor.move_cursor(start)
         editor.move_cursor(end, select=True, center=True)
-        return matches.index(match) + 1, len(matches)
+        return ordinal, total
 
     def refresh_vault(self) -> None:
         self.vault.invalidate_cache()
@@ -803,142 +929,158 @@ class Jotline(App):
         self.connections()
         if kept_unsaved and not reload_failed:
             self.status("Refreshed · unsaved changes kept")
-        if self.vault.warnings:
-            self.notify("Some Markdown files could not be read. Run jotline list to inspect warnings.",
-                        severity="warning", timeout=10)
-        elif not reload_failed:
+        if not self.storage_warnings() and not reload_failed:
             self.notify("Vault refreshed from disk.")
 
     def action_commands(self) -> None:
-        choices = [("templates", "New note from template"), ("save-template", "Save this note as a template"),
-                   ("template-source", "Copy template source to new note"),
-                   ("history", "History of this note"), ("browse-history", "Browse saved note history"),
-                   ("backup", "Back up vault now"), ("preview", "Preview rendered Markdown"), ("tags", "Browse tags                     ctrl+t"), ("add-tags", "Add tags to this note"),
-                   ("workspaces", "Switch workspace                ctrl+w"), ("new-workspace", "Create workspace"),
-                   ("move-workspace", "Move note to workspace"), ("settings", "Settings · appearance, editor, hotkeys · F1"), ("new", "New thought                    ctrl+n"), ("daily", "Open today's daily log         ctrl+d"),
-                   ("open", "Open a note                    ctrl+o"), ("focus", "Toggle focus mode              ctrl+b"),
-                   ("find", "Find within current note"), ("refresh", "Refresh vault from disk"),
-                   ("star", "Toggle star on this note"), ("link", "Insert note link"), ("follow", "Follow a link in this note"),
-                   ("backlinks", "Open a backlink"), ("task", "Toggle task on current line"),
-                   ("copy", "Copy note to clipboard (terminal OSC 52)"), ("recovery", "Save recovery copy"),
-                   ("review", "Start weekly review"), ("help", "Open writing and workflow guide")]
-        choices += [("format:" + style, "Format " + label) for style, label in (
-            ("bold", "bold"), ("italic", "italic"), ("code", "inline code"),
-            ("heading", "heading"), ("list", "bullet list"), ("quote", "blockquote"))]
-        choices += [("view:" + c, "Show " + c) for c in ("all", "starred", *COLLECTIONS)]
-        choices += [("move:" + c, "Move note to " + c) for c in COLLECTIONS]
+        self.push_screen(Palette(self.command_choices(), "Run a command"), self.command)
+
+    def build_command_registry(self) -> dict[str, Command]:
+        commands = [
+            Command("templates", "New note from template", self.action_templates),
+            Command("save-template", "Save this note as a template", self.prompt_save_template),
+            Command("template-source", "Copy template source to new note", lambda: self.action_templates(source=True)),
+            Command("history", "History of this note", lambda: self.show_history(self.current.id)),
+            Command("browse-history", "Browse saved note history", self.browse_history),
+            Command("backup", "Back up vault now", self.action_backup),
+            Command("preview", "Preview rendered Markdown", self.action_preview, "preview"),
+            Command("tags", "Browse tags", self.action_tags, "tags"),
+            Command("add-tags", "Add tags to this note", self.prompt_add_tags),
+            Command("workspaces", "Switch workspace", self.action_workspaces, "workspaces"),
+            Command("new-workspace", "Create workspace", self.prompt_new_workspace),
+            Command("move-workspace", "Move note to workspace", self.prompt_move_workspace),
+            Command("settings", "Settings · appearance, editor, hotkeys · F1", self.action_settings),
+            Command("new", "New thought", self.action_new, "new"),
+            Command("daily", "Open today's daily log", self.action_daily, "daily"),
+            Command("open", "Open a note", self.action_open_note, "open_note"),
+            Command("focus", "Toggle focus mode", self.action_focus_mode, "focus_mode"),
+            Command("find", "Find within current note", lambda: self.push_screen(FindInNote())),
+            Command("refresh", "Refresh vault from disk", self.refresh_vault),
+            Command("star", "Toggle star on this note", self.toggle_star),
+            Command("link", "Insert note link", lambda: self.select_related_note("link")),
+            Command("follow", "Follow a link in this note", lambda: self.select_related_note("follow")),
+            Command("backlinks", "Open a backlink", lambda: self.select_related_note("backlinks")),
+            Command("task", "Toggle task on current line", self.toggle_task),
+            Command("copy", "Copy note to clipboard (terminal OSC 52)", self.copy_current_note),
+            Command("recovery", "Save recovery copy", self.save_recovery_copy),
+            Command("review", "Start weekly review", lambda: self.open_generated_note(REVIEW)),
+            Command("help", "Open writing and workflow guide", lambda: self.open_generated_note(GUIDE)),
+        ]
+        commands.extend(Command("format:" + style, "Format " + label,
+                                lambda style=style: self.action_format_markdown(style), "format_" + style)
+                        for style, label in (("bold", "bold"), ("italic", "italic"), ("code", "inline code"),
+                                             ("heading", "heading"), ("list", "bullet list"), ("quote", "blockquote")))
+        commands.extend(Command("view:" + collection, "Show " + collection,
+                                lambda collection=collection: self.show_collection(collection))
+                        for collection in ("all", "starred", *COLLECTIONS))
+        commands.extend(Command("move:" + collection, "Move note to " + collection,
+                                lambda collection=collection: self.move_to_collection(collection))
+                        for collection in COLLECTIONS)
+        return {command.key: command for command in commands}
+
+    def command_choices(self) -> list[tuple[str, str]]:
         hotkeys = self.settings.effective_hotkeys
-        choices = [(key, self.shortcut_text(label) +
-                    ("  " + hotkeys.get(key.replace("format:", "format_"), "")
-                     if key == "preview" or key.startswith("format:") else "")) for key, label in choices]
-        self.push_screen(Palette(choices), self.command)
+        choices = []
+        for command in self.command_registry.values():
+            label = self.shortcut_text(command.label)
+            if command.hotkey_action and (key := hotkeys.get(command.hotkey_action)):
+                label += " · " + key
+            choices.append((command.key, label))
+        return choices
 
     def command(self, key: str | None) -> None:
-        if not key:
-            return
-        if key == "templates":
-            self.action_templates()
-        elif key == "template-source":
-            self.action_templates(source=True)
-        elif key == "save-template":
-            self.push_screen(TextPrompt("Save a new template", "e.g. weekly-planning; placeholders: {{date}}, {{time}}, {{workspace}}"),
-                             self.save_template)
-        elif key == "history":
-            self.show_history(self.current.id)
-        elif key == "browse-history":
-            self.browse_history()
-        elif key == "backup":
-            self.action_backup()
-        elif key == "preview":
-            self.action_preview()
-        elif key.startswith("format:"):
-            self.action_format_markdown(key.removeprefix("format:"))
-        elif key == "tags":
-            self.action_tags()
-        elif key == "add-tags":
-            self.push_screen(TextPrompt("Add tags to this note", "#work #ideas or project/topic"), self.add_tags)
-        elif key == "workspaces":
-            self.action_workspaces()
-        elif key == "new-workspace":
-            self.push_screen(TextPrompt("Create a workspace", "e.g. personal, work, research"), self.switch_workspace)
-        elif key == "move-workspace":
-            self.push_screen(Palette([(name, name) for name in self.workspace_names()
-                                      if name != self.workspace], "Move note to workspace"), self.move_workspace)
-        elif key == 'settings':
-            self.action_settings()
-        elif key == "find":
-            self.push_screen(FindInNote())
-        elif key == "refresh":
-            self.refresh_vault()
-        elif key.startswith("view:"):
-            self.collection = key[5:]
-            self.query_one("#search", Input).value = ""
-            self.refresh_notes()
-            self.set_focus_mode(False)
-            self.query_one("#notes").focus()
-        elif key.startswith("move:") or key == "star":
-            if not self.save_current():
-                return
-            if key == "star":
-                self.current.starred = not self.current.starred
-            else:
-                self.current.collection = key[5:]
+        if command := self.command_registry.get(key or ""):
+            command.handler()
+
+    def prompt_save_template(self) -> None:
+        self.push_screen(TextPrompt("Save a new template", "e.g. weekly-planning; placeholders: {{date}}, {{time}}, {{workspace}}"),
+                         self.save_template)
+
+    def prompt_add_tags(self) -> None:
+        self.push_screen(TextPrompt("Add tags to this note", "#work #ideas or project/topic"), self.add_tags)
+
+    def prompt_new_workspace(self) -> None:
+        self.push_screen(TextPrompt("Create a workspace", "e.g. personal, work, research"), self.switch_workspace)
+
+    def prompt_move_workspace(self) -> None:
+        self.push_screen(Palette([(name, name) for name in self.workspace_names() if name != self.workspace],
+                                 "Move note to workspace"), self.move_workspace)
+
+    def show_collection(self, collection: str) -> None:
+        self.collection = collection
+        self.query_one("#search", Input).value = ""
+        self.refresh_notes()
+        self.set_focus_mode(False)
+        self.show_navigation()
+
+    def move_to_collection(self, collection: str) -> None:
+        if self.save_current():
+            self.current.collection = collection
             self.dirty = True
             self.save_current()
-        elif key in {"new", "daily", "focus", "open"}:
-            {"new": self.action_new, "daily": self.action_daily, "focus": self.action_focus_mode,
-             "open": self.action_open_note}[key]()
-        elif key == "copy":
-            self.copy_to_clipboard(self.query_one("#editor", TextArea).text)
-            self.notify("Copy requested. Your terminal must allow OSC 52 clipboard access.")
-        elif key == "task":
-            editor = self.query_one("#editor", TextArea)
-            row, _ = editor.cursor_location
-            line = editor.text.split("\n")[row]
-            if line.lstrip().startswith("- [ ] "):
-                updated = line.replace("- [ ] ", "- [x] ", 1)
-            elif line.lstrip().startswith("- [x] "):
-                updated = line.replace("- [x] ", "- [ ] ", 1)
+
+    def toggle_star(self) -> None:
+        if self.save_current():
+            self.current.starred = not self.current.starred
+            self.dirty = True
+            self.save_current()
+
+    def copy_current_note(self) -> None:
+        self.copy_to_clipboard(self.query_one("#editor", TextArea).text)
+        self.notify("Copy requested. Your terminal must allow OSC 52 clipboard access.")
+
+    def toggle_task(self) -> None:
+        editor = self.query_one("#editor", TextArea)
+        row, _ = editor.cursor_location
+        line = editor.text.split("\n")[row]
+        if line.lstrip().startswith("- [ ] "):
+            updated = line.replace("- [ ] ", "- [x] ", 1)
+        elif line.lstrip().startswith("- [x] "):
+            updated = line.replace("- [x] ", "- [ ] ", 1)
+        else:
+            updated = "- [ ] " + line
+        editor.replace(updated, (row, 0), (row, len(line)))
+
+    def save_recovery_copy(self) -> None:
+        self.capture_current_buffer()
+        try:
+            self.load(self.vault.recovery(self.current))
+            self.refresh_notes()
+            self.notify("Saved a separate recovery copy in the inbox.")
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity="error")
+
+    def select_related_note(self, mode: str) -> None:
+        self.capture_current_buffer()
+        if mode == "backlinks":
+            notes = self.vault.backlinks(self.current)
+        else:
+            notes = self.vault.search(workspace=self.workspace)
+            if mode == "follow":
+                links = self.current.links
+                notes = [note for note in notes if note.id in links or note.title in links]
             else:
-                updated = "- [ ] " + line
-            editor.replace(updated, (row, 0), (row, len(line)))
-        elif key == "recovery":
-            self.capture_current_buffer()
-            try:
-                self.load(self.vault.recovery(self.current))
-                self.refresh_notes()
-                self.notify("Saved a separate recovery copy in the inbox.")
-            except (OSError, ValueError) as error:
-                self.notify(str(error), severity="error")
-        elif key in {"link", "follow", "backlinks"}:
-            self.capture_current_buffer()
-            if key == "backlinks":
-                notes = self.vault.backlinks(self.current)
-            else:
-                notes = self.vault.search(workspace=self.workspace)
-                if key == "follow":
-                    links = self.current.links
-                    notes = [n for n in notes if n.id in links or n.title in links]
-                else:
-                    notes = [n for n in notes if n.id != self.current.id]
-            if not notes:
-                self.notify("No matching notes yet.")
-                return
-            def picked(note_id):
-                if note_id and key == "link":
-                    note = next(n for n in notes if n.id == note_id)
-                    label = note.title.replace("[", "").replace("]", "").replace("|", "")
-                    self.query_one("#editor", TextArea).insert(f"[[{note.id}|{label}]]")
-                    self.query_one("#editor", TextArea).focus()
-                elif note_id:
-                    self.load_id(note_id)
-            self.push_screen(Palette([(n.id, n.title) for n in notes], "Choose a note"), picked)
-        elif key in {"help", "review"}:
-            if self.save_current():
-                body = self.shortcut_text(GUIDE if key == "help" else REVIEW)
-                self.load(self.vault.new(body, workspace=self.workspace))
-                self.dirty = True
-                self.save_current()
+                notes = [note for note in notes if note.id != self.current.id]
+        if not notes:
+            self.notify("No matching notes yet.")
+            return
+
+        def picked(note_id: str | None) -> None:
+            if note_id and mode == "link":
+                note = next(note for note in notes if note.id == note_id)
+                label = note.title.replace("[", "").replace("]", "").replace("|", "")
+                self.query_one("#editor", TextArea).insert(f"[[{note.id}|{label}]]")
+                self.query_one("#editor", TextArea).focus()
+            elif note_id:
+                self.load_id(note_id)
+
+        self.push_screen(Palette(self.note_choices(notes), "Choose a note"), picked)
+
+    def open_generated_note(self, body: str) -> None:
+        if self.save_current():
+            self.load(self.vault.new(self.shortcut_text(body), workspace=self.workspace))
+            self.dirty = True
+            self.save_current()
 
 
 GUIDE = """# A little room to think

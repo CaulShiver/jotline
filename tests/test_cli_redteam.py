@@ -1,9 +1,11 @@
 """CLI regressions for bounded local vault inputs and terminal-safe output."""
 from concurrent.futures import ThreadPoolExecutor
 import io
+import json
 from pathlib import Path
 import subprocess
 import sys
+import zipfile
 
 import pytest
 
@@ -85,6 +87,20 @@ def test_import_rejects_symlinked_source(tmp_path):
     assert b"Too many levels of symbolic links" in imported.stderr
 
 
+def test_import_rejects_symlinked_source_ancestor(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    source = outside / "source.md"
+    source.write_text("private source")
+    linked_parent = tmp_path / "linked-parent"
+    linked_parent.symlink_to(outside, target_is_directory=True)
+
+    imported = run_cli(tmp_path / "vault", "import", str(linked_parent / "source.md"))
+
+    assert imported.returncode == 1
+    assert b"linked-parent" in imported.stderr
+
+
 def test_doctor_succeeds_when_clean_and_fails_for_invalid_settings(tmp_path):
     healthy = run_cli(tmp_path, "doctor")
     assert healthy.returncode == 0
@@ -96,6 +112,78 @@ def test_doctor_succeeds_when_clean_and_fails_for_invalid_settings(tmp_path):
     assert unhealthy.returncode == 1
     assert b"Warnings: 1" in unhealthy.stdout
     assert b"settings: Could not load settings" in unhealthy.stderr
+
+
+def test_doctor_json_reports_runtime_and_ancillary_warnings(tmp_path):
+    (tmp_path / ".jotline-settings.json").write_text("[]")
+    templates = tmp_path / ".jotline-templates"
+    templates.mkdir()
+    (templates / "broken.md").write_bytes(b"\xff")
+    history = tmp_path / ".jotline-history" / "note"
+    history.mkdir(parents=True)
+    (history / "20260912T000000000000-abcdef12.md").write_text("---\njotline: 1\nstarred: bad\n---\nbody")
+    backups = tmp_path / ".jotline-backups"
+    backups.mkdir()
+    (backups / "manual-20260912T000000000000-abcdef12.zip").write_text("not a zip")
+    (tmp_path / ".jotline.lock").symlink_to(tmp_path / "outside.lock")
+
+    doctor = run_cli(tmp_path, "doctor", "--json")
+
+    assert doctor.returncode == 1
+    assert doctor.stderr == b""
+    report = json.loads(doctor.stdout)
+    assert report["jotline"]["version"]
+    assert report["python"]["version"].startswith(f"{sys.version_info.major}.{sys.version_info.minor}")
+    assert report["textual"]["version"] != "unknown"
+    assert report["vault"]["readable_notes"] == 0
+    warnings = "\n".join(report["warnings"])
+    assert "settings: Could not load settings" in warnings
+    assert "templates/broken.md" in warnings
+    assert "history/note/20260912T000000000000-abcdef12.md" in warnings
+    assert "backups/manual-20260912T000000000000-abcdef12.zip" in warnings
+    assert "lock:" in warnings
+
+
+def test_doctor_reports_unwritable_vault_permissions(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    vault.chmod(0o500)
+    try:
+        doctor = run_cli(vault, "doctor")
+    finally:
+        vault.chmod(0o700)
+
+    assert doctor.returncode == 1
+    assert b"Writable vault: no" in doctor.stdout
+    assert b"Vault directory is not writable" in doctor.stderr
+
+
+def test_doctor_includes_storage_permission_warning(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    vault.chmod(0o777)
+    try:
+        doctor = run_cli(vault, "doctor")
+    finally:
+        vault.chmod(0o700)
+
+    assert doctor.returncode == 1
+    assert b"Writable vault: yes" in doctor.stdout
+    assert b"writable by other users" in doctor.stderr
+
+
+def test_doctor_reports_broken_backup_zip(tmp_path):
+    backups = tmp_path / ".jotline-backups"
+    backups.mkdir()
+    bad_zip = backups / "manual-20260912T000000000000-abcdef12.zip"
+    with zipfile.ZipFile(bad_zip, "w") as archive:
+        archive.writestr("note.md", "body")
+    bad_zip.write_text("broken")
+
+    doctor = run_cli(tmp_path, "doctor")
+
+    assert doctor.returncode == 1
+    assert b"backups/manual-20260912T000000000000-abcdef12.zip" in doctor.stderr
 
 
 class InteractiveOutput(io.StringIO):

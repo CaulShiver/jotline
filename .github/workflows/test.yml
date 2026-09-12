@@ -16,11 +16,35 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
-      - run: python -m pip install uv==0.12.10
-      - run: uv sync --locked --extra dev --python '${{ matrix.python }}'
-      - run: uv run --locked pytest -q
-      - run: uv build
-      - name: Install and exercise the built wheel
+      - name: Install uv
+        timeout-minutes: 2
+        run: python -m pip install uv==0.12.10
+      - name: Check locked project resolve
+        timeout-minutes: 2
+        run: uv lock --check --python '${{ matrix.python }}'
+      - name: Check latest dependency resolve
+        if: matrix.python == '3.13'
+        timeout-minutes: 4
+        run: uv lock --upgrade --dry-run --python '${{ matrix.python }}'
+      - name: Check direct lower bounds
+        if: matrix.python == '3.11'
+        timeout-minutes: 5
         run: |
-          uv pip install --python .venv/bin/python --no-deps --reinstall dist/*.whl
-          .venv/bin/python -I scripts/smoke_install.py
+          uv venv .lower-bound --python '${{ matrix.python }}'
+          uv pip install --python .lower-bound/bin/python --strict -e . 'textual==8.2.8' 'pytest==8.2.0' 'pytest-asyncio==0.24.0'
+          .lower-bound/bin/python -m pytest -q tests/test_cli_redteam.py tests/test_packaging.py
+      - name: Sync locked test environment
+        timeout-minutes: 4
+        run: uv sync --locked --extra dev --python '${{ matrix.python }}'
+      - name: Run tests
+        timeout-minutes: 5
+        run: uv run --locked pytest -q
+      - name: Build distributions
+        timeout-minutes: 3
+        run: uv build --clear
+      - name: Install and exercise the built wheel in a clean venv
+        timeout-minutes: 4
+        run: |
+          uv venv .smoke-venv --python '${{ matrix.python }}'
+          uv pip install --python .smoke-venv/bin/python --strict dist/*.whl
+          .smoke-venv/bin/python -I scripts/smoke_install.py

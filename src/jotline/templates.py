@@ -16,6 +16,7 @@ BUILTIN_TEMPLATES = {
     "project": "# Project\n\nWorkspace: {{workspace}}\nStarted: {{date}}\n\n## Outcome\n\n## Next actions\n\n- [ ] \n\n## References\n",
     "journal": "# {{date}}\n\n## What's on my mind\n\n## Today’s priorities\n\n- [ ] \n\n## Reflection\n",
 }
+MAX_TEMPLATE_ENTRIES = 2048
 
 
 def _name(name: str) -> str:
@@ -27,34 +28,50 @@ def _name(name: str) -> str:
 
 class Templates:
     def __init__(self, vault_path: Path):
-        self.vault_path = Path(vault_path)
+        self.vault_path = Path(vault_path).expanduser().resolve()
         self.path = self.vault_path / ".jotline-templates"
 
     @contextmanager
-    def _directory(self, create: bool = False):
+    def _directory(self, create: bool = False, vault_directory: int | None = None):
         """Pin the directory so replacement cannot redirect file operations."""
-        if create:
-            try:
-                self.path.mkdir(mode=0o700)
-            except FileExistsError:
-                pass
+        own_vault = vault_directory is None
+        if own_vault:
+            vault_directory = os.open(self.vault_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
-            fd = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            if create:
+                try:
+                    os.mkdir(self.path.name, mode=0o700, dir_fd=vault_directory)
+                except FileExistsError:
+                    pass
+            fd = os.open(self.path.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                         dir_fd=vault_directory)
         except FileNotFoundError:
             if create:
                 raise
-            yield None
+            try:
+                yield None
+            finally:
+                if own_vault:
+                    os.close(vault_directory)
             return
+        except BaseException:
+            if own_vault:
+                os.close(vault_directory)
+            raise
         try:
             yield fd
         finally:
             os.close(fd)
+            if own_vault:
+                os.close(vault_directory)
 
     def names(self) -> list[str]:
         names = set(BUILTIN_TEMPLATES)
         with self._directory() as directory:
             if directory is not None:
-                for filename in os.listdir(directory):
+                for index, filename in enumerate(os.listdir(directory)):
+                    if index >= MAX_TEMPLATE_ENTRIES:
+                        raise OSError(f"Too many templates; limit is {MAX_TEMPLATE_ENTRIES}")
                     if not filename.endswith(".md"):
                         continue
                     name = filename[:-3]
@@ -99,7 +116,8 @@ class Templates:
         raw = body.encode("utf-8")
         if len(raw) > MAX_NOTE_BYTES:
             raise ValueError("Template exceeds the note size limit")
-        with vault_lock(self.vault_path), self._directory(create=True) as directory:
+        with vault_lock(self.vault_path) as vault_directory, self._directory(
+                create=True, vault_directory=vault_directory) as directory:
             temporary = ".tmp-" + uuid4().hex
             fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
             try:

@@ -122,18 +122,19 @@ def test_failed_replace_or_history_durability_preserves_old_note(tmp_path, monke
     existing = vault.history(note.id)
     baseline = note.original
     note.body = 'second'
-    original_replace = os.replace
-    def fail_note(source, target):
-        if target == vault.file(note.id):
+    original_link = os.link
+    def fail_note(source, target, *args, **kwargs):
+        if (str(source).startswith('.jotline-') and not str(source).startswith('.jotline-displaced-')
+                and target == vault.file(note.id).name):
             raise OSError('note replacement failed')
-        return original_replace(source, target)
-    monkeypatch.setattr(os, 'replace', fail_note)
+        return original_link(source, target, *args, **kwargs)
+    monkeypatch.setattr(os, 'link', fail_note)
     with pytest.raises(OSError, match='replacement'):
         vault.save(note)
     assert vault.read(note.id).body == 'first'
     assert note.original == baseline
     assert vault.history(note.id) == existing
-    monkeypatch.setattr(os, 'replace', original_replace)
+    monkeypatch.setattr(os, 'link', original_link)
     monkeypatch.setattr(history, 'sync_directory', lambda path: (_ for _ in ()).throw(OSError('history durability failed')))
     with pytest.raises(OSError, match='durability'):
         vault.save(note)
@@ -198,7 +199,8 @@ def test_note_tempfile_failure_does_not_leave_phantom_revision(tmp_path, monkeyp
     vault.save(note)
     existing = vault.history(note.id)
     note.body = 'after'
-    monkeypatch.setattr('tempfile.mkstemp', lambda **kwargs: (_ for _ in ()).throw(OSError('disk full')))
+    monkeypatch.setattr('jotline.store.create_private_temp',
+                        lambda *args, **kwargs: (_ for _ in ()).throw(OSError('disk full')))
     with pytest.raises(OSError, match='disk full'):
         vault.save(note)
     assert vault.history(note.id) == existing
@@ -211,3 +213,174 @@ def test_backup_warning_survives_note_scan(tmp_path):
     vault.backup()
     vault.notes()
     assert 'skipped 1' in vault.backup_warning
+
+
+def test_corrupt_newest_revision_does_not_block_save_or_older_recovery(tmp_path):
+    vault = Vault(tmp_path)
+    note = vault.new('first', workspace='work')
+    vault.save(note)
+    note.body = 'second'
+    vault.save(note)
+    newest = vault.history(note.id)[0]
+    revision_path = tmp_path / '.jotline-history' / note.id / f'{newest.id}.md'
+    revision_path.write_bytes(b'\xff')
+    vault.file(note.id).unlink()
+    recovered = vault.history_notes('work')
+    assert recovered and recovered[0].body == 'first'
+    assert any('skipped corrupt revision' in warning or newest.id in warning for warning in vault.warnings)
+
+
+def test_corrupt_newest_revision_does_not_wedge_future_save(tmp_path):
+    vault = Vault(tmp_path)
+    note = vault.new('first')
+    vault.save(note)
+    folder = tmp_path / '.jotline-history' / note.id
+    (folder / '20991231T235959999999-aaaaaaaa.md').write_bytes(b'\xff')
+    note.body = 'second'
+    vault.save(note)
+    assert vault.read(note.id).body == 'second'
+    assert any('skipped corrupt revision' in warning for warning in vault.warnings)
+
+
+def test_invalid_daily_backup_is_retained_and_replaced(tmp_path):
+    vault = Vault(tmp_path)
+    folder = tmp_path / '.jotline-backups'
+    folder.mkdir()
+    daily = folder / 'daily-{}.zip'.format(history.date.today().isoformat())
+    daily.write_bytes(b'not a zip')
+    note = vault.new('data')
+    vault.save(note)
+    with zipfile.ZipFile(daily) as archive:
+        assert 'jotline-backup-manifest.json' in archive.namelist()
+    quarantined = list(folder.glob('.invalid-*.zip'))
+    assert len(quarantined) == 1 and quarantined[0].read_bytes() == b'not a zip'
+    assert 'Invalid daily backup retained' in vault.backup_warning
+
+
+@pytest.mark.parametrize('manifest_only,manifest', [
+    (True, {"created": "now", "skipped": [], "scope": "notes"}),
+    (False, None),
+    (False, {"created": "now"}),
+])
+def test_structurally_incomplete_daily_backup_is_replaced(tmp_path, manifest_only, manifest):
+    vault = Vault(tmp_path)
+    (tmp_path / 'plain.md').write_text('data')
+    folder = tmp_path / '.jotline-backups'
+    folder.mkdir()
+    daily = folder / f'daily-{history.date.today().isoformat()}.zip'
+    with zipfile.ZipFile(daily, 'w') as archive:
+        if not manifest_only:
+            archive.writestr('plain.md', b'data')
+        archive.writestr('jotline-backup-manifest.json', json.dumps(manifest))
+    vault.backup_warning = ''
+    history.backup(vault, automatic=True)
+    valid, reason = history.validate_backup(daily)
+    assert valid, reason
+    assert list(folder.glob('.invalid-*.zip'))
+
+
+def test_backup_template_bytes_count_toward_aggregate_budget(tmp_path, monkeypatch):
+    vault = Vault(tmp_path)
+    (tmp_path / 'plain.md').write_text('123456')
+    templates = tmp_path / '.jotline-templates'
+    templates.mkdir()
+    (templates / 'large.md').write_text('abcdefghij')
+    monkeypatch.setattr(history, 'MAX_BACKUP_BYTES', 12)
+    archive_path = vault.backup()
+    with zipfile.ZipFile(archive_path) as archive:
+        assert 'plain.md' in archive.namelist()
+        assert '.jotline-templates/large.md' not in archive.namelist()
+        skipped = json.loads(archive.read('jotline-backup-manifest.json'))['skipped']
+    assert any(item['path'] == '.jotline-templates/large.md' for item in skipped)
+
+
+def test_history_stays_on_pinned_vault_during_root_swap(tmp_path, monkeypatch):
+    original = tmp_path / 'vault'
+    vault = Vault(original)
+    note = vault.new('first')
+    vault.save(note)
+    note.body = 'second'
+    moved = tmp_path / 'moved-vault'
+    original_temp = history._temp_at
+    swapped = False
+
+    def swap(directory, prefix):
+        nonlocal swapped
+        if prefix == '.revision-' and not swapped:
+            swapped = True
+            original.rename(moved)
+            original.mkdir()
+        return original_temp(directory, prefix)
+
+    monkeypatch.setattr(history, '_temp_at', swap)
+    vault.save(note)
+    assert Vault(moved).read(note.id).body == 'second'
+    assert not (original / f'{note.id}.md').exists()
+
+
+def test_backup_stays_on_pinned_folder_during_folder_swap(tmp_path, monkeypatch):
+    vault = Vault(tmp_path)
+    (tmp_path / 'plain.md').write_text('data')
+    backups = tmp_path / '.jotline-backups'
+    retained = tmp_path / 'retained-backups'
+    original_temp = history._temp_at
+
+    def swap(directory, prefix):
+        if prefix == '.backup-' and backups.exists() and not retained.exists():
+            backups.rename(retained)
+            backups.mkdir()
+        return original_temp(directory, prefix)
+
+    monkeypatch.setattr(history, '_temp_at', swap)
+    vault.backup()
+    assert not list(backups.iterdir())
+    archive, = retained.glob('manual-*.zip')
+    with zipfile.ZipFile(archive) as opened:
+        assert opened.read('plain.md') == b'data'
+
+
+def test_history_browsing_stays_on_pinned_vault_during_root_swap(tmp_path, monkeypatch):
+    original = tmp_path / 'vault'
+    vault = Vault(original)
+    trusted = vault.new('trusted history', workspace='work')
+    vault.save(trusted)
+    trusted.body = 'trusted latest'
+    vault.save(trusted)
+
+    replacement = tmp_path / 'replacement'
+    attacker_vault = Vault(replacement)
+    attacker = attacker_vault.new('attacker history', workspace='work')
+    attacker.id = trusted.id
+    attacker_vault.save(attacker)
+    attacker.body = 'attacker latest'
+    attacker_vault.save(attacker)
+
+    retained = tmp_path / 'retained'
+    original_ids = history.history_note_ids
+
+    def swap_after_enumeration(selected, *, vault_directory=None):
+        result = original_ids(selected, vault_directory=vault_directory)
+        if original.exists():
+            original.rename(retained)
+            replacement.rename(original)
+        return result
+
+    monkeypatch.setattr(history, 'history_note_ids', swap_after_enumeration)
+    recovered = vault.history_notes('work')
+    assert recovered
+    assert all('attacker' not in note.body for note in recovered)
+    assert any('trusted' in note.body for note in recovered)
+
+
+def test_backup_temp_failure_closes_template_descriptor(tmp_path, monkeypatch):
+    vault = Vault(tmp_path)
+    templates = tmp_path / '.jotline-templates'
+    templates.mkdir()
+    (templates / 'custom.md').write_text('template')
+    before = len(os.listdir('/proc/self/fd'))
+    monkeypatch.setattr(history, '_temp_at',
+                        lambda *args, **kwargs: (_ for _ in ()).throw(OSError('disk full')))
+    for _ in range(16):
+        with pytest.raises(OSError, match='disk full'):
+            vault.backup()
+    assert len(os.listdir('/proc/self/fd')) == before

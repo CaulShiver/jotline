@@ -3,16 +3,16 @@ from __future__ import annotations
 
 from collections import Counter
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, date
 import fcntl
+import io
 import json
 import os
 from pathlib import Path
 import re
 import stat
 import sys
-import tempfile
 import time
 from uuid import uuid4
 
@@ -23,11 +23,23 @@ MAX_SETTINGS_BYTES = 256 * 1024
 LOCK_TIMEOUT_SECONDS = 1.0
 MAX_CACHE_BYTES = 32 * 1024 * 1024
 MAX_CACHED_NOTES = 2048
+MAX_SCAN_ENTRIES = 10_000
+MAX_SCAN_BYTES = 128 * 1024 * 1024
+MAX_DERIVED_ITEMS = 50_000
 
 FileSignature = tuple[int, int, int, int, int]
 
 LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|[^\[\]]*)?\]\]")
 TAG = re.compile(r"(?<![\w#])#([\w][\w/-]*)", re.UNICODE)
+
+
+def _derived_values(pattern: re.Pattern, body: str, label: str) -> tuple[set[str], str]:
+    values = set()
+    for index, match in enumerate(pattern.finditer(body)):
+        if index >= MAX_DERIVED_ITEMS:
+            return values, f"Note has more than {MAX_DERIVED_ITEMS} {label}; results were truncated"
+        values.add(match.group(1))
+    return values, ""
 
 
 def validate_workspace(name: str) -> str:
@@ -40,7 +52,10 @@ def tagged_body(body: str, tags: str) -> str:
     names = {tag.removeprefix("#").casefold() for tag in tags.split()}
     if not names or any(not re.fullmatch(r"[\w][\w/-]*", tag) for tag in names):
         raise ValueError("Enter tags separated by spaces; use letters, numbers, underscores, / or -")
-    missing = names - {tag.casefold() for tag in TAG.findall(body)}
+    existing, warning = _derived_values(TAG, body, "tags")
+    if warning:
+        raise ValueError(warning)
+    missing = names - {tag.casefold() for tag in existing}
     return body + ("\n\n" + " ".join("#" + tag for tag in sorted(missing)) if missing else "")
 
 
@@ -48,20 +63,67 @@ class ConflictError(OSError):
     """An external edit must be resolved before overwriting a note."""
 
 
-def read_regular_file(path: Path, max_bytes: int = MAX_NOTE_BYTES) -> str:
-    """Read bounded UTF-8 text without following links or blocking on a pipe."""
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+def _read_regular_fd(fd: int, name: str, max_bytes: int) -> str:
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode):
+        raise OSError(f"Not a regular file: {name}")
+    if info.st_size > max_bytes:
+        raise ValueError(f"{name} exceeds the {max_bytes}-byte file limit")
+    raw = bytearray()
+    while len(raw) <= max_bytes:
+        chunk = os.read(fd, min(64 * 1024, max_bytes + 1 - len(raw)))
+        if not chunk:
+            break
+        raw.extend(chunk)
+    if len(raw) > max_bytes:
+        raise ValueError(f"{name} exceeds the {max_bytes}-byte file limit")
+    return bytes(raw).decode("utf-8")
+
+
+def read_regular_at(directory: int, name: str, max_bytes: int = MAX_NOTE_BYTES) -> str:
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
     try:
-        info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode):
-            raise OSError(f"Not a regular file: {path.name}")
-        if info.st_size > max_bytes:
-            raise ValueError(f"{path.name} exceeds the {max_bytes}-byte file limit")
-        with os.fdopen(fd, "rb", closefd=False) as stream:
-            raw = stream.read(max_bytes + 1)
-        if len(raw) > max_bytes:
-            raise ValueError(f"{path.name} exceeds the {max_bytes}-byte file limit")
-        return raw.decode("utf-8")
+        return _read_regular_fd(fd, name, max_bytes)
+    finally:
+        os.close(fd)
+
+
+def create_private_temp(directory: int, prefix: str) -> tuple[int, str]:
+    """Create a private file inside an already-pinned directory."""
+    for _ in range(100):
+        name = prefix + uuid4().hex
+        try:
+            fd = os.open(name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                         0o600, dir_fd=directory)
+            return fd, name
+        except FileExistsError:
+            continue
+    raise FileExistsError("Could not allocate private storage")
+
+
+def replace_at(directory: int, source: str, target: str) -> None:
+    """Replace within a pinned directory, failing closed if dir_fd is unsupported."""
+    os.replace(source, target, src_dir_fd=directory, dst_dir_fd=directory)
+
+
+def read_regular_file(path: Path, max_bytes: int = MAX_NOTE_BYTES, *, ancestor_safe: bool = False) -> str:
+    """Read bounded UTF-8 text without following links or blocking on a pipe."""
+    if ancestor_safe:
+        absolute = Path(path).absolute()
+        directory = os.open(absolute.anchor, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for component in absolute.parts[1:-1]:
+                next_directory = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                         dir_fd=directory)
+                os.close(directory)
+                directory = next_directory
+            fd = os.open(absolute.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        finally:
+            os.close(directory)
+    else:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        return _read_regular_fd(fd, path.name, max_bytes)
     finally:
         os.close(fd)
 
@@ -69,7 +131,13 @@ def read_regular_file(path: Path, max_bytes: int = MAX_NOTE_BYTES) -> str:
 @contextmanager
 def vault_lock(path: Path):
     """Coordinate local writers without hanging the UI indefinitely."""
-    fd = os.open(path / ".jotline.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    directory = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        fd = os.open(".jotline.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
+                     0o600, dir_fd=directory)
+    except BaseException:
+        os.close(directory)
+        raise
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise OSError("Jotline lock is not a regular file")
@@ -83,11 +151,12 @@ def vault_lock(path: Path):
                     raise OSError("Vault is busy in another process; try saving again") from None
                 time.sleep(0.025)
         try:
-            yield
+            yield directory
         finally:
             fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
         os.close(fd)
+        os.close(directory)
 
 
 def now() -> str:
@@ -111,19 +180,28 @@ class Note:
     starred: bool = False
     original: str | None = None
     workspace: str = "default"
+    derived_warnings: list[str] = field(default_factory=list, repr=False, compare=False)
+
+    def _derived(self, pattern: re.Pattern, label: str) -> set[str]:
+        values, warning = _derived_values(pattern, self.body, label)
+        if warning and warning not in self.derived_warnings:
+            self.derived_warnings.append(warning)
+        return values
 
     @property
     def title(self) -> str:
-        title = next((line.lstrip("# ").strip() for line in self.body.splitlines() if line.strip()), "")
-        return title[:100] or "Untitled"
+        for line in io.StringIO(self.body):
+            if line.strip():
+                return line.lstrip("# ").strip()[:100] or "Untitled"
+        return "Untitled"
 
     @property
     def tags(self) -> set[str]:
-        return {tag.casefold() for tag in TAG.findall(self.body)}
+        return {tag.casefold() for tag in self._derived(TAG, "tags")}
 
     @property
     def links(self) -> set[str]:
-        return set(LINK.findall(self.body))
+        return self._derived(LINK, "links")
 
 
 class Vault:
@@ -133,6 +211,10 @@ class Vault:
         self.warnings: list[str] = []
         self.backup_warning = ""
         self._cache: dict[str, tuple[FileSignature, Note, int]] = {}
+        self.permission_warning = ("Vault is writable by other users; use chmod go-w to protect note replacement"
+                                   if self.path.stat().st_mode & 0o022 else "")
+        if self.permission_warning:
+            self.warnings.append(self.permission_warning)
 
     def locked(self):
         return vault_lock(self.path)
@@ -146,8 +228,20 @@ class Vault:
         stamp = now()
         return Note(uuid4().hex, body, created=stamp, updated=stamp, workspace=validate_workspace(workspace))
 
-    def read(self, note_id: str) -> Note:
-        raw = read_regular_file(self.file(note_id))
+    def read(self, note_id: str, *, directory: int | None = None) -> Note:
+        filename = self.file(note_id).name
+        own_directory = directory is None
+        if own_directory:
+            directory = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            fd = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            try:
+                raw = _read_regular_fd(fd, filename, MAX_NOTE_BYTES)
+            finally:
+                os.close(fd)
+        finally:
+            if own_directory:
+                os.close(directory)
         return self.parse_note(note_id, raw)
 
     @staticmethod
@@ -182,12 +276,20 @@ class Vault:
 
     def notes(self) -> list[Note]:
         notes = []
-        self.warnings = []
+        self.warnings = [self.permission_warning] if self.permission_warning else []
         refreshed = {}
         retained_bytes = 0
-        for file in self.path.glob("*.md"):
+        scanned_bytes = 0
+        for index, file in enumerate(self.path.glob("*.md")):
+            if index >= MAX_SCAN_ENTRIES:
+                self.warnings.append(f"Vault scan stopped after {MAX_SCAN_ENTRIES} entries; results are incomplete")
+                break
             try:
                 signature = file_signature(file)
+                scanned_bytes += signature[2]
+                if scanned_bytes > MAX_SCAN_BYTES:
+                    self.warnings.append(f"Vault scan stopped after {MAX_SCAN_BYTES} bytes; results are incomplete")
+                    break
                 cached = self._cache.get(file.stem)
                 cache_hit = cached is not None and cached[0] == signature
                 if cache_hit:
@@ -210,10 +312,10 @@ class Vault:
         return sorted(notes, key=lambda n: (n.starred, n.updated, n.id), reverse=True)
 
     def save(self, note: Note) -> None:
-        with self.locked():
-            self._save_locked(note)
+        with self.locked() as directory:
+            self._save_locked(note, directory)
 
-    def _save_locked(self, note: Note) -> None:
+    def _save_locked(self, note: Note, directory: int) -> None:
         validate_workspace(note.workspace)
         if note.collection not in COLLECTIONS:
             raise ValueError("Unknown collection")
@@ -223,7 +325,7 @@ class Vault:
             raise ValueError("Invalid timestamps")
         path = self.file(note.id)
         try:
-            actual = read_regular_file(path)
+            actual = read_regular_at(directory, path.name)
         except FileNotFoundError:
             actual = None
         if actual != note.original:
@@ -240,34 +342,102 @@ class Vault:
         if len(raw.encode("utf-8")) > MAX_NOTE_BYTES:
             raise ValueError(f"Note exceeds the {MAX_NOTE_BYTES}-byte file limit")
         from . import history
-        fd, temp = tempfile.mkstemp(prefix=".jotline-", dir=self.path)
+        fd, temp = create_private_temp(directory, ".jotline-")
         candidate = None
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
                 stream.write(raw)
                 stream.flush()
                 os.fsync(stream.fileno())
-            history.backup(self, automatic=True)
+            history.backup(self, automatic=True, vault_directory=directory,
+                           pending=(path.name, raw) if actual is None else None)
             if actual is not None:
-                history.snapshot(self, note.id, actual)
-            candidate = history.snapshot(self, note.id, raw)
-            os.replace(temp, path)
+                history.snapshot(self, note.id, actual, vault_directory=directory)
+            candidate = history.snapshot(self, note.id, raw, vault_directory=directory)
+            # Revalidate as late as possible. For a brand-new note, publish with
+            # an atomic hard link so an uncooperative creator can never be replaced.
+            try:
+                latest = read_regular_at(directory, path.name)
+            except FileNotFoundError:
+                latest = None
+            if latest != actual:
+                if latest is not None:
+                    history.snapshot(self, note.id, latest, vault_directory=directory)
+                raise ConflictError("This note changed outside Jotline. Save a recovery copy to preserve your changes.")
+            if actual is None:
+                try:
+                    os.link(temp, path.name, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
+                except FileExistsError:
+                    try:
+                        history.snapshot(self, note.id, read_regular_at(directory, path.name),
+                                         vault_directory=directory)
+                    except (OSError, ValueError, UnicodeError):
+                        pass
+                    raise ConflictError("This note changed outside Jotline. Save a recovery copy to preserve your changes.") from None
+                os.unlink(temp, dir_fd=directory)
+            else:
+                displaced = ".jotline-displaced-" + uuid4().hex
+                keep_displaced = False
+                try:
+                    # Move aside precisely the inode present at publication time,
+                    # then publish exclusively. Even an edit after the final read
+                    # remains recoverable as the displaced file or a new collision.
+                    replace_at(directory, path.name, displaced)
+                    try:
+                        os.link(temp, path.name, src_dir_fd=directory, dst_dir_fd=directory,
+                                follow_symlinks=False)
+                    except BaseException:
+                        # Until the displaced inode is linked back under the note
+                        # name, it is the only authoritative copy and must survive
+                        # every error path.
+                        keep_displaced = True
+                        try:
+                            collision = read_regular_at(directory, path.name)
+                        except FileNotFoundError:
+                            try:
+                                os.link(displaced, path.name, src_dir_fd=directory, dst_dir_fd=directory,
+                                        follow_symlinks=False)
+                            except BaseException as restore_error:
+                                self.warnings.append(
+                                    f"Save failed; the original note was retained as {displaced}: {restore_error}")
+                            else:
+                                keep_displaced = False
+                        else:
+                            history.snapshot(self, note.id, collision, vault_directory=directory)
+                            self.warnings.append(
+                                f"Save collided with another writer; the original note was retained as {displaced}")
+                        raise
+                    os.unlink(temp, dir_fd=directory)
+                    try:
+                        displaced_raw = read_regular_at(directory, displaced)
+                        if displaced_raw != actual:
+                            history.snapshot(self, note.id, displaced_raw, vault_directory=directory)
+                            self.warnings.append(
+                                "An external edit raced with save and was preserved in note history")
+                    except (OSError, ValueError, UnicodeError) as error:
+                        keep_displaced = True
+                        self.warnings.append(
+                            f"A displaced external edit was retained as {displaced}: {error}")
+                finally:
+                    if not keep_displaced:
+                        try:
+                            os.unlink(displaced, dir_fd=directory)
+                        except FileNotFoundError:
+                            pass
             # Replacement has committed even if the directory durability check fails.
             # Keep the baseline current so retrying does not invent an edit conflict.
             note.original, note.updated, note.created = raw, stamp, meta["created"]
             self._cache.pop(note.id, None)
-            directory = os.open(self.path, os.O_DIRECTORY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
+            os.fsync(directory)
         finally:
             if note.original != raw and candidate is not None:
-                candidate.unlink(missing_ok=True)
-            if os.path.exists(temp):
-                os.unlink(temp)
+                history.remove_revision(self, note.id, candidate.stem, vault_directory=directory)
+            try:
+                os.unlink(temp, dir_fd=directory)
+            except FileNotFoundError:
+                pass
         try:
-            history.prune_history(self, note.id)
+            history.prune_history(self, note.id, vault_directory=directory)
         except OSError as error:
             self.warnings.append(f"History retention cleanup failed: {error}")
 
@@ -276,46 +446,50 @@ class Vault:
         return revisions(self, note_id)
 
     def read_revision(self, note_id: str, revision_id: str) -> Note:
-        from .history import REVISION_ID, revision_dir
-        if not REVISION_ID.fullmatch(revision_id):
-            raise ValueError("Invalid revision ID")
-        raw = read_regular_file(revision_dir(self, note_id, create=False) / f"{revision_id}.md")
+        from .history import read_revision_raw
+        raw = read_revision_raw(self, note_id, revision_id)
         return self.parse_note(note_id, raw)
 
     def history_notes(self, workspace: str) -> list[Note]:
-        from .history import directory
+        from .history import history_note_ids, read_revision_raw, revisions
         validate_workspace(workspace)
-        try:
-            root = directory(self.path / ".jotline-history", create=False)
-        except FileNotFoundError:
-            return []
         notes = []
-        for folder in root.iterdir():
-            try:
-                for revision in self.history(folder.name):
-                    note = self.read_revision(folder.name, revision.id)
-                    if note.workspace == workspace:
-                        notes.append(note)
-                        break
-            except (ValueError, OSError) as error:
-                self.warnings.append(f"History {folder.name}: {error}")
+        directory = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            for note_id in history_note_ids(self, vault_directory=directory):
+                try:
+                    for revision in revisions(self, note_id, vault_directory=directory):
+                        try:
+                            raw = read_revision_raw(
+                                self, note_id, revision.id, vault_directory=directory)
+                            note = self.parse_note(note_id, raw)
+                        except (ValueError, OSError, UnicodeError) as error:
+                            self.warnings.append(f"History {note_id}/{revision.id}: {error}")
+                            continue
+                        if note.workspace == workspace:
+                            notes.append(note)
+                            break
+                except (ValueError, OSError) as error:
+                    self.warnings.append(f"History {note_id}: {error}")
+        finally:
+            os.close(directory)
         return sorted(notes, key=lambda note: (note.updated, note.id), reverse=True)
 
     def backup(self) -> Path:
         from .history import backup
-        with self.locked():
-            return backup(self)
+        with self.locked() as directory:
+            return backup(self, vault_directory=directory)
 
     def daily(self, template: str = "# {{date}}\n\n", workspace: str = "default") -> Note:
-        with self.locked():
-            return self._daily_locked(template, workspace)
+        with self.locked() as directory:
+            return self._daily_locked(template, workspace, directory=directory)
 
-    def _daily_locked(self, template: str, workspace: str = "default") -> Note:
+    def _daily_locked(self, template: str, workspace: str = "default", *, directory: int | None = None) -> Note:
         today = date.today().isoformat()
         validate_workspace(workspace)
         note_id = f"daily-{today}" + (f"-{workspace}" if workspace != "default" else "")
         try:
-            note = self.read(note_id)
+            note = self.read(note_id, directory=directory)
             if note.workspace != workspace:
                 raise ValueError("This daily log was moved to another workspace; move it back or create a regular note")
             return note
@@ -325,17 +499,24 @@ class Vault:
 
     def append_daily(self, body: str, template: str = "# {{date}}\n\n", workspace: str = "default") -> Note:
         """Append a shell capture atomically with respect to other Jotline writers."""
-        with self.locked():
-            note = self._daily_locked(template, workspace)
-            note.body = note.body.rstrip() + "\n\n" + body + "\n"
-            self._save_locked(note)
+        with self.locked() as directory:
+            note = self._daily_locked(template, workspace, directory=directory)
+            separator = "" if note.body.endswith("\n\n") else ("\n" if note.body.endswith("\n") else "\n\n")
+            note.body = note.body + separator + body + "\n"
+            self._save_locked(note, directory)
             return note
 
     def backlinks(self, target: Note) -> list[Note]:
         targets = {target.id, target.title}
-        return [n for n in self.notes() if n.id != target.id and n.collection != "trash"
-                and n.workspace == target.workspace
-                and targets.intersection(n.links)]
+        matches = []
+        for note in self.notes():
+            if note.id == target.id or note.collection == "trash" or note.workspace != target.workspace:
+                continue
+            linked = targets.intersection(note.links)
+            self._collect_derived_warnings(note)
+            if linked:
+                matches.append(note)
+        return matches
 
     def search(self, query: str = "", collection: str = "all", workspace: str | None = None) -> list[Note]:
         terms = query.casefold().split()
@@ -351,7 +532,9 @@ class Vault:
                 included = note.starred and note.collection != "trash"
             else:
                 included = note.collection == collection
-            if not included or (tags and not tags.issubset(note.tags)):
+            has_tags = not tags or tags.issubset(note.tags)
+            self._collect_derived_warnings(note)
+            if not included or not has_tags:
                 continue
             body = note.body.casefold() if words else ""
             if all(word in body or word in note.id for word in words):
@@ -359,7 +542,17 @@ class Vault:
         return matches
 
     def tags(self, workspace: str) -> Counter:
-        return Counter(tag for note in self.search(workspace=workspace) for tag in note.tags)
+        result = Counter()
+        for note in self.search(workspace=workspace):
+            result.update(note.tags)
+            self._collect_derived_warnings(note)
+        return result
+
+    def _collect_derived_warnings(self, note: Note) -> None:
+        for warning in note.derived_warnings:
+            message = f"{note.id}.md: {warning}"
+            if message not in self.warnings:
+                self.warnings.append(message)
 
     def workspaces(self) -> set[str]:
         return {"default", *(note.workspace for note in self.notes())}

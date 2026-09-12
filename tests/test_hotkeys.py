@@ -114,3 +114,15 @@ async def test_swapped_shortcuts_and_failed_save(tmp_path, monkeypatch):
         assert app.current.id == original
         await pilot.press('ctrl+p')
         assert app.current.id != original
+
+
+async def test_preferences_sections_are_keyboard_jumpable(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.press('f1', 'alt+3')
+        await pilot.pause()
+        assert isinstance(app.screen, Preferences)
+        assert app.screen.query_one('#hotkey-new', Input).has_focus
+        await pilot.press('alt+4')
+        await pilot.pause()
+        assert app.screen.query_one('#daily-template', TextArea).has_focus

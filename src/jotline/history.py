@@ -1,6 +1,7 @@
 """Bounded local revisions and portable ZIP backups; callers hold the vault lock."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, date
 import json
@@ -8,14 +9,16 @@ import os
 from pathlib import Path
 import re
 import stat
-import tempfile
 from uuid import uuid4
 import zipfile
 
-from .store import MAX_SETTINGS_BYTES, read_regular_file
+from .store import MAX_NOTE_BYTES, MAX_SETTINGS_BYTES, read_regular_at
 
 HISTORY_LIMIT = 30
 BACKUP_LIMIT = 7
+MAX_HISTORY_ENTRIES = 4096
+MAX_BACKUP_ENTRIES = 10_000
+MAX_BACKUP_BYTES = 256 * 1024 * 1024
 REVISION_ID = re.compile(r"[0-9]{8}T[0-9]{12}-[0-9a-f]{8}")
 BACKUP_NAME = re.compile(r"(?:daily-[0-9]{4}-[0-9]{2}-[0-9]{2}|manual-[0-9]{8}T[0-9]{12}-[0-9a-f]{8})\.zip")
 
@@ -31,6 +34,7 @@ def stamp() -> str:
 
 
 def directory(path: Path, *, create: bool = True) -> Path:
+    """Compatibility path helper; internal mutations use pinned descriptors."""
     if create:
         path.mkdir(mode=0o700, exist_ok=True)
     if not stat.S_ISDIR(path.lstat().st_mode):
@@ -38,125 +42,413 @@ def directory(path: Path, *, create: bool = True) -> Path:
     return path
 
 
-def sync_directory(path: Path) -> None:
-    fd = os.open(path, os.O_DIRECTORY | os.O_NOFOLLOW)
+def sync_directory(path_or_fd: Path | int) -> None:
+    own = not isinstance(path_or_fd, int)
+    fd = os.open(path_or_fd, os.O_DIRECTORY | os.O_NOFOLLOW) if own else os.dup(path_or_fd)
     try:
         os.fsync(fd)
     finally:
         os.close(fd)
 
 
-def revision_dir(vault, note_id: str, *, create: bool = True) -> Path:
-    vault.file(note_id)  # Validate before joining any path.
-    return directory(directory(vault.path / ".jotline-history", create=create) / note_id, create=create)
-
-
-def revisions(vault, note_id: str) -> list[Revision]:
+@contextmanager
+def _vault_directory(vault, existing: int | None = None):
+    fd = os.dup(existing) if existing is not None else os.open(
+        vault.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        folder = revision_dir(vault, note_id, create=False)
-    except FileNotFoundError:
-        return []
+        yield fd
+    finally:
+        os.close(fd)
+
+
+@contextmanager
+def _managed_directory(parent: int, name: str, *, create: bool):
+    if create:
+        try:
+            os.mkdir(name, 0o700, dir_fd=parent)
+            sync_directory(parent)
+        except FileExistsError:
+            pass
+    fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+    try:
+        yield fd
+    finally:
+        os.close(fd)
+
+
+@contextmanager
+def _revision_directory(vault, note_id: str, *, create: bool, vault_directory: int | None = None):
+    vault.file(note_id)
+    with _vault_directory(vault, vault_directory) as root:
+        with _managed_directory(root, ".jotline-history", create=create) as history:
+            with _managed_directory(history, note_id, create=create) as note:
+                yield history, note
+
+
+def revision_dir(vault, note_id: str, *, create: bool = True) -> Path:
+    vault.file(note_id)
+    with _revision_directory(vault, note_id, create=create):
+        return vault.path / ".jotline-history" / note_id
+
+
+def _revisions_at(vault, note_id: str, folder: int) -> list[Revision]:
     result = []
-    for path in folder.glob("*.md"):
-        if REVISION_ID.fullmatch(path.stem) and stat.S_ISREG(path.lstat().st_mode):
+    with os.scandir(folder) as entries:
+        for index, entry in enumerate(entries):
+            if index >= MAX_HISTORY_ENTRIES:
+                vault.warnings.append(
+                    f"History {note_id} stopped after {MAX_HISTORY_ENTRIES} entries; results are incomplete")
+                break
+            stem = entry.name[:-3] if entry.name.endswith(".md") else ""
+            if not REVISION_ID.fullmatch(stem) or not stat.S_ISREG(entry.stat(follow_symlinks=False).st_mode):
+                continue
             try:
-                when = datetime.strptime(path.stem.split("-")[0], "%Y%m%dT%H%M%S%f")
+                when = datetime.strptime(stem.split("-")[0], "%Y%m%dT%H%M%S%f")
             except ValueError:
                 continue
-            result.append(Revision(path.stem, when.isoformat(timespec="seconds")))
-    return sorted(result, key=lambda rev: rev.id, reverse=True)
+            result.append(Revision(stem, when.isoformat(timespec="seconds")))
+    return sorted(result, key=lambda revision: revision.id, reverse=True)
 
 
-def snapshot(vault, note_id: str, raw: str) -> Path | None:
-    folder = revision_dir(vault, note_id)
-    existing = revisions(vault, note_id)
-    if existing and read_regular_file(folder / f"{existing[0].id}.md") == raw:
-        return None
-    target = folder / f"{stamp()}.md"
-    fd, temp = tempfile.mkstemp(prefix=".revision-", dir=folder)
+def revisions(vault, note_id: str, *, vault_directory: int | None = None) -> list[Revision]:
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
-            stream.write(raw)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temp, target)
-        sync_directory(folder)
-        sync_directory(folder.parent)
-        return target
-    except BaseException:
-        target.unlink(missing_ok=True)
-        raise
-    finally:
-        Path(temp).unlink(missing_ok=True)
+        with _revision_directory(vault, note_id, create=False, vault_directory=vault_directory) as (_, folder):
+            return _revisions_at(vault, note_id, folder)
+    except FileNotFoundError:
+        return []
 
 
-def prune_history(vault, note_id: str) -> None:
-    entries = revisions(vault, note_id)
-    # Keep minute checkpoints plus two latest saves, including the version
-    # immediately before an accidental destructive edit.
-    first_per_minute = {}
-    for entry in reversed(entries):
-        first_per_minute.setdefault(entry.id[:13], entry.id)
-    keep = set(sorted(first_per_minute.values(), reverse=True)[:HISTORY_LIMIT])
-    keep.update(entry.id for entry in entries[:2])
-    for entry in entries:
-        if entry.id not in keep:
-            (revision_dir(vault, note_id) / f"{entry.id}.md").unlink()
-
-
-def backup(vault, *, automatic: bool = False) -> Path:
-    folder = directory(vault.path / ".jotline-backups")
-    name = f"daily-{date.today().isoformat()}.zip" if automatic else f"manual-{stamp()}.zip"
-    target = folder / name
-    if automatic and (target.exists() or target.is_symlink()):
-        if not stat.S_ISREG(target.lstat().st_mode):
-            raise OSError("Daily backup is not a regular file")
-        return target
-    sources = [(path, path.name, None) for path in sorted(vault.path.glob("*.md"))]
-    settings = vault.path / ".jotline-settings.json"
-    if settings.exists() or settings.is_symlink():
-        sources.append((settings, settings.name, MAX_SETTINGS_BYTES))
-    skipped = []
-    templates = vault.path / ".jotline-templates"
-    if templates.exists() or templates.is_symlink():
+def _temp_at(directory_fd: int, prefix: str) -> tuple[int, str]:
+    for _ in range(100):
+        name = prefix + uuid4().hex
         try:
-            directory(templates, create=False)
-            sources.extend((path, f".jotline-templates/{path.name}", None) for path in sorted(templates.glob("*.md")))
-        except OSError as error:
-            skipped.append({"path": templates.name, "reason": str(error)})
-    fd, temp = tempfile.mkstemp(prefix=".backup-", dir=folder)
+            return os.open(name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                           0o600, dir_fd=directory_fd), name
+        except FileExistsError:
+            pass
+    raise FileExistsError("Could not allocate private storage")
+
+
+def _replace_at(directory_fd: int, source: str, target: str) -> None:
+    """Replace within a pinned directory, failing closed if dir_fd is unsupported."""
+    os.replace(source, target, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+
+
+def snapshot(vault, note_id: str, raw: str, *, vault_directory: int | None = None) -> Path | None:
+    with _revision_directory(vault, note_id, create=True, vault_directory=vault_directory) as (history, folder):
+        for entry in _revisions_at(vault, note_id, folder):
+            try:
+                latest = read_regular_at(folder, f"{entry.id}.md")
+            except (OSError, ValueError, UnicodeError) as error:
+                vault.warnings.append(f"History {note_id}/{entry.id}: {error}; skipped corrupt revision")
+                continue
+            if latest == raw:
+                return None
+            break
+        name = f"{stamp()}.md"
+        fd, temporary = _temp_at(folder, ".revision-")
+        published = False
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
+                stream.write(raw)
+                stream.flush()
+                os.fsync(stream.fileno())
+            _replace_at(folder, temporary, name)
+            published = True
+            sync_directory(folder)
+            sync_directory(history)
+            return vault.path / ".jotline-history" / note_id / name
+        except BaseException:
+            if published:
+                try:
+                    os.unlink(name, dir_fd=folder)
+                except FileNotFoundError:
+                    pass
+            raise
+        finally:
+            try:
+                os.unlink(temporary, dir_fd=folder)
+            except FileNotFoundError:
+                pass
+
+
+def prune_history(vault, note_id: str, *, vault_directory: int | None = None) -> None:
     try:
-        with os.fdopen(fd, "w+b") as stream:
-            with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-                for path, name, limit in sources:
-                    try:
-                        raw = read_regular_file(path, limit) if limit else read_regular_file(path)
-                    except (OSError, ValueError) as error:
-                        skipped.append({"path": name, "reason": str(error)})
-                        continue
-                    archive.writestr(name, raw.encode("utf-8"))
-                archive.writestr("jotline-backup-manifest.json", json.dumps({
-                    "created": datetime.now().astimezone().isoformat(), "skipped": skipped,
-                    "scope": "Root Markdown notes, settings, and Markdown templates; excludes history and other backups",
-                }, indent=2))
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temp, target)
-        sync_directory(folder)
+        with _revision_directory(vault, note_id, create=False, vault_directory=vault_directory) as (_, folder):
+            entries = _revisions_at(vault, note_id, folder)
+            first_per_minute = {}
+            for entry in reversed(entries):
+                first_per_minute.setdefault(entry.id[:13], entry.id)
+            keep = set(sorted(first_per_minute.values(), reverse=True)[:HISTORY_LIMIT])
+            keep.update(entry.id for entry in entries[:2])
+            for entry in entries:
+                if entry.id not in keep:
+                    os.unlink(f"{entry.id}.md", dir_fd=folder)
+            sync_directory(folder)
+    except FileNotFoundError:
+        pass
+
+
+def remove_revision(vault, note_id: str, revision_id: str, *, vault_directory: int | None = None) -> None:
+    if not REVISION_ID.fullmatch(revision_id):
+        raise ValueError("Invalid revision ID")
+    try:
+        with _revision_directory(vault, note_id, create=False, vault_directory=vault_directory) as (_, folder):
+            os.unlink(f"{revision_id}.md", dir_fd=folder)
+            sync_directory(folder)
+    except FileNotFoundError:
+        pass
+
+
+def read_revision_raw(vault, note_id: str, revision_id: str, *, vault_directory: int | None = None) -> str:
+    if not REVISION_ID.fullmatch(revision_id):
+        raise ValueError("Invalid revision ID")
+    with _revision_directory(vault, note_id, create=False, vault_directory=vault_directory) as (_, folder):
+        return read_regular_at(folder, f"{revision_id}.md")
+
+
+def history_note_ids(vault, *, vault_directory: int | None = None) -> list[str]:
+    try:
+        with _vault_directory(vault, vault_directory) as root:
+            with _managed_directory(root, ".jotline-history", create=False) as history:
+                result = []
+                with os.scandir(history) as entries:
+                    for index, entry in enumerate(entries):
+                        if index >= MAX_HISTORY_ENTRIES:
+                            vault.warnings.append(
+                                f"History scan stopped after {MAX_HISTORY_ENTRIES} entries; results are incomplete")
+                            break
+                        try:
+                            vault.file(entry.name)
+                            if stat.S_ISDIR(entry.stat(follow_symlinks=False).st_mode):
+                                result.append(entry.name)
+                        except (OSError, ValueError):
+                            pass
+                return result
+    except FileNotFoundError:
+        return []
+
+
+def _validate_archive(stream, *, require_content: bool) -> tuple[bool, str]:
+    try:
+        with zipfile.ZipFile(stream) as archive:
+            entries = archive.infolist()
+            if not entries or len(entries) > MAX_BACKUP_ENTRIES:
+                return False, "archive has an invalid entry count"
+            names = {entry.filename for entry in entries}
+            if len(names) != len(entries):
+                return False, "archive contains duplicate names"
+            if any(Path(name).is_absolute() or ".." in Path(name).parts for name in names):
+                return False, "archive contains an unsafe member name"
+            if require_content and names == {"jotline-backup-manifest.json"}:
+                return False, "archive contains only a manifest"
+            if "jotline-backup-manifest.json" not in names:
+                return False, "manifest is missing"
+            if sum(entry.file_size for entry in entries) > MAX_BACKUP_BYTES:
+                return False, "archive contents exceed validation limit"
+            consumed = 0
+            manifest = None
+            for entry in entries:
+                captured = bytearray() if entry.filename == "jotline-backup-manifest.json" else None
+                with archive.open(entry) as member:
+                    while chunk := member.read(min(64 * 1024, MAX_BACKUP_BYTES - consumed + 1)):
+                        consumed += len(chunk)
+                        if consumed > MAX_BACKUP_BYTES:
+                            return False, "archive contents exceed validation limit"
+                        if captured is not None:
+                            captured.extend(chunk)
+                if captured is not None:
+                    manifest = json.loads(bytes(captured))
+            if (not isinstance(manifest, dict) or not isinstance(manifest.get("created"), str)
+                    or not isinstance(manifest.get("skipped"), list)
+                    or not isinstance(manifest.get("scope"), str)):
+                return False, "manifest is structurally incomplete"
+        return True, ""
+    except (OSError, ValueError, KeyError, json.JSONDecodeError, zipfile.BadZipFile, RuntimeError) as error:
+        return False, str(error)
+
+
+def _validate_backup_at(directory_fd: int, name: str) -> tuple[bool, str]:
+    try:
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
+    except OSError as error:
+        return False, str(error)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            return False, "not a regular file"
+        if info.st_size > MAX_BACKUP_BYTES:
+            return False, "archive exceeds validation limit"
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            return _validate_archive(stream, require_content=True)
     finally:
-        Path(temp).unlink(missing_ok=True)
-    vault.backup_warning = (f"Backup skipped {len(skipped)} unsafe or unreadable entries; see its manifest"
-                            if skipped else "")
-    if vault.backup_warning:
-        vault.warnings.append(vault.backup_warning)
-    archives = sorted((path for path in folder.iterdir() if BACKUP_NAME.fullmatch(path.name)
-                       and stat.S_ISREG(path.lstat().st_mode)), key=lambda path: path.stat().st_mtime_ns, reverse=True)
-    # Today's automatic backup remains the once-per-day marker even after many manual backups.
-    today = f"daily-{date.today().isoformat()}.zip"
-    keep = {target, *(path for path in archives if path.name == today)}
-    for path in archives:
-        if len(keep) < BACKUP_LIMIT:
-            keep.add(path)
-        if path not in keep:
-            path.unlink()
-    return target
+        os.close(fd)
+
+
+def validate_backup(path: Path) -> tuple[bool, str]:
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as error:
+        return False, str(error)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            return False, "not a regular file"
+        if info.st_size > MAX_BACKUP_BYTES:
+            return False, "archive exceeds validation limit"
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            return _validate_archive(stream, require_content=path.name.startswith("daily-"))
+    finally:
+        os.close(fd)
+
+
+def backup(vault, *, automatic: bool = False, vault_directory: int | None = None,
+           pending: tuple[str, str] | None = None) -> Path:
+    with _vault_directory(vault, vault_directory) as root:
+        with _managed_directory(root, ".jotline-backups", create=True) as folder:
+            name = f"daily-{date.today().isoformat()}.zip" if automatic else f"manual-{stamp()}.zip"
+            target = vault.path / ".jotline-backups" / name
+            try:
+                target_info = os.stat(name, dir_fd=folder, follow_symlinks=False)
+            except FileNotFoundError:
+                target_info = None
+            if automatic and target_info is not None:
+                valid, reason = _validate_backup_at(folder, name)
+                if valid:
+                    return target
+                if not stat.S_ISREG(target_info.st_mode):
+                    raise OSError("Daily backup is not a regular file")
+                quarantine = f".invalid-{stamp()}.zip"
+                _replace_at(folder, name, quarantine)
+                sync_directory(folder)
+                message = f"Invalid daily backup retained as {quarantine} ({reason}); created a replacement"
+                vault.backup_warning = message
+                vault.warnings.append(message)
+
+            sources: list[tuple[int, str, str, int]] = []
+            skipped = []
+            source_bytes = 0
+
+            def add_source(source_fd: int, source_name: str, archive_name: str, limit: int) -> None:
+                nonlocal source_bytes
+                if len(sources) >= MAX_BACKUP_ENTRIES - 1:
+                    skipped.append({"path": archive_name, "reason": "backup entry budget reached"})
+                    return
+                try:
+                    info = os.stat(source_name, dir_fd=source_fd, follow_symlinks=False)
+                except OSError as error:
+                    skipped.append({"path": archive_name, "reason": str(error)})
+                    return
+                if source_bytes + info.st_size > MAX_BACKUP_BYTES:
+                    skipped.append({"path": archive_name, "reason": "backup byte budget reached"})
+                    return
+                source_bytes += info.st_size
+                sources.append((source_fd, source_name, archive_name, limit))
+
+            pending_name = pending[0] if pending else None
+            with os.scandir(root) as entries:
+                for index, entry in enumerate(entries):
+                    if index >= MAX_BACKUP_ENTRIES:
+                        skipped.append({"path": "vault", "reason": "backup scan budget reached"})
+                        break
+                    if entry.name.endswith(".md") and entry.name != pending_name:
+                        add_source(root, entry.name, entry.name, MAX_NOTE_BYTES)
+            if pending is not None:
+                pending_size = len(pending[1].encode("utf-8"))
+                if source_bytes + pending_size <= MAX_BACKUP_BYTES and len(sources) < MAX_BACKUP_ENTRIES - 1:
+                    source_bytes += pending_size
+                else:
+                    skipped.append({"path": pending[0], "reason": "backup byte or entry budget reached"})
+                    pending = None
+            try:
+                os.stat(".jotline-settings.json", dir_fd=root, follow_symlinks=False)
+                add_source(root, ".jotline-settings.json", ".jotline-settings.json", MAX_SETTINGS_BYTES)
+            except FileNotFoundError:
+                pass
+
+            template_fd = None
+            try:
+                template_fd = os.open(".jotline-templates", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                      dir_fd=root)
+                with os.scandir(template_fd) as entries:
+                    for index, entry in enumerate(entries):
+                        if index >= MAX_BACKUP_ENTRIES:
+                            skipped.append({"path": ".jotline-templates", "reason": "backup scan budget reached"})
+                            break
+                        if entry.name.endswith(".md"):
+                            add_source(template_fd, entry.name, f".jotline-templates/{entry.name}", MAX_NOTE_BYTES)
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                skipped.append({"path": ".jotline-templates", "reason": str(error)})
+
+            try:
+                fd, temporary = _temp_at(folder, ".backup-")
+            except BaseException:
+                if template_fd is not None:
+                    os.close(template_fd)
+                raise
+            try:
+                with os.fdopen(fd, "w+b") as stream:
+                    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                        written_bytes = 0
+                        for source_fd, source_name, archive_name, limit in sources:
+                            try:
+                                raw = read_regular_at(source_fd, source_name, limit)
+                            except (OSError, ValueError, UnicodeError) as error:
+                                skipped.append({"path": archive_name, "reason": str(error)})
+                                continue
+                            encoded = raw.encode("utf-8")
+                            if written_bytes + len(encoded) > MAX_BACKUP_BYTES:
+                                skipped.append({"path": archive_name, "reason": "backup byte budget reached"})
+                                continue
+                            archive.writestr(archive_name, encoded)
+                            written_bytes += len(encoded)
+                        if pending is not None:
+                            encoded = pending[1].encode("utf-8")
+                            if written_bytes + len(encoded) <= MAX_BACKUP_BYTES:
+                                archive.writestr(pending[0], encoded)
+                                written_bytes += len(encoded)
+                            else:
+                                skipped.append({"path": pending[0], "reason": "backup byte budget reached"})
+                        archive.writestr("jotline-backup-manifest.json", json.dumps({
+                            "created": datetime.now().astimezone().isoformat(), "skipped": skipped,
+                            "scope": "Root Markdown notes, settings, and Markdown templates; excludes history and other backups",
+                        }, indent=2))
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                _replace_at(folder, temporary, name)
+                sync_directory(folder)
+            finally:
+                if template_fd is not None:
+                    os.close(template_fd)
+                try:
+                    os.unlink(temporary, dir_fd=folder)
+                except FileNotFoundError:
+                    pass
+
+            new_warning = (f"Backup skipped {len(skipped)} unsafe, unreadable, or over-budget entries; see its manifest"
+                           if skipped else "")
+            vault.backup_warning = "; ".join(filter(None, (vault.backup_warning, new_warning)))
+            if vault.backup_warning:
+                vault.warnings.append(vault.backup_warning)
+
+            archives = []
+            with os.scandir(folder) as entries:
+                for index, entry in enumerate(entries):
+                    if index >= MAX_BACKUP_ENTRIES:
+                        vault.warnings.append(f"Backup retention stopped after {MAX_BACKUP_ENTRIES} entries")
+                        break
+                    info = entry.stat(follow_symlinks=False)
+                    if BACKUP_NAME.fullmatch(entry.name) and stat.S_ISREG(info.st_mode):
+                        archives.append((info.st_mtime_ns, entry.name))
+            archives.sort(reverse=True)
+            today = f"daily-{date.today().isoformat()}.zip"
+            keep = {name, *(archive_name for _, archive_name in archives if archive_name == today)}
+            for _, archive_name in archives:
+                if len(keep) < BACKUP_LIMIT:
+                    keep.add(archive_name)
+                if archive_name not in keep:
+                    os.unlink(archive_name, dir_fd=folder)
+            sync_directory(folder)
+            return target
