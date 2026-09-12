@@ -1,6 +1,6 @@
 # ›_ jotline
 
-**A little room to think.** A keyboard-first Linux terminal app for capturing thoughts, writing, and connecting notes. Inspired by the quick-capture spirit of Drafts, with an original terminal interface.
+**A little room to think.** A keyboard-first terminal app for Linux, macOS, and Windows for capturing thoughts, writing, and connecting notes. Inspired by the quick-capture spirit of Drafts, with an original terminal interface.
 
 ![Jotline terminal workspace](docs/screenshot.svg)
 
@@ -8,7 +8,10 @@ Jotline opens to a blank page. Start typing; your writing saves automatically to
 
 ## Install
 
-Requires Linux, Python 3.11+, and a terminal with Unicode and color support.
+Requires Python 3.11+ and a terminal with Unicode and color support on Linux,
+macOS, or Windows. Windows runs natively; WSL is optional. The commands below
+work in PowerShell as well as macOS and Linux shells (Git is required for these
+source installs).
 
 With [uv](https://docs.astral.sh/uv/):
 
@@ -115,7 +118,30 @@ jotline path
 jotline --vault ~/Notes/Jotline
 ```
 
-Set `JOTLINE_VAULT` to use a different vault by default. Otherwise notes live in `$XDG_DATA_HOME/jotline/notes` (normally `~/.local/share/jotline/notes`).
+Set `JOTLINE_VAULT` to use a different vault by default, or pass
+`jotline --vault "path/to/notes"`. Run `jotline path` to see the active location.
+
+| Platform | Default vault |
+| --- | --- |
+| Linux | `$XDG_DATA_HOME/jotline/notes`, normally `~/.local/share/jotline/notes` |
+| macOS | `~/Library/Application Support/jotline/notes` |
+| Windows | `%LOCALAPPDATA%\jotline\notes` |
+
+On macOS, an explicitly set `XDG_DATA_HOME` or an existing vault at the old
+`~/.local/share/jotline/notes` location continues to be used.
+In PowerShell, set an override with `$env:JOTLINE_VAULT = 'C:\Notes'`; in a
+macOS/Linux shell, use `export JOTLINE_VAULT="$HOME/Notes"`.
+
+Use a local filesystem with hard-link support (such as NTFS on Windows or APFS
+on macOS). Windows rejects symlinks, junctions, and other reparse points inside
+storage; cloud placeholder files must be copied to a regular local vault.
+File contents are flushed before publication on every platform. Windows does
+not provide POSIX directory flushing, so metadata durability after a power loss
+depends on the filesystem. Unix permission warnings apply only on Linux/macOS;
+Windows access is controlled by the folder's ACLs.
+
+Shortcuts use **Control** on macOS too. If a terminal intercepts a shortcut,
+use F1 to customize it in Settings.
 
 `jotline doctor` checks the runtime, vault path, settings, lock, templates, history,
 backups, limits, and readable note counts. It prints diagnostics rather than note

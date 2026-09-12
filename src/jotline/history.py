@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, date
 import json
-import os
+from .filesystem import fs as os
 from pathlib import Path
 import re
 import stat

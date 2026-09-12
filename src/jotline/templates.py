@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime
-import os
+from .filesystem import fs as os
 from pathlib import Path
 import re
 import stat

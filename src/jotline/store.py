@@ -5,10 +5,9 @@ from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime, date
-import fcntl
 import io
 import json
-import os
+from .filesystem import fs as os, lock_file
 from pathlib import Path
 import re
 import stat
@@ -144,7 +143,7 @@ def vault_lock(path: Path):
         deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
         while True:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                lock_file(fd)
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
@@ -153,7 +152,7 @@ def vault_lock(path: Path):
         try:
             yield directory
         finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            lock_file(fd, unlock=True)
     finally:
         os.close(fd)
         os.close(directory)
@@ -212,7 +211,7 @@ class Vault:
         self.backup_warning = ""
         self._cache: dict[str, tuple[FileSignature, Note, int]] = {}
         self.permission_warning = ("Vault is writable by other users; use chmod go-w to protect note replacement"
-                                   if self.path.stat().st_mode & 0o022 else "")
+                                   if os.name != "nt" and self.path.stat().st_mode & 0o022 else "")
         if self.permission_warning:
             self.warnings.append(self.permission_warning)
 
@@ -345,7 +344,7 @@ class Vault:
         fd, temp = create_private_temp(directory, ".jotline-")
         candidate = None
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
                 stream.write(raw)
                 stream.flush()
                 os.fsync(stream.fileno())

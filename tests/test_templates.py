@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-import os
+from jotline.filesystem import fs as os
 
 import pytest
 
@@ -65,13 +65,13 @@ def test_missing_and_bounded_utf8(tmp_path, monkeypatch):
         templates.read('broken')
 
 
-def test_missing_template_reads_do_not_leak_vault_descriptors(tmp_path):
+def test_missing_template_reads_do_not_leak_vault_descriptors(tmp_path, resource_count):
     templates = Templates(tmp_path)
-    before = len(os.listdir('/proc/self/fd'))
+    before = resource_count()
     for _ in range(32):
         with pytest.raises(FileNotFoundError):
             templates.read('missing')
-    assert len(os.listdir('/proc/self/fd')) == before
+    assert resource_count() == before
 
 
 @pytest.mark.parametrize('kind', ['symlink', 'file', 'fifo'])

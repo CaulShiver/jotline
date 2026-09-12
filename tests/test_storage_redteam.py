@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import date
 import json
-import os
+from jotline.filesystem import fs as os
 import stat
 from threading import Barrier
 import time
@@ -211,6 +211,7 @@ def test_descriptor_replace_never_retries_by_path(tmp_path, monkeypatch, helper)
     assert (tmp_path / "target").read_text() == "target"
 
 
+@pytest.mark.skipif(os.name == 'nt', reason='Windows pins directories against rename; covered by native tests')
 def test_private_temp_stays_in_pinned_directory_after_path_swap(tmp_path):
     vault_path = tmp_path / "vault"
     vault_path.mkdir()
@@ -239,6 +240,7 @@ def test_settings_save_repairs_invalid_utf8_regular_file(tmp_path):
     assert Settings.load(path) == (settings, "")
 
 
+@pytest.mark.skipif(os.name == 'nt', reason='Windows has no directory fsync')
 def test_directory_fsync_failure_does_not_create_false_conflict(tmp_path, monkeypatch):
     vault = Vault(tmp_path)
     note = vault.new("first")

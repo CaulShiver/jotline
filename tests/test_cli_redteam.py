@@ -144,6 +144,7 @@ def test_doctor_json_reports_runtime_and_ancillary_warnings(tmp_path):
     assert "lock:" in warnings
 
 
+@pytest.mark.skipif(sys.platform == 'win32', reason='Windows access uses ACLs, not POSIX mode bits')
 def test_doctor_reports_unwritable_vault_permissions(tmp_path):
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -158,6 +159,7 @@ def test_doctor_reports_unwritable_vault_permissions(tmp_path):
     assert b"Vault directory is not writable" in doctor.stderr
 
 
+@pytest.mark.skipif(sys.platform == 'win32', reason='Windows access uses ACLs, not POSIX mode bits')
 def test_doctor_includes_storage_permission_warning(tmp_path):
     vault = tmp_path / "vault"
     vault.mkdir()
