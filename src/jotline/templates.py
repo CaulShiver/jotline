@@ -1,15 +1,15 @@
 """Reusable local Markdown templates with literal placeholder substitution."""
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from datetime import datetime
-from .filesystem import fs as os
 from pathlib import Path
 import re
 import stat
-from uuid import uuid4
 
-from .store import MAX_NOTE_BYTES, validate_workspace, vault_lock
+from .filesystem import fs as os
+from .store import (MAX_NOTE_BYTES, create_private_temp, read_regular_at,
+                    validate_workspace, vault_lock)
 
 BUILTIN_TEMPLATES = {
     "meeting": "# Meeting — {{date}}\n\n## Attendees\n\n## Agenda\n\n- \n\n## Notes\n\n## Actions\n\n- [ ] \n",
@@ -34,36 +34,25 @@ class Templates:
     @contextmanager
     def _directory(self, create: bool = False, vault_directory: int | None = None):
         """Pin the directory so replacement cannot redirect file operations."""
-        own_vault = vault_directory is None
-        if own_vault:
-            vault_directory = os.open(self.vault_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
+        with ExitStack() as handles:
+            if vault_directory is None:
+                vault_directory = os.open(self.vault_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                handles.callback(os.close, vault_directory)
             if create:
                 try:
                     os.mkdir(self.path.name, mode=0o700, dir_fd=vault_directory)
                 except FileExistsError:
                     pass
-            fd = os.open(self.path.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                         dir_fd=vault_directory)
-        except FileNotFoundError:
-            if create:
-                raise
             try:
-                yield None
-            finally:
-                if own_vault:
-                    os.close(vault_directory)
-            return
-        except BaseException:
-            if own_vault:
-                os.close(vault_directory)
-            raise
-        try:
+                fd = os.open(self.path.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                             dir_fd=vault_directory)
+            except FileNotFoundError:
+                if create:
+                    raise
+                fd = None
+            if fd is not None:
+                handles.callback(os.close, fd)
             yield fd
-        finally:
-            os.close(fd)
-            if own_vault:
-                os.close(vault_directory)
 
     def names(self) -> list[str]:
         names = set(BUILTIN_TEMPLATES)
@@ -92,20 +81,7 @@ class Templates:
         with self._directory() as directory:
             if directory is None:
                 raise FileNotFoundError(f"Template does not exist: {name}")
-            fd = os.open(name + ".md", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
-            try:
-                info = os.fstat(fd)
-                if not stat.S_ISREG(info.st_mode):
-                    raise OSError(f"Not a regular template file: {name}")
-                if info.st_size > MAX_NOTE_BYTES:
-                    raise ValueError("Template exceeds the note size limit")
-                with os.fdopen(fd, "rb", closefd=False) as stream:
-                    raw = stream.read(MAX_NOTE_BYTES + 1)
-                if len(raw) > MAX_NOTE_BYTES:
-                    raise ValueError("Template exceeds the note size limit")
-                return raw.decode("utf-8")
-            finally:
-                os.close(fd)
+            return read_regular_at(directory, name + ".md", MAX_NOTE_BYTES)
 
     def save(self, name: str, body: str) -> None:
         _name(name)
@@ -118,8 +94,7 @@ class Templates:
             raise ValueError("Template exceeds the note size limit")
         with vault_lock(self.vault_path) as vault_directory, self._directory(
                 create=True, vault_directory=vault_directory) as directory:
-            temporary = ".tmp-" + uuid4().hex
-            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
+            fd, temporary = create_private_temp(directory, ".tmp-")
             try:
                 with os.fdopen(fd, "wb") as stream:
                     stream.write(raw)

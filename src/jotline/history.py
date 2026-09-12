@@ -5,14 +5,15 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, date
 import json
-from .filesystem import fs as os
 from pathlib import Path
 import re
 import stat
 from uuid import uuid4
 import zipfile
 
-from .store import MAX_NOTE_BYTES, MAX_SETTINGS_BYTES, read_regular_at
+from .filesystem import fs as os
+from .store import (MAX_NOTE_BYTES, MAX_SETTINGS_BYTES, read_regular_at,
+                    create_private_temp as _temp_at, replace_at as _replace_at)
 
 HISTORY_LIMIT = 30
 BACKUP_LIMIT = 7
@@ -31,15 +32,6 @@ class Revision:
 
 def stamp() -> str:
     return datetime.now().strftime("%Y%m%dT%H%M%S%f") + "-" + uuid4().hex[:8]
-
-
-def directory(path: Path, *, create: bool = True) -> Path:
-    """Compatibility path helper; internal mutations use pinned descriptors."""
-    if create:
-        path.mkdir(mode=0o700, exist_ok=True)
-    if not stat.S_ISDIR(path.lstat().st_mode):
-        raise OSError(f"Not a safe directory: {path.name}")
-    return path
 
 
 def sync_directory(path_or_fd: Path | int) -> None:
@@ -116,22 +108,6 @@ def revisions(vault, note_id: str, *, vault_directory: int | None = None) -> lis
             return _revisions_at(vault, note_id, folder)
     except FileNotFoundError:
         return []
-
-
-def _temp_at(directory_fd: int, prefix: str) -> tuple[int, str]:
-    for _ in range(100):
-        name = prefix + uuid4().hex
-        try:
-            return os.open(name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                           0o600, dir_fd=directory_fd), name
-        except FileExistsError:
-            pass
-    raise FileExistsError("Could not allocate private storage")
-
-
-def _replace_at(directory_fd: int, source: str, target: str) -> None:
-    """Replace within a pinned directory, failing closed if dir_fd is unsupported."""
-    os.replace(source, target, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
 
 
 def snapshot(vault, note_id: str, raw: str, *, vault_directory: int | None = None) -> Path | None:
@@ -268,7 +244,8 @@ def _validate_archive(stream, *, require_content: bool) -> tuple[bool, str]:
         return False, str(error)
 
 
-def _validate_backup_at(directory_fd: int, name: str) -> tuple[bool, str]:
+def _validate_backup_at(directory_fd: int | None, name: str | Path, *,
+                        require_content: bool = True) -> tuple[bool, str]:
     try:
         fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
     except OSError as error:
@@ -280,26 +257,13 @@ def _validate_backup_at(directory_fd: int, name: str) -> tuple[bool, str]:
         if info.st_size > MAX_BACKUP_BYTES:
             return False, "archive exceeds validation limit"
         with os.fdopen(fd, "rb", closefd=False) as stream:
-            return _validate_archive(stream, require_content=True)
+            return _validate_archive(stream, require_content=require_content)
     finally:
         os.close(fd)
 
 
 def validate_backup(path: Path) -> tuple[bool, str]:
-    try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    except OSError as error:
-        return False, str(error)
-    try:
-        info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode):
-            return False, "not a regular file"
-        if info.st_size > MAX_BACKUP_BYTES:
-            return False, "archive exceeds validation limit"
-        with os.fdopen(fd, "rb", closefd=False) as stream:
-            return _validate_archive(stream, require_content=path.name.startswith("daily-"))
-    finally:
-        os.close(fd)
+    return _validate_backup_at(None, path, require_content=path.name.startswith("daily-"))
 
 
 def backup(vault, *, automatic: bool = False, vault_directory: int | None = None,

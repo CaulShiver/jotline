@@ -7,13 +7,14 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, date
 import io
 import json
-from .filesystem import fs as os, lock_file
 from pathlib import Path
 import re
 import stat
 import sys
 import time
 from uuid import uuid4
+
+from .filesystem import fs as os, lock_file
 
 COLLECTIONS = ("inbox", "projects", "areas", "resources", "archive", "trash")
 # Limits protect the interactive app from accidentally imported huge files.

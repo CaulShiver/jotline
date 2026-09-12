@@ -75,6 +75,18 @@ def test_missing_template_reads_do_not_leak_vault_descriptors(tmp_path, resource
     assert resource_count() == before
 
 
+def test_failed_template_creation_closes_owned_vault_handle(tmp_path, monkeypatch, resource_count):
+    templates = Templates(tmp_path)
+    before = resource_count()
+    monkeypatch.setattr(os, 'mkdir',
+                        lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError('directory removed')))
+    for _ in range(16):
+        with pytest.raises(FileNotFoundError):
+            with templates._directory(create=True):
+                pytest.fail('creation should fail')
+    assert resource_count() == before
+
+
 @pytest.mark.parametrize('kind', ['symlink', 'file', 'fifo'])
 def test_unsafe_template_directory(tmp_path, kind):
     templates = Templates(tmp_path)

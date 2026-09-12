@@ -37,14 +37,17 @@ GetFileInformationByHandleEx.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes
 GetFileInformationByHandleEx.restype = wintypes.BOOL
 
 
-class AttributeTagInfo(ctypes.Structure):
-    _fields_ = [("attributes", wintypes.DWORD), ("tag", wintypes.DWORD)]
-
-
 class BasicInfo(ctypes.Structure):
     _fields_ = [("created", ctypes.c_longlong), ("accessed", ctypes.c_longlong),
                 ("modified", ctypes.c_longlong), ("changed", ctypes.c_longlong),
                 ("attributes", wintypes.DWORD)]
+
+
+def _file_info(handle):
+    info = BasicInfo()
+    if not GetFileInformationByHandleEx(handle, 0, ctypes.byref(info), ctypes.sizeof(info)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return info
 
 
 @dataclass
@@ -105,9 +108,7 @@ class WindowsFS:
         if handle == wintypes.HANDLE(-1).value:
             raise ctypes.WinError(ctypes.get_last_error())
         try:
-            info = AttributeTagInfo()
-            if not GetFileInformationByHandleEx(handle, 9, ctypes.byref(info), ctypes.sizeof(info)):
-                raise ctypes.WinError(ctypes.get_last_error())
+            info = _file_info(handle)
             if info.attributes & 0x400 or bool(info.attributes & 0x10) != directory or GetFileType(handle) != 1:
                 label = "Not a safe directory" if directory else "Not a regular file"
                 raise OSError(f"{label}: {path}")
@@ -177,10 +178,7 @@ class WindowsFS:
         fd = self.open(path, os.O_RDONLY | self.O_NOFOLLOW)
         try:
             info = os.fstat(fd)
-            basic = BasicInfo()
-            if not GetFileInformationByHandleEx(msvcrt.get_osfhandle(fd), 0,
-                                                ctypes.byref(basic), ctypes.sizeof(basic)):
-                raise ctypes.WinError(ctypes.get_last_error())
+            basic = _file_info(msvcrt.get_osfhandle(fd))
             # Python's Windows st_ctime is creation time in 3.11–3.13. Use the
             # native change time so an edit with a restored mtime invalidates cache.
             return info.st_dev, info.st_ino, info.st_size, basic.modified * 100, basic.changed * 100

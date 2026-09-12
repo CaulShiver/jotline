@@ -1,11 +1,11 @@
 """Validated per-vault preferences, stored separately from notes."""
 from dataclasses import asdict, dataclass, field, fields
 import json
-from .filesystem import fs as os
 import re
 from pathlib import Path
 import weakref
 
+from .filesystem import fs as os
 from .store import (MAX_SETTINGS_BYTES, create_private_temp, read_regular_at,
                     read_regular_file, validate_workspace, vault_lock)
 
