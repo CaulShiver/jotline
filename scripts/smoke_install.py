@@ -116,7 +116,10 @@ async def check_tui(directory: str, *, hard_exit: bool = False) -> None:
         assert isinstance(app.screen, ViewEditor)
         await interact('cancel filters', pilot.press('escape'))
         with tempfile.TemporaryDirectory() as source_folder:
-            source = Path(source_folder) / 'import.md'
+            # macOS exposes its temp directory through the /var symlink. This
+            # fixture owns that directory; pass its canonical path so the import
+            # test exercises a regular file rather than the forbidden alias.
+            source = Path(source_folder).resolve() / 'import.md'
             source.write_text('Installed import smoke', encoding='utf-8')
             plan = preview_import(app.vault, source, workspace='work')
             assert plan.ready == 1

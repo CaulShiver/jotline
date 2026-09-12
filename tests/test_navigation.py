@@ -101,7 +101,7 @@ async def test_filters_apply_without_creating_view_and_empty_hint(tmp_path, size
         assert getattr(app.focused, 'id', None) == 'view-save'
         assert app.focused.region.bottom <= size[1]
         assert app.focused.region.right <= size[0]
-        app.save_screenshot(f'jotline-views-{size[0]}x{size[1]}.svg', path='/tmp')
+        app.save_screenshot(f'jotline-views-{size[0]}x{size[1]}.svg', path=str(tmp_path))
         await pilot.press('enter')
         await pilot.pause()
         assert not app.settings.saved_views
