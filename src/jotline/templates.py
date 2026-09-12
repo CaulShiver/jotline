@@ -110,8 +110,41 @@ class Templates:
             finally:
                 os.unlink(temporary, dir_fd=directory)
 
-    def render(self, name: str, workspace: str) -> str:
+    def render(self, name: str, workspace: str, **context: str) -> str:
+        return self.render_text(self.read(name), workspace, **context)
+
+    def render_text(self, source: str, workspace: str, **context: str) -> str:
         validate_workspace(workspace)
         stamp = datetime.now().astimezone()
-        values = {"date": stamp.date().isoformat(), "time": stamp.strftime("%H:%M"), "workspace": workspace}
-        return re.sub(r"\{\{(date|time|workspace)\}\}", lambda match: values[match[1]], self.read(name))
+        values = {"date": stamp.date().isoformat(), "time": stamp.strftime("%H:%M"),
+                  "workspace": workspace, "title": "", "body": "", "selection": "", **context}
+        remaining = 64
+
+        def expand(text, stack):
+            nonlocal remaining
+            def substitute(match):
+                nonlocal remaining
+                key = match[1]
+                if key.startswith('template:'):
+                    name = key[9:]
+                    remaining -= 1
+                    if name in stack or len(stack) >= 8 or remaining < 0:
+                        raise ValueError("Template includes are recursive or exceed the expansion limit")
+                    return expand(self.read(name), (*stack, name))
+                if key.startswith('date:'):
+                    return stamp.strftime(key[5:])
+                return values.get(key, match[0])
+            # Append bounded pieces instead of allocating an unbounded expanded string.
+            pieces, end, size = [], 0, 0
+            for match in re.finditer(r"\{\{([^{}]+)\}\}", text):
+                for piece in (text[end:match.start()], substitute(match)):
+                    size += len(piece.encode('utf-8'))
+                    if size > MAX_NOTE_BYTES:
+                        raise ValueError("Expanded template exceeds the note size limit")
+                    pieces.append(piece)
+                end = match.end()
+            tail = text[end:]
+            if size + len(tail.encode('utf-8')) > MAX_NOTE_BYTES:
+                raise ValueError("Expanded template exceeds the note size limit")
+            return ''.join(pieces) + tail
+        return expand(source, ())

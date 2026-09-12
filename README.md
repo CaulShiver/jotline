@@ -74,8 +74,10 @@ Open **Ctrl+P → Settings**. Change preferences with Tab, arrows, and Space; ch
 **Save** (or Ctrl+S) to apply them. Escape cancels. **Use defaults** fills the form
 with the original settings; nothing changes until you save.
 
-- **Nine themes**, including Jotline, Nord, Gruvbox, Dracula, Tokyo Night,
-  Catppuccin Mocha, Solarized dark/light, and Textual light.
+- **Seventeen themes:** Jotline, Nord, Gruvbox, Dracula, Tokyo Night, Monokai,
+  Flexoki, Catppuccin Mocha/Latte/Frappé/Macchiato, Rosé Pine/Moon/Dawn,
+  Solarized dark/light, and Textual light. For a light background, try
+  Catppuccin Latte, Rosé Pine Dawn, Solarized light, or Textual light.
 - **Editor:** line numbers, wrapping, and current-line highlighting.
 - **Layout:** sidebar width, writing hints, and starting in focus mode.
 - **Workflow:** open a blank thought or today's log, choose the collection for new
@@ -298,9 +300,93 @@ remain editable and saveable. Images, raw HTML, and interactive task checkboxes
 are not rendered as browser content. Preview links do not open files or browsers;
 use **Follow a link** for Jotline's `[[note links]]`.
 
+## More writing and review tools
+
+The command palette now includes:
+
+- **Find within current note:** enter replacement text and choose Replace or
+  Replace all. Match case is optional. Replacements are literal; Undo reverses
+  one replacement operation. F3/Shift+F3 still navigate matches.
+- **Jump to heading**, **Previous note**, and **Recent notes:** move around
+  Markdown headings and the notes visited this session. Returning to a note
+  restores its cursor position; recent notes stay scoped to the workspace.
+- **Insert template at cursor** and **Insert note text at cursor:** replace the
+  current selection, or insert at the cursor. Type `[[` for note-link suggestions
+  or `;;` for template snippets; arrows and Enter choose, Escape cancels.
+- **Arrange lines / Arrange paragraphs:** arrows select an item, Alt+Up/Down moves
+  it, Ctrl+D duplicates it, Ctrl+S applies, and Escape cancels. Apply is one Undo
+  operation. Arrangement supports up to 256 KiB and 5,000 items.
+- **Select notes for bulk operations:** Space selects notes from the current
+  search, Ctrl+S opens operations. Archive, trash, star, tag, or merge. Merge
+  creates a new inbox note and keeps originals. Other operations report partial
+  failures; successfully processed notes remain changed.
+
+Search supports `"exact phrases"`, `-excluded`, `-#tag`, `tag:work`, and
+`title:"meeting notes"`. Combine these with `created-after:2026-09-01`,
+`created-before:2026-09-30`, `updated-after:today`, or `updated-before:today`.
+Date boundaries are inclusive and use the calendar date stored in note metadata;
+`today` is the current local date. Terms are ANDed. Regex and OR queries are not
+supported.
+
+Choose **Save current search as a view** to keep its query, collection, sort,
+workspace and theme. **Open saved view** lists views in the active workspace;
+**Clear view and search** restores the vault theme and sort. Views can overlap
+without moving notes between workspaces. **Delete saved view** removes a saved
+configuration. Views persist in vault settings and are included in backups.
+
+Templates additionally accept `{{title}}`, `{{body}}`, `{{selection}}`,
+`{{date:%Y-%m-%d}}` (strftime formatting), and `{{template:other-name}}`.
+Title/body/selection refer to the current note when inserting a template or
+running an action; they are empty when creating a new note from a template.
+Inserted context is literal, and unknown placeholders stay unchanged. Includes
+are limited to eight levels and 64 expansions, with a 10 MiB output limit.
+
+## Local actions and shell automation
+
+Write a JSON step list in a note and choose **Save action recipe from this note**,
+then give it a unique name. **Run local action** lists saved recipes; **Delete
+local action** removes one. Recipes are shared across the vault, run in the active
+workspace, and are stored in settings and included in backups. For example:
+
+```json
+[
+  {"type": "template", "value": "{{body}}\n"},
+  {"type": "append", "value": "TARGET_NOTE_ID"},
+  {"type": "archive"}
+]
+```
+
+Replace `TARGET_NOTE_ID` with a project note's actual ID. The recipe appends the
+current text followed by a newline, then archives the source after success.
+
+Available step types are `uppercase`, `lowercase`, `strip`, `template` (with a
+`value` containing template text), `append` (with a target note ID in `value`),
+`archive`, `copy`, and `export`. There can be up to 16 steps per recipe. Copy uses
+the terminal clipboard and is available in the app. Export creates a new inbox
+note in the app, or writes to stdout in the CLI. To create a plain Markdown file,
+redirect CLI output. Text transforms and archive status are saved to the source
+only after all steps succeed. If a later step fails, earlier append/export/copy
+side effects remain applied; review before retrying to avoid duplicate output.
+Actions cannot append a note to itself or access a different workspace.
+
+```sh
+printf '\nNext step' | jotline append NOTE_ID
+printf 'Introduction\n' | jotline prepend NOTE_ID
+jotline open NOTE_ID
+jotline list 'tag:work -blocked' --json
+jotline actions
+jotline run ACTION_NAME NOTE_ID > output.md
+```
+
+Append/prepend preserve the supplied text exactly, without adding separators.
+`list --json` returns metadata and tags, not note bodies. `open` takes precedence
+over the startup-page preference. Use `--workspace NAME` before a subcommand to
+choose a different workspace. All updates use normal locking, history and conflict
+detection. Recipes execute only these built-in steps; there is no shell evaluation.
+
 ## Status
 
-Version 0.7 is an early release. It offers Markdown source editing and an in-app rendered preview. Full Vim emulation is not supported. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
+Version 0.8 is an early release. It offers Markdown source editing and an in-app rendered preview. Full Vim emulation is not supported. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
 
 ## Contributing
 

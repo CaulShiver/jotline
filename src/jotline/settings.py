@@ -10,7 +10,9 @@ from .store import (MAX_SETTINGS_BYTES, create_private_temp, read_regular_at,
                     read_regular_file, validate_workspace, vault_lock)
 
 THEMES = ('jotline', 'nord', 'gruvbox', 'catppuccin-mocha', 'dracula', 'tokyo-night',
-          'solarized-dark', 'solarized-light', 'textual-light')
+          'solarized-dark', 'solarized-light', 'textual-light',
+          'monokai', 'flexoki', 'catppuccin-latte', 'catppuccin-frappe',
+          'catppuccin-macchiato', 'rose-pine', 'rose-pine-moon', 'rose-pine-dawn')
 
 
 HOTKEY_ACTIONS = {
@@ -102,6 +104,8 @@ class Settings:
     workspace_names: list[str] = field(default_factory=lambda: ["default"])
 
     hotkeys: dict[str, str] = field(default_factory=dict)
+    saved_views: dict[str, dict] = field(default_factory=dict)
+    actions: dict[str, list[dict]] = field(default_factory=dict)
 
     @property
     def effective_hotkeys(self) -> dict[str, str]:
@@ -109,6 +113,24 @@ class Settings:
                 for action, (default, _) in HOTKEY_ACTIONS.items()}
 
     def validate(self):
+        from .search import compile_query
+        from .actions import validate_actions
+        validate_actions(self.actions)
+        if not isinstance(self.saved_views, dict) or len(self.saved_views) > 128:
+            raise ValueError("At most 128 saved views are allowed")
+        for name, view in self.saved_views.items():
+            validate_workspace(name)
+            if not isinstance(view, dict) or set(view) != {'workspace', 'query', 'collection', 'sort', 'theme'}:
+                raise ValueError("Invalid saved view")
+            validate_workspace(view['workspace'])
+            if not isinstance(view['query'], str) or len(view['query']) > 2000:
+                raise ValueError("View query must be text under 2,000 characters")
+            compile_query(view['query'])
+            if view['collection'] not in ('all', 'starred', 'inbox', 'projects', 'areas', 'resources', 'archive', 'trash'):
+                raise ValueError("Invalid view collection")
+            if view['sort'] not in ('updated', 'created', 'title') or view['theme'] not in (*THEMES, ''):
+                raise ValueError("Invalid view sort or theme")
+
         if not isinstance(self.hotkeys, dict) or set(self.hotkeys) - HOTKEY_ACTIONS.keys():
             raise ValueError("Hotkeys must map known Jotline actions to keys")
         if any(not isinstance(key, str) for key in self.hotkeys.values()):
@@ -150,6 +172,8 @@ class Settings:
         if not isinstance(self.daily_template, str) or len(self.daily_template) > 20000:
             raise ValueError('Daily template must be text under 20,000 characters')
         self.daily_template.encode('utf-8')
+        if len((json.dumps(asdict(self), indent=2, ensure_ascii=False) + '\n').encode('utf-8')) > MAX_SETTINGS_BYTES:
+            raise ValueError('Settings exceed the file size limit')
 
     @classmethod
     def load(cls, path: Path):
@@ -208,6 +232,9 @@ class Settings:
             _remember(path, self, output)
 
     def _save_locked(self, path: Path, data: dict | None = None, directory: int | None = None):
+        output = json.dumps(_settings_values(self) if data is None else data, indent=2, ensure_ascii=False) + '\n'
+        if len(output.encode('utf-8')) > MAX_SETTINGS_BYTES:
+            raise ValueError('Settings exceed the file size limit')
         if directory is None:
             directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             own_directory = True
@@ -221,8 +248,7 @@ class Settings:
             raise
         try:
             with os.fdopen(fd, 'w', encoding='utf-8', newline='') as stream:
-                json.dump(_settings_values(self) if data is None else data, stream, indent=2, ensure_ascii=False)
-                stream.write('\n')
+                stream.write(output)
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temp, path.name, src_dir_fd=directory, dst_dir_fd=directory)

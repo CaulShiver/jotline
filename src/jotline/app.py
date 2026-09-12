@@ -11,14 +11,15 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.theme import Theme
-from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, Static, TextArea
+from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, Static, Switch, TextArea
 from textual.widgets.option_list import Option
 from rich.text import Text
 
-from .store import COLLECTIONS, ConflictError, Note, Vault, tagged_body, validate_workspace
+from .store import COLLECTIONS, MAX_NOTE_BYTES, ConflictError, Note, Vault, tagged_body, validate_workspace
 from .settings import Settings, HOTKEY_ACTIONS
 from .preferences import Preferences
 from .templates import Templates
+from .workflows import WorkflowMixin
 
 
 @dataclass(frozen=True)
@@ -205,24 +206,31 @@ class FindInNote(ModalScreen[None]):
                 Binding("shift+f3", "previous", "Previous")]
     CSS = """
     FindInNote { align: center top; background: $background 70%; }
-    #find-panel { width: 68; max-width: 95%; height: auto; margin-top: 3;
+    #find-panel { width: 68; max-width: 95%; height: auto; max-height: 90%; margin-top: 1;
         border: round $accent; padding: 1 2; background: $surface; }
     #find-title { color: $accent; margin-bottom: 1; }
     #find-status { height: 2; padding-top: 1; color: $text-muted; }
     #find-context { height: auto; max-height: 3; color: $foreground; background: $background;
         padding: 0 1; }
-    #find-buttons { height: 3; margin-top: 1; }
+    #find-buttons, #replace-buttons { height: 3; margin-top: 1; }
     #find-buttons Button { margin-right: 1; }
     """
 
     def __init__(self) -> None:
         super().__init__()
         self.anchor = 0
+        self.case_sensitive = False
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="find-panel"):
+        with VerticalScroll(id="find-panel"):
             yield Label("Find within this note", id="find-title")
             yield Input(placeholder="Type text to find…", id="find-query")
+            yield Input(placeholder="Replace with…", id="replace-value")
+            yield Label("Match case")
+            yield Switch(False, id="find-case")
+            with Horizontal(id="replace-buttons"):
+                yield Button("Replace", id="replace-one")
+                yield Button("Replace all", id="replace-all")
             yield Static("Enter / F3 next · Shift+F3 previous · Esc done", id="find-status")
             yield Static("", id="find-context", markup=False)
             with Horizontal(id="find-buttons"):
@@ -233,7 +241,7 @@ class FindInNote(ModalScreen[None]):
     def on_mount(self) -> None:
         editor = self.app.query_one("#editor", TextArea)
         self.anchor = self.app.editor_offset(editor.cursor_location, editor.text)
-        self.query_one(Input).focus()
+        self.query_one("#find-query", Input).focus()
 
     def show_match(self, *, reverse: bool = False, initial: bool = False) -> None:
         query = self.query_one("#find-query", Input).value
@@ -243,7 +251,7 @@ class FindInNote(ModalScreen[None]):
             self.query_one("#find-context", Static).update("")
             return
         result = self.app.select_editor_match(query, reverse=reverse,
-                                              anchor=self.anchor if initial else None)
+                                              anchor=self.anchor if initial else None, case_sensitive=self.case_sensitive)
         if result is None:
             status.update("No matches · keep typing or Esc to return")
             self.query_one("#find-context", Static).update("")
@@ -273,12 +281,47 @@ class FindInNote(ModalScreen[None]):
 
     @on(Button.Pressed)
     def button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "find-next":
+        if event.button.id in {"replace-one", "replace-all"}:
+            self.replace_matches(all_matches=event.button.id == "replace-all")
+        elif event.button.id == "find-next":
             self.show_match()
         elif event.button.id == "find-previous":
             self.show_match(reverse=True)
         else:
             self.action_done()
+
+    @on(Switch.Changed, "#find-case")
+    def case_changed(self, event: Switch.Changed) -> None:
+        self.case_sensitive = event.value
+        self.show_match(initial=True)
+
+    def replace_matches(self, *, all_matches=False):
+        query = self.query_one('#find-query', Input).value
+        if not query:
+            return
+        editor = self.app.query_one('#editor', TextArea)
+        pattern = re.compile(re.escape(query), 0 if self.case_sensitive else re.IGNORECASE)
+        replacement = self.query_one('#replace-value', Input).value
+        if all_matches:
+            replacement_bytes = len(replacement.encode('utf-8'))
+            output_bytes = len(editor.text.encode('utf-8')) + sum(
+                replacement_bytes - len(match[0].encode('utf-8'))
+                for match in pattern.finditer(editor.text))
+            if output_bytes > MAX_NOTE_BYTES - 4096:
+                self.app.notify('Replacement exceeds the note size limit', severity='error')
+                return
+            body, count = pattern.subn(lambda match: replacement, editor.text)
+            if count:
+                self.app.replace_editor_text(body)
+        else:
+            if not pattern.fullmatch(editor.selected_text):
+                self.show_match(initial=True)
+            if not pattern.fullmatch(editor.selected_text):
+                return
+            self.app.insert_editor_text(replacement)
+            count = 1
+        self.show_match()
+        self.query_one('#find-status', Static).update(f'Replaced {count} match(es) · Undo in editor to reverse')
 
     def action_next(self) -> None:
         self.show_match()
@@ -291,7 +334,7 @@ class FindInNote(ModalScreen[None]):
         self.app.query_one("#editor", TextArea).focus()
 
 
-class Jotline(App):
+class Jotline(WorkflowMixin, App):
     TITLE = "jotline"
     ENABLE_COMMAND_PALETTE = False
     CSS = """
@@ -322,9 +365,10 @@ class Jotline(App):
         Binding("escape", "editor_focus", "Write", show=False),
     ]
 
-    def __init__(self, vault: Vault, workspace: str | None = None):
+    def __init__(self, vault: Vault, workspace: str | None = None, initial_note: Note | None = None):
         super().__init__()
         self.vault = vault
+        self.initial_note = initial_note
         self.settings_path = vault.path / '.jotline-settings.json'
         self.settings, self.settings_warning = Settings.load(self.settings_path)
         self.workspace = validate_workspace(self.settings.active_workspace if workspace is None else workspace)
@@ -339,6 +383,9 @@ class Jotline(App):
         self.compact_layout = False
         self.compact_navigation = False
         self._shown_storage_warnings: set[str] = set()
+        self.recent_note_ids = []
+        self.note_positions = {}
+        self.view_sort = None
         self.command_registry = self.build_command_registry()
 
     def compose(self) -> ComposeResult:
@@ -362,7 +409,11 @@ class Jotline(App):
         self.status("Ready")
         self.refresh_notes()
         self.autosave_timer = self.set_interval(self.settings.autosave_seconds, self.autosave)
-        if self.settings.startup == 'daily':
+        if self.initial_note is not None:
+            self.collection = self.initial_note.collection
+            self.load(self.initial_note)
+            self.refresh_notes()
+        elif self.settings.startup == 'daily':
             self.action_daily()
         if self.settings_warning:
             self.notify(self.settings_warning, severity='warning', timeout=10)
@@ -453,10 +504,14 @@ class Jotline(App):
         self.notify('Settings saved. Startup choices apply next launch.')
 
     def refresh_notes(self) -> None:
-        notes = self.vault.search(self.query_one("#search", Input).value, self.collection, self.workspace)
-        if self.settings.sort_order == 'title':
+        try:
+            notes = self.vault.search(self.query_one("#search", Input).value, self.collection, self.workspace)
+        except ValueError as error:
+            self.query_one("#collection", Static).update(str(error))
+            return
+        if (self.view_sort or self.settings.sort_order) == 'title':
             notes.sort(key=lambda n: (not n.starred, n.title.casefold(), n.id))
-        elif self.settings.sort_order == 'created':
+        elif (self.view_sort or self.settings.sort_order) == 'created':
             notes.sort(key=lambda n: (n.starred, n.created, n.id), reverse=True)
         listing = self.query_one("#notes", OptionList)
         listing.clear_options()
@@ -484,7 +539,8 @@ class Jotline(App):
     @on(TextArea.Changed, "#editor")
     def edited(self) -> None:
         if self.is_running:
-            self.capture_current_buffer()
+            if self.capture_current_buffer():
+                self.offer_completion()
 
     def capture_current_buffer(self) -> bool:
         """Copy the editor into the note while preserving its unsaved state."""
@@ -531,7 +587,9 @@ class Jotline(App):
         return True
 
     def autosave(self) -> None:
-        if self.dirty:
+        # Textual clears is_running before pruning widgets, but timer callbacks
+        # may still fire until the message pump closes (observed on macOS).
+        if self.is_running and self.dirty:
             self.save_current()
 
     def connections(self) -> None:
@@ -542,8 +600,14 @@ class Jotline(App):
     def load(self, note: Note) -> None:
         if note.workspace != self.workspace:
             raise ValueError("Note moved to another workspace; save a recovery copy if needed")
+        editor = self.query_one("#editor", TextArea)
+        self.note_positions[self.current.id] = editor.cursor_location
+        if self.current.original is not None and self.current.id != note.id:
+            self.recent_note_ids = [self.current.id] + [key for key in self.recent_note_ids if key != self.current.id]
+            self.recent_note_ids = self.recent_note_ids[:50]
         self.current, self.dirty, self.last_error = note, False, ""
         self.query_one("#editor", TextArea).load_text(note.body)
+        editor.move_cursor(self.note_positions.get(note.id, (0, 0)))
         self.query_one("#editor", TextArea).focus()
         self.status("Saved" if note.original is not None else "Ready")
         self.connections()
@@ -671,6 +735,8 @@ class Jotline(App):
             self.notify(str(error), severity="error")
             return
         self.settings, self.workspace = settings, name
+        self.view_sort = None
+        self.theme = self.settings.theme
         self.collection = self.settings.default_collection
         self.query_one("#search", Input).value = ""
         self.load(self.vault.new(workspace=name))
@@ -879,7 +945,7 @@ class Jotline(App):
         return row, len(before.rsplit("\n", 1)[-1])
 
     def select_editor_match(self, query: str, *, reverse: bool = False,
-                            anchor: int | None = None) -> tuple[int, int] | None:
+                            anchor: int | None = None, case_sensitive: bool = False) -> tuple[int, int] | None:
         editor = self.query_one("#editor", TextArea)
         text = editor.text
         if anchor is None:
@@ -890,7 +956,7 @@ class Jotline(App):
         first = last = candidate = None
         first_ordinal = last_ordinal = candidate_ordinal = 0
         total = 0
-        for total, match in enumerate(re.finditer(re.escape(query), text, re.IGNORECASE), start=1):
+        for total, match in enumerate(re.finditer(re.escape(query), text, 0 if case_sensitive else re.IGNORECASE), start=1):
             if first is None:
                 first, first_ordinal = match, total
             last, last_ordinal = match, total
@@ -977,6 +1043,7 @@ class Jotline(App):
         commands.extend(Command("move:" + collection, "Move note to " + collection,
                                 lambda collection=collection: self.move_to_collection(collection))
                         for collection in COLLECTIONS)
+        commands.extend(self.workflow_commands(Command))
         return {command.key: command for command in commands}
 
     def command_choices(self) -> list[tuple[str, str]]:

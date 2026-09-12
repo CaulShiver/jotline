@@ -523,6 +523,16 @@ class Vault:
             self._save_locked(note, directory)
             return note
 
+    def append_note(self, note_id: str, body: str, workspace: str, *, prepend: bool = False) -> Note:
+        """Update a target under one lock, preserving piped text exactly."""
+        with self.locked() as directory:
+            note = self.read(note_id, directory=directory)
+            if note.workspace != workspace:
+                raise ValueError("Note is in another workspace; pass --workspace NAME")
+            note.body = body + note.body if prepend else note.body + body
+            self._save_locked(note, directory)
+            return note
+
     def backlinks(self, target: Note) -> list[Note]:
         targets = {target.id, target.title}
         matches = []
@@ -536,9 +546,8 @@ class Vault:
         return matches
 
     def search(self, query: str = "", collection: str = "all", workspace: str | None = None) -> list[Note]:
-        terms = query.casefold().split()
-        words = [t for t in terms if not t.startswith("#")]
-        tags = {t[1:] for t in terms if t.startswith("#")}
+        from .search import compile_query
+        matches_query = compile_query(query)
         matches = []
         for note in self.notes():
             if workspace is not None and note.workspace != workspace:
@@ -549,12 +558,11 @@ class Vault:
                 included = note.starred and note.collection != "trash"
             else:
                 included = note.collection == collection
-            has_tags = not tags or tags.issubset(note.tags)
-            self._collect_derived_warnings(note)
-            if not included or not has_tags:
+            if not included:
                 continue
-            body = note.body.casefold() if words else ""
-            if all(word in body or word in note.id for word in words):
+            matched = matches_query(note)
+            self._collect_derived_warnings(note)
+            if matched:
                 matches.append(note)
         return matches
 

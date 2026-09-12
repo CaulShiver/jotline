@@ -372,8 +372,9 @@ def test_settings_value_reversion_persists_for_mutation_and_replace(tmp_path):
 
 def test_explicit_save_repairs_oversized_regular_settings(tmp_path, monkeypatch):
     path = tmp_path / ".jotline-settings.json"
-    path.write_text("x" * 32)
-    monkeypatch.setattr(settings_module, "MAX_SETTINGS_BYTES", 8)
+    # The limit must accommodate valid defaults, while rejecting the input.
+    path.write_text("x" * 1025)
+    monkeypatch.setattr(settings_module, "MAX_SETTINGS_BYTES", 1024)
     loaded, warning = Settings.load(path)
     assert warning
     loaded.save(path)

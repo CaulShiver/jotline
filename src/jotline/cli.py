@@ -299,6 +299,17 @@ def main() -> None:
     capture.add_argument("--daily", action="store_true", help="Append to today's log")
     listing = sub.add_parser("list", help="Find notes")
     listing.add_argument("query", nargs="?", default="")
+    listing.add_argument("--json", action="store_true", help="Print note metadata as JSON")
+    for command in ('append', 'prepend'):
+        update = sub.add_parser(command, help=f'{command.title()} text to an existing note')
+        update.add_argument('id')
+        update.add_argument('text', nargs='*')
+    opening = sub.add_parser('open', help='Open a note by ID in the terminal editor')
+    opening.add_argument('id')
+    sub.add_parser('actions', help='List local actions')
+    action = sub.add_parser('run', help='Run a named local action on a note')
+    action.add_argument('action')
+    action.add_argument('id')
     export = sub.add_parser("export", help="Write a note's Markdown body to stdout")
     export.add_argument("id")
     export.add_argument("--raw", action="store_true", help="Allow terminal control characters on an interactive terminal")
@@ -338,8 +349,37 @@ def main() -> None:
             print(note.id)
         elif args.command == "backup":
             print(terminal_text(vault.backup()))
+        elif args.command in {'append', 'prepend'}:
+            body = ' '.join(args.text) if args.text else (read_capture_input() if not sys.stdin.isatty() else '')
+            if not body:
+                parser.error('Provide text or pipe UTF-8 text to append/prepend')
+            note = vault.append_note(args.id, body, workspace, prepend=args.command == 'prepend')
+            print(note.id)
+        elif args.command == 'actions':
+            for name in settings.actions:
+                print(name)
+        elif args.command == 'run':
+            from .actions import run_action
+            if args.action not in settings.actions:
+                raise ValueError('Unknown action; use jotline actions')
+            note = vault.read(args.id)
+            if note.workspace != workspace:
+                raise ValueError('Note is in another workspace; pass --workspace NAME')
+            def output(body):
+                if sys.stdout.isatty() and has_terminal_controls(body):
+                    raise ValueError('Refusing to print terminal controls; redirect stdout')
+                sys.stdout.write(body)
+            try:
+                run_action(vault, note, settings.actions[args.action], export=output)
+            except (ValueError, OSError) as error:
+                raise ValueError(f'Action stopped: {error}. Earlier completed steps remain applied.') from error
         elif args.command == "list":
-            for note in vault.search(args.query, workspace=workspace):
+            notes = vault.search(args.query, workspace=workspace)
+            if args.json:
+                print(json.dumps([dict(id=n.id, title=n.title, collection=n.collection, workspace=n.workspace,
+                                       created=n.created, updated=n.updated, starred=n.starred, tags=sorted(n.tags))
+                                  for n in notes], ensure_ascii=True))
+            for note in ([] if args.json else notes):
                 # Escape control characters when printing untrusted note text to a terminal.
                 title = terminal_text(note.title)
                 print(f"{note.id}\t{note.collection}\t{title}")
@@ -380,7 +420,12 @@ def main() -> None:
                 parser.exit(1)
         else:
             from .app import Jotline
-            Jotline(vault, workspace=workspace).run()
+            initial_note = None
+            if args.command == 'open':
+                initial_note = vault.read(args.id)
+                if initial_note.workspace != workspace:
+                    raise ValueError('Note is in another workspace; pass --workspace NAME')
+            Jotline(vault, workspace=workspace, initial_note=initial_note).run()
         if vault.backup_warning:
             warning(vault.backup_warning)
     except (OSError, ValueError) as error:
