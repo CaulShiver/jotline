@@ -37,7 +37,9 @@ def compile_query(query):
             elif field == 'title':
                 found = value in note.title.casefold()
             elif field == 'text':
-                found = value in note.body.casefold() or value in note.id
+                # Match IDs only by a meaningful prefix; short terms would
+                # otherwise hit random hex digits in almost every note.
+                found = value in note.body.casefold() or (len(value) >= 8 and note.id.startswith(value))
             else:
                 attribute, direction = field.split('-')
                 stamp = getattr(note, attribute)[:10]

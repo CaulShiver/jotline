@@ -1,5 +1,17 @@
 # Release verification
 
+## 0.9.2
+
+- Complete locked suite on Linux/Python 3.12: **360 passed, 3 platform-specific skips**,
+  including 49 new regression tests from the 2026-09-12 red team.
+- Fresh 0.9.2 installed-wheel application smoke and POSIX PTY smoke passed.
+- Locked dependency resolution, release identity, checksum generation, workflow
+  validation (`actionlint`) and `git diff --check` passed.
+- Filesystems without hard links were simulated by refusing `link(2)`; disk-full
+  by refusing the backup write; clock steps by fixed revision stamps.
+- The tag workflow gates publication on all nine OS/Python combinations and
+  repeats smoke tests against the exact wheel uploaded.
+
 ## 0.9.1
 
 - Complete locked suite on Linux/Python 3.12: **311 passed, 3 platform-specific skips**.

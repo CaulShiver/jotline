@@ -5,6 +5,7 @@ from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime, date
+import errno
 import io
 import json
 from pathlib import Path
@@ -108,17 +109,64 @@ def replace_at(directory: int, source: str, target: str) -> None:
     os.replace(source, target, src_dir_fd=directory, dst_dir_fd=directory)
 
 
+# Hard links are refused on FAT/exFAT media, most SMB shares and shared folders.
+LINK_UNSUPPORTED = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EMLINK, errno.EXDEV,
+                    getattr(errno, "ENOSYS", errno.EPERM), errno.EACCES}
+
+
+def link_unsupported(error: OSError) -> bool:
+    return error.errno in LINK_UNSUPPORTED
+
+
+def publish_new(directory: int, source: str, target: str) -> None:
+    """Publish a complete file under a name that must not already exist.
+
+    A hard link is atomic and exclusive. Where the filesystem refuses links,
+    fall back to an existence check plus rename so the note is never lost.
+    """
+    try:
+        os.link(source, target, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
+    except OSError as error:
+        if isinstance(error, FileExistsError) or not link_unsupported(error):
+            raise
+        try:
+            os.stat(target, dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError:
+            os.replace(source, target, src_dir_fd=directory, dst_dir_fd=directory)
+        else:
+            raise FileExistsError(errno.EEXIST, "File exists", target) from None
+
+
+def pin_ancestors(absolute: Path) -> int:
+    """Open every ancestor of an absolute path without following links.
+
+    Returns a descriptor for the parent directory; the caller closes it.
+    """
+    directory = os.open(absolute.anchor, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for component in absolute.parts[1:-1]:
+            try:
+                next_directory = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                         dir_fd=directory)
+            except OSError as error:
+                if isinstance(error, NotADirectoryError) or error.errno == errno.ELOOP:
+                    raise OSError(
+                        f"Path passes through a link at {component}; use the real path") from None
+                raise
+            os.close(directory)
+            directory = next_directory
+    except BaseException:
+        os.close(directory)
+        raise
+    return directory
+
+
 def read_regular_file(path: Path, max_bytes: int = MAX_NOTE_BYTES, *, ancestor_safe: bool = False) -> str:
     """Read bounded UTF-8 text without following links or blocking on a pipe."""
     if ancestor_safe:
         absolute = Path(path).absolute()
-        directory = os.open(absolute.anchor, os.O_RDONLY | os.O_DIRECTORY)
+        directory = pin_ancestors(absolute)
         try:
-            for component in absolute.parts[1:-1]:
-                next_directory = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                                         dir_fd=directory)
-                os.close(directory)
-                directory = next_directory
             fd = os.open(absolute.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
         finally:
             os.close(directory)
@@ -131,7 +179,7 @@ def read_regular_file(path: Path, max_bytes: int = MAX_NOTE_BYTES, *, ancestor_s
 
 
 @contextmanager
-def vault_lock(path: Path):
+def vault_lock(path: Path, timeout: float = LOCK_TIMEOUT_SECONDS):
     """Coordinate local writers without hanging the UI indefinitely."""
     directory = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -158,7 +206,7 @@ def vault_lock(path: Path):
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise OSError("Jotline lock is not a regular file")
-        deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
+        deadline = time.monotonic() + timeout
         while True:
             try:
                 lock_file(fd)
@@ -208,11 +256,16 @@ class Note:
         return values
 
     @property
-    def title(self) -> str:
+    def heading(self) -> str:
+        """The full first non-blank line; links by title match against this."""
         for line in io.StringIO(self.body):
             if line.strip():
-                return line.lstrip("# ").strip()[:100] or "Untitled"
+                return line.lstrip("# ").strip() or "Untitled"
         return "Untitled"
+
+    @property
+    def title(self) -> str:
+        return self.heading[:100]
 
     @property
     def tags(self) -> set[str]:
@@ -224,11 +277,18 @@ class Note:
 
 
 class Vault:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, create: bool = True):
         self.path = path.expanduser().resolve()
-        self.path.mkdir(parents=True, exist_ok=True)
+        if create:
+            self.path.mkdir(parents=True, exist_ok=True)
+        elif not self.path.is_dir():
+            raise FileNotFoundError(
+                f"Vault does not exist: {self.path} (start jotline or capture a note to create it)")
         self.warnings: list[str] = []
+        # Warnings that name a retained file survive every sidebar refresh.
+        self.sticky_warnings: list[str] = []
         self.backup_warning = ""
+        self.lock_timeout = LOCK_TIMEOUT_SECONDS
         self._cache: dict[str, tuple[FileSignature, Note, int, float]] = {}
         self.permission_warning = ("Vault is writable by other users; use chmod go-w to protect note replacement"
                                    if os.name != "nt" and self.path.stat().st_mode & 0o022 else "")
@@ -236,7 +296,11 @@ class Vault:
             self.warnings.append(self.permission_warning)
 
     def locked(self):
-        return vault_lock(self.path)
+        return vault_lock(self.path, self.lock_timeout)
+
+    def retain_warning(self, message: str) -> None:
+        self.sticky_warnings.append(message)
+        self.warnings.append(message)
 
     def file(self, note_id: str) -> Path:
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", note_id):
@@ -266,12 +330,13 @@ class Vault:
     @staticmethod
     def parse_note(note_id: str, raw: str) -> Note:
         meta = {}
-        body = raw
-        if re.match(r"\A---\r?\njotline: 1\r?\n", raw):
-            boundary = re.search(r"\r?\n---\r?\n", raw)
+        # Some editors prepend a byte-order mark; it is not part of the note.
+        body = raw.removeprefix("\ufeff")
+        if re.match(r"\A---\r?\njotline: 1\r?\n", body):
+            boundary = re.search(r"\r?\n---\r?\n", body)
             if boundary is None:
                 raise ValueError("Incomplete Jotline metadata header")
-            header = raw[raw.index("\n") + 1:boundary.start()]
+            header = body[body.index("\n") + 1:boundary.start()]
             for line in header.splitlines():
                 key, sep, value = line.partition(": ")
                 if sep and key in {"collection", "created", "updated", "starred", "workspace"}:
@@ -279,7 +344,7 @@ class Vault:
                         meta[key] = json.loads(value)
                     except RecursionError:
                         raise ValueError("Metadata is nested too deeply") from None
-            body = raw[boundary.end():]
+            body = body[boundary.end():]
         if meta.get("collection", "inbox") not in COLLECTIONS:
             raise ValueError("Unknown collection")
         if any(not isinstance(meta.get(k, ""), str) for k in ("created", "updated")):
@@ -295,7 +360,7 @@ class Vault:
 
     def notes(self) -> list[Note]:
         notes = []
-        self.warnings = [self.permission_warning] if self.permission_warning else []
+        self.warnings = ([self.permission_warning] if self.permission_warning else []) + list(self.sticky_warnings)
         refreshed = {}
         retained_bytes = 0
         scanned_bytes = 0
@@ -384,8 +449,16 @@ class Vault:
                 stream.write(raw)
                 stream.flush()
                 os.fsync(stream.fileno())
-            history.backup(self, automatic=True, vault_directory=directory,
-                           pending=(path.name, raw) if actual is None else None)
+            try:
+                history.backup(self, automatic=True, vault_directory=directory,
+                               pending=(path.name, raw) if actual is None else None)
+            except OSError as error:
+                # A failed daily backup must never hold the note itself hostage;
+                # the overwritten text is still snapshotted to history below.
+                message = f"Daily backup failed: {error}"
+                self.backup_warning = "; ".join(filter(None, (self.backup_warning, message)))
+                if message not in self.warnings:
+                    self.warnings.append(message)
             if actual is not None:
                 history.snapshot(self, note.id, actual, vault_directory=directory)
             candidate = history.snapshot(self, note.id, raw, vault_directory=directory)
@@ -401,7 +474,7 @@ class Vault:
                 raise ConflictError("This note changed outside Jotline. Save a recovery copy to preserve your changes.")
             if actual is None:
                 try:
-                    os.link(temp, path.name, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
+                    publish_new(directory, temp, path.name)
                 except FileExistsError:
                     try:
                         history.snapshot(self, note.id, read_regular_at(directory, path.name),
@@ -409,7 +482,10 @@ class Vault:
                     except (OSError, ValueError, UnicodeError):
                         pass
                     raise ConflictError("This note changed outside Jotline. Save a recovery copy to preserve your changes.") from None
-                os.unlink(temp, dir_fd=directory)
+                try:
+                    os.unlink(temp, dir_fd=directory)
+                except FileNotFoundError:
+                    pass
             else:
                 displaced = ".jotline-displaced-" + uuid4().hex
                 keep_displaced = False
@@ -419,8 +495,7 @@ class Vault:
                     # remains recoverable as the displaced file or a new collision.
                     replace_at(directory, path.name, displaced)
                     try:
-                        os.link(temp, path.name, src_dir_fd=directory, dst_dir_fd=directory,
-                                follow_symlinks=False)
+                        publish_new(directory, temp, path.name)
                     except BaseException:
                         # Until the displaced inode is linked back under the note
                         # name, it is the only authoritative copy and must survive
@@ -430,19 +505,23 @@ class Vault:
                             collision = read_regular_at(directory, path.name)
                         except FileNotFoundError:
                             try:
-                                os.link(displaced, path.name, src_dir_fd=directory, dst_dir_fd=directory,
-                                        follow_symlinks=False)
+                                # Rename works on every filesystem; the displaced
+                                # inode is the only copy, so put it straight back.
+                                replace_at(directory, displaced, path.name)
                             except BaseException as restore_error:
-                                self.warnings.append(
+                                self.retain_warning(
                                     f"Save failed; the original note was retained as {displaced}: {restore_error}")
                             else:
                                 keep_displaced = False
                         else:
                             history.snapshot(self, note.id, collision, vault_directory=directory)
-                            self.warnings.append(
+                            self.retain_warning(
                                 f"Save collided with another writer; the original note was retained as {displaced}")
                         raise
-                    os.unlink(temp, dir_fd=directory)
+                    try:
+                        os.unlink(temp, dir_fd=directory)
+                    except FileNotFoundError:
+                        pass  # The rename fallback already consumed the temp file.
                     try:
                         displaced_raw = read_regular_at(directory, displaced)
                         if displaced_raw != actual:
@@ -451,7 +530,7 @@ class Vault:
                                 "An external edit raced with save and was preserved in note history")
                     except (OSError, ValueError, UnicodeError) as error:
                         keep_displaced = True
-                        self.warnings.append(
+                        self.retain_warning(
                             f"A displaced external edit was retained as {displaced}: {error}")
                 finally:
                     if not keep_displaced:
@@ -552,7 +631,7 @@ class Vault:
             return note
 
     def backlinks(self, target: Note) -> list[Note]:
-        targets = {target.id, target.title}
+        targets = {target.id, target.title, target.heading}
         matches = []
         for note in self.notes():
             if note.id == target.id or note.collection == "trash" or note.workspace != target.workspace:

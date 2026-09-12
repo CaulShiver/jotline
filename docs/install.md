@@ -9,13 +9,13 @@ Download `SHA256SUMS` from the same release. To display the wheel's checksum:
 
 ```sh
 # Linux
-sha256sum jotline-0.9.1-py3-none-any.whl
+sha256sum jotline-0.9.2-py3-none-any.whl
 # macOS
-shasum -a 256 jotline-0.9.1-py3-none-any.whl
+shasum -a 256 jotline-0.9.2-py3-none-any.whl
 ```
 
 In PowerShell, run
-`Get-FileHash ./jotline-0.9.1-py3-none-any.whl -Algorithm SHA256`.
+`Get-FileHash ./jotline-0.9.2-py3-none-any.whl -Algorithm SHA256`.
 Compare the hash with the matching wheel filename in `SHA256SUMS` before
 installing. Hashes verify that the file matches that release's checksum list;
 they are not a separate publisher signature.
@@ -25,14 +25,14 @@ they are not a separate publisher signature.
 With uv, from the folder containing the downloaded wheel:
 
 ```sh
-uv tool install ./jotline-0.9.1-py3-none-any.whl
+uv tool install ./jotline-0.9.2-py3-none-any.whl
 jotline
 ```
 
 Or use pipx:
 
 ```sh
-pipx install ./jotline-0.9.1-py3-none-any.whl
+pipx install ./jotline-0.9.2-py3-none-any.whl
 jotline
 ```
 
@@ -45,7 +45,7 @@ To try without either tool, create a virtual environment and install the wheel:
 ```sh
 python -m venv jotline-env
 # Linux / macOS
-jotline-env/bin/python -m pip install ./jotline-0.9.1-py3-none-any.whl
+jotline-env/bin/python -m pip install ./jotline-0.9.2-py3-none-any.whl
 jotline-env/bin/jotline
 ```
 
@@ -59,9 +59,9 @@ Run `jotline backup` first and copy the archive somewhere safe. Download the
 desired release's wheel and reinstall it explicitly:
 
 ```sh
-uv tool install --force ./jotline-0.9.1-py3-none-any.whl
+uv tool install --force ./jotline-0.9.2-py3-none-any.whl
 # Or, if installed with pipx:
-pipx install --force ./jotline-0.9.1-py3-none-any.whl
+pipx install --force ./jotline-0.9.2-py3-none-any.whl
 jotline --version
 jotline doctor
 ```

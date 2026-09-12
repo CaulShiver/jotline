@@ -176,7 +176,25 @@ class Settings:
             raise ValueError('Settings exceed the file size limit')
 
     @classmethod
+    def _partial(cls, data: dict) -> tuple["Settings", list[str]]:
+        """Keep every field that validates alongside the others; name the rest."""
+        kept: dict = {}
+        rejected = []
+        for name in (f.name for f in fields(cls)):
+            if name not in data:
+                continue
+            trial = {**kept, name: data[name]}
+            try:
+                cls(**trial).validate()
+            except (ValueError, TypeError, RecursionError):
+                rejected.append(name)
+            else:
+                kept = trial
+        return cls(**kept), rejected
+
+    @classmethod
     def load(cls, path: Path):
+        data = None
         try:
             data = json.loads(read_regular_file(path, MAX_SETTINGS_BYTES))
             if not isinstance(data, dict):
@@ -191,6 +209,14 @@ class Settings:
             _remember(path, settings, {})
             return settings, ''
         except (ValueError, TypeError, OSError, RecursionError) as error:
+            if isinstance(data, dict):
+                # One bad value must not discard every other preference, and
+                # the next save must not rewrite the file from defaults.
+                settings, rejected = cls._partial(data)
+                if rejected:
+                    _remember(path, settings, data)
+                    return settings, (f'Could not load settings field(s) {", ".join(rejected)}; '
+                                      f'using defaults for them. {error}')
             settings = cls()
             _remember(path, settings, None)
             return settings, f'Could not load settings; using defaults. {error}'
@@ -199,26 +225,36 @@ class Settings:
         self.validate()
         with vault_lock(path.parent) as directory:
             current = None
+            unreadable = False
             try:
                 raw = read_regular_at(directory, path.name, MAX_SETTINGS_BYTES)
                 current = json.loads(raw)
                 if not isinstance(current, dict):
                     current = None
+                    unreadable = True
             except FileNotFoundError:
                 pass
             except (UnicodeError, ValueError, json.JSONDecodeError, RecursionError):
                 # The bounded reader has already established that the target is
                 # a regular file. Explicit save may repair malformed or oversized
                 # regular settings, while links and special files still fail.
-                pass
+                unreadable = True
+            if unreadable:
+                # Never overwrite bytes that could not be understood; keep them
+                # next to the fresh file so nothing hand-written is lost.
+                from .history import stamp
+                os.replace(path.name, f'{path.name}.invalid-{stamp()}.json',
+                           src_dir_fd=directory, dst_dir_fd=directory)
             desired = _settings_values(self)
             baseline = _nearest_baseline(path, self, desired)
             if current is not None and baseline is not _NO_BASELINE and baseline[1] is not None:
                 merged = dict(current)
                 defaults = _settings_values(Settings())
+                # Values that failed validation on disk are replaced, never merged.
+                _, rejected = Settings._partial(current)
                 for key, value in desired.items():
                     old = baseline[0].get(key, defaults[key])
-                    if value != old:
+                    if value != old or key in rejected:
                         merged[key] = value
                 # Validate the effective known settings before publication.
                 known = {field.name for field in fields(Settings)}

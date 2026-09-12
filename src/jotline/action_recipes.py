@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .actions import validate_actions
 from .filesystem import fs as os
-from .store import MAX_SETTINGS_BYTES, create_private_temp, read_regular_file
+from .store import MAX_SETTINGS_BYTES, create_private_temp, pin_ancestors, publish_new, read_regular_file
 
 
 def encode_recipes(actions):
@@ -40,22 +40,20 @@ def write_recipes(path, actions):
     """Create a private new file; reject existing paths and linked ancestors."""
     data = encode_recipes(actions).encode('utf-8')
     absolute = Path(path).expanduser().absolute()
-    directory = os.open(absolute.anchor, os.O_RDONLY | os.O_DIRECTORY)
+    directory = pin_ancestors(absolute)
     try:
-        for component in absolute.parts[1:-1]:
-            next_directory = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                                     dir_fd=directory)
-            os.close(directory)
-            directory = next_directory
         fd, temporary = create_private_temp(directory, '.recipe-')
         try:
             with os.fdopen(fd, 'wb') as stream:
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.link(temporary, absolute.name, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
+            publish_new(directory, temporary, absolute.name)
             os.fsync(directory)
         finally:
-            os.unlink(temporary, dir_fd=directory)
+            try:
+                os.unlink(temporary, dir_fd=directory)
+            except FileNotFoundError:
+                pass
     finally:
         os.close(directory)

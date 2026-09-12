@@ -10,6 +10,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
+from .modal import Modal
 from textual.theme import Theme
 from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, Static, Switch, TextArea
 from textual.widgets.option_list import Option
@@ -40,7 +41,7 @@ class Command:
     hotkey_action: str | None = None
 
 
-class Palette(ModalScreen[str | None]):
+class Palette(Modal[str | None]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
     CSS = """
     Palette { align: center top; background: $background 70%; }
@@ -115,7 +116,7 @@ class Palette(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class TextPrompt(ModalScreen[str | None]):
+class TextPrompt(Modal[str | None]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
     CSS = """
     TextPrompt { align: center top; background: $background 70%; }
@@ -144,7 +145,7 @@ class TextPrompt(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class MarkdownPreview(ModalScreen[None]):
+class MarkdownPreview(Modal[None]):
     BINDINGS = [Binding("escape", "done", "Back to writing")]
     CSS = """
     MarkdownPreview { align: center middle; background: $background 80%; }
@@ -159,7 +160,8 @@ class MarkdownPreview(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="markdown-panel"):
-            yield Label("Markdown preview · Esc to return to writing")
+            yield Label("Markdown preview · Esc to return to writing"
+                        + (" · raw HTML blocks are not rendered" if re.search(r"^ {0,3}<[A-Za-z!?/]", self.body, re.M) else ""))
             with VerticalScroll(id="markdown-scroll"):
                 # Let Markdown own its initial render during its mount lifecycle.
                 # A second update from the parent mount can race its empty render.
@@ -175,7 +177,7 @@ class MarkdownPreview(ModalScreen[None]):
         self.app.query_one("#editor", TextArea).focus()
 
 
-class RevisionPreview(ModalScreen[bool]):
+class RevisionPreview(Modal[bool]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
     CSS = """
     RevisionPreview { align: center middle; background: $background 80%; }
@@ -206,7 +208,7 @@ class RevisionPreview(ModalScreen[bool]):
         self.dismiss(event.button.id == "restore-revision")
 
 
-class FindInNote(ModalScreen[None]):
+class FindInNote(Modal[None]):
     BINDINGS = [Binding("escape", "done", "Done"), Binding("f3", "next", "Next"),
                 Binding("shift+f3", "previous", "Previous")]
     CSS = """
@@ -269,7 +271,7 @@ class FindInNote(ModalScreen[None]):
         editor = self.app.query_one("#editor", TextArea)
         row, start = editor.selection.start
         _, end = editor.selection.end
-        line = editor.text.split("\n")[row]
+        line = editor.document.get_line(row)
         preview = Text(f"Line {row + 1} · ", style="dim")
         preview.append(line[:start])
         preview.append(line[start:end], style="bold reverse")
@@ -397,6 +399,10 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
         self._shown_storage_warnings: set[str] = set()
         self.recent_note_ids = []
         self.note_positions = {}
+        # What the editor reports for the loaded note. Textual normalizes
+        # unusual line separators, so this can differ from note.body without
+        # any user edit; only a change from this baseline is a real edit.
+        self._editor_baseline = ""
         self.view_sort = None
         self.active_view = None
         self.command_registry = self.build_command_registry()
@@ -682,9 +688,10 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
     def capture_current_buffer(self) -> bool:
         """Copy the editor into the note while preserving its unsaved state."""
         body = self.query_one("#editor", TextArea).text
-        if body == self.current.body:
+        if body == self._editor_baseline:
             return False
         self.current.body = body
+        self._editor_baseline = body
         self.dirty = True
         self.status("Saving…")
         return True
@@ -698,7 +705,8 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
         self.query_one("#status", Static).update(details)
         self.query_one("#note-heading", Static).update(Text(self.current.title + " / " + self.current.collection))
 
-    def save_current(self) -> bool:
+    def save_current(self, *, explicit: bool = False) -> bool:
+        """Save if dirty. Explicit user actions always surface a blocking conflict."""
         # Capture the buffer synchronously even when its Changed message is pending.
         self.capture_current_buffer()
         if not self.dirty:
@@ -711,7 +719,7 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
                         "to review the external version.") if conflict else str(error)
             message = "NOT SAVED · " + ("External change detected" if conflict else str(error))
             self.status(message)
-            if guidance != self.last_error:
+            if guidance != self.last_error or explicit:
                 self.notify(guidance, severity="error", timeout=12)
                 self.last_error = guidance
                 if conflict and not isinstance(self.screen, ModalScreen):
@@ -746,13 +754,18 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
             self.recent_note_ids = self.recent_note_ids[:50]
         self.current, self.dirty, self.last_error = note, False, ""
         self.query_one("#editor", TextArea).load_text(note.body)
+        self._editor_baseline = editor.text
         editor.move_cursor(self.note_positions.get(note.id, (0, 0)))
         self.query_one("#editor", TextArea).focus()
         self.status("Saved" if note.original is not None else "Ready")
         self.connections()
 
     def load_id(self, note_id: str) -> None:
-        if not self.save_current():
+        if not self.save_current(explicit=True):
+            return
+        if note_id == self.current.id and self.current.original is not None:
+            # Re-selecting the open note must not discard its undo history.
+            self.query_one("#editor", TextArea).focus()
             return
         try:
             self.load(self.vault.read(note_id))
@@ -760,7 +773,7 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
             self.notify(str(error), severity="error")
 
     def action_new(self) -> None:
-        if self.save_current():
+        if self.save_current(explicit=True):
             note = self.vault.new(workspace=self.workspace)
             note.collection = self.settings.default_collection
             self.collection = note.collection
@@ -768,7 +781,7 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
             self.refresh_notes()
 
     def action_daily(self) -> None:
-        if self.save_current():
+        if self.save_current(explicit=True):
             try:
                 note = self.vault.daily(self.settings.daily_template, self.workspace)
             except (OSError, ValueError) as error:
@@ -778,8 +791,7 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
             self.load(note)
             self.refresh_notes()
             editor = self.query_one("#editor", TextArea)
-            lines = editor.text.split("\n")
-            editor.move_cursor((len(lines) - 1, len(lines[-1])))
+            editor.move_cursor(editor.document.end)
 
     def action_search(self) -> None:
         self.collection = "all"
@@ -793,10 +805,10 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
         self.query_one("#editor", TextArea).focus()
 
     def action_save(self) -> None:
-        self.save_current()
+        self.save_current(explicit=True)
 
     def action_quit(self) -> None:
-        if self.save_current():
+        if self.save_current(explicit=True):
             self.exit()
 
     def action_focus_mode(self) -> None:
@@ -865,7 +877,7 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
             return
         try:
             name = validate_workspace(name)
-            if not self.save_current():
+            if not self.save_current(explicit=True):
                 return
             settings = replace(self.settings, active_workspace=name,
                                workspace_names=sorted(set(self.settings.workspace_names) | {name}))
@@ -929,8 +941,11 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
         except ValueError as error:
             self.notify(str(error), severity="error")
             return
+        if len(body.encode("utf-8")) > MAX_NOTE_BYTES - 4096:
+            self.notify("Result exceeds the note size limit", severity="error")
+            return
         # Insert only the suffix, retaining the editor's undo history.
-        editor.insert(body[len(editor.text):], self.editor_location(len(editor.text), editor.text))
+        editor.insert(body[len(editor.text):], editor.document.end)
         self.save_current()
         editor.focus()
 
@@ -1038,12 +1053,23 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
         self.refresh_notes()
         self.notify("Saved version restored as a new inbox note.")
 
+    PREVIEW_MAX_BLOCKS = 600
+    PREVIEW_MAX_CELLS = 400
+
     def action_preview(self) -> None:
         self.capture_current_buffer()
-        if len(self.current.body.encode("utf-8")) > 256 * 1024:
-            self.notify("Preview supports notes up to 256 KiB. You can still edit and save this note.", severity="warning")
+        body = self.current.body
+        # Render cost follows the number of Markdown blocks (one widget each)
+        # and table cells, not bytes: a 4 KiB list of 1,000 items stalls the UI.
+        lines = body.splitlines()
+        blocks = sum(1 for line in lines if line.strip())
+        cells = max((line.count("|") for line in lines), default=0)
+        if (len(body.encode("utf-8")) > 256 * 1024 or blocks > self.PREVIEW_MAX_BLOCKS
+                or cells > self.PREVIEW_MAX_CELLS):
+            self.notify(f"Preview supports notes up to 256 KiB and {self.PREVIEW_MAX_BLOCKS} lines of content. "
+                        "You can still edit and save this note.", severity="warning")
             return
-        self.push_screen(MarkdownPreview(self.current.body))
+        self.push_screen(MarkdownPreview(body))
 
     def action_format_markdown(self, style: str) -> None:
         editor = self.query_one("#editor", TextArea)
@@ -1053,10 +1079,15 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
             first, last = start[0], end[0]
             if end[1] == 0 and last > first:
                 last -= 1
-            lines = editor.text.split("\n")
+            # Use the editor's own line model; splitting the text on "\n" would
+            # disagree with it for CR and CRLF documents and index past the end.
+            lines = editor.document.lines
             prefix = {"heading": "## ", "list": "- ", "quote": "> "}[style]
             body = "\n".join(prefix + line for line in lines[first:last + 1])
             editor.replace(body, (first, 0), (last, len(lines[last])))
+            shift = len(prefix)
+            editor.move_cursor((start[0], start[1] + shift))
+            editor.move_cursor((end[0], end[1] + (shift if end[0] <= last else 0)), select=True)
         else:
             body = editor.selected_text or "text"
             marker = {"bold": "**", "italic": "*", "code": "`"}[style]
@@ -1072,17 +1103,21 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
         self.capture_current_buffer()
         editor.focus()
 
-    @staticmethod
-    def editor_offset(location: tuple[int, int], text: str) -> int:
-        row, column = location
-        lines = text.split("\n")
-        return sum(len(line) + 1 for line in lines[:row]) + column
+    def editor_newline(self) -> str:
+        return self.query_one("#editor", TextArea).document.newline
 
-    @staticmethod
-    def editor_location(offset: int, text: str) -> tuple[int, int]:
+    def editor_offset(self, location: tuple[int, int], text: str) -> int:
+        """Character offset in the editor's text for a (row, column) location."""
+        row, column = location
+        newline = self.editor_newline()
+        lines = text.split(newline)
+        return sum(len(line) + len(newline) for line in lines[:row]) + column
+
+    def editor_location(self, offset: int, text: str) -> tuple[int, int]:
+        newline = self.editor_newline()
         before = text[:offset]
-        row = before.count("\n")
-        return row, len(before.rsplit("\n", 1)[-1])
+        row = before.count(newline)
+        return row, len(before.rsplit(newline, 1)[-1])
 
     def select_editor_match(self, query: str, *, reverse: bool = False,
                             anchor: int | None = None, case_sensitive: bool = False) -> tuple[int, int] | None:
@@ -1250,7 +1285,7 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
     def toggle_task(self) -> None:
         editor = self.query_one("#editor", TextArea)
         row, _ = editor.cursor_location
-        line = editor.text.split("\n")[row]
+        line = editor.document.get_line(row)
         if line.lstrip().startswith("- [ ] "):
             updated = line.replace("- [ ] ", "- [x] ", 1)
         elif line.lstrip().startswith("- [x] "):
@@ -1276,7 +1311,7 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
             notes = self.vault.search(workspace=self.workspace)
             if mode == "follow":
                 links = self.current.links
-                notes = [note for note in notes if note.id in links or note.title in links]
+                notes = [note for note in notes if note.id in links or note.title in links or note.heading in links]
             else:
                 notes = [note for note in notes if note.id != self.current.id]
         if not notes:

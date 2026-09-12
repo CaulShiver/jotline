@@ -2,11 +2,11 @@
 from textual import on
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
-from textual.screen import ModalScreen
+from .modal import Modal
 from textual.widgets import Button, Label, TextArea
 
 
-class RecoveryScreen(ModalScreen[str | None]):
+class RecoveryScreen(Modal[str | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Keep editing')]
     CSS = '''
     RecoveryScreen { align: center middle; }

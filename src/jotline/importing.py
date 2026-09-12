@@ -5,11 +5,13 @@ from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
+import re
 import stat
 from uuid import UUID
 
 from .filesystem import fs
-from .store import COLLECTIONS, MAX_NOTE_BYTES, Note, Vault, read_regular_file, tagged_body, validate_workspace
+from .store import (COLLECTIONS, MAX_NOTE_BYTES, Note, Vault, pin_ancestors, read_regular_file, tagged_body,
+                    validate_workspace)
 
 MAX_IMPORT_BYTES = 32 * 1024 * 1024
 MAX_IMPORT_ENTRIES = 1000
@@ -69,6 +71,8 @@ def _draft(vault, entry, workspace):
         raise ValueError('Draft must contain a text content field')
     note = vault.new(entry['content'], workspace=workspace)
     if 'uuid' in entry:
+        if not isinstance(entry['uuid'], str):
+            raise ValueError('Draft uuid must be a string')
         note.id = 'drafts-' + UUID(entry['uuid']).hex
     folder = entry.get('folder', 0)
     # Drafts uses 0=inbox, 1=archive, 2=trash in JSON exports.
@@ -107,15 +111,27 @@ def _draft(vault, entry, workspace):
 @contextmanager
 def _open_directory(path):
     """Pin every ancestor before enumerating; reject symlinks and reparse points."""
-    directory = fs.open(path.anchor, fs.O_RDONLY | fs.O_DIRECTORY)
+    parent = pin_ancestors(path)
     try:
-        for part in path.parts[1:]:
-            child = fs.open(part, fs.O_RDONLY | fs.O_DIRECTORY | fs.O_NOFOLLOW, dir_fd=directory)
-            fs.close(directory)
-            directory = child
+        directory = (fs.open(path.name, fs.O_RDONLY | fs.O_DIRECTORY | fs.O_NOFOLLOW, dir_fd=parent)
+                     if path.name else fs.dup(parent))
+    finally:
+        fs.close(parent)
+    try:
         yield directory
     finally:
         fs.close(directory)
+
+
+def _jotline_note(vault, raw, workspace, default_collection):
+    """Carry a Jotline-format file's own metadata instead of treating it as body."""
+    parsed = Vault.parse_note(vault.new().id, raw)
+    note = vault.new(parsed.body, workspace=workspace)
+    note.collection = parsed.collection if parsed.collection != 'trash' else default_collection
+    note.starred = parsed.starred
+    note.created = parsed.created or note.created
+    note.updated = parsed.updated or note.updated
+    return note
 
 
 def preview_import(vault: Vault, path: Path, workspace='default', default_collection='inbox',
@@ -187,8 +203,10 @@ def preview_import(vault: Vault, path: Path, workspace='default', default_collec
                 try:
                     if is_drafts:
                         note = _draft(vault, entry, workspace)
+                    elif re.match(r'\A\ufeff?---\r?\njotline: 1\r?\n', entry):
+                        note = _jotline_note(vault, entry, workspace, default_collection)
                     else:
-                        note = vault.new(entry, workspace=workspace)
+                        note = vault.new(entry.removeprefix('\ufeff'), workspace=workspace)
                         note.collection = default_collection
                     if len(note.body.encode('utf-8')) > MAX_NOTE_BYTES - 1024:
                         raise ValueError('Note too large after metadata mapping')

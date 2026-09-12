@@ -105,17 +105,29 @@ def test_daily_backup_once_and_manual_retention(tmp_path, monkeypatch):
     assert archives[0].exists()
 
 
-@pytest.mark.parametrize('folder', ['.jotline-history', '.jotline-backups'])
-def test_reject_unsafe_storage_directory(tmp_path, folder):
+def test_reject_unsafe_history_directory(tmp_path):
     vault = Vault(tmp_path / 'vault')
     outside = tmp_path / 'outside'
     outside.mkdir()
-    (vault.path / folder).symlink_to(outside, target_is_directory=True)
+    (vault.path / '.jotline-history').symlink_to(outside, target_is_directory=True)
     note = vault.new('data')
     with pytest.raises(OSError):
         vault.save(note)
     assert not vault.file(note.id).exists()
     assert not list(outside.iterdir())
+
+
+def test_unsafe_backup_directory_is_skipped_with_warning(tmp_path):
+    # A backup that cannot be written safely must not hold the note hostage.
+    vault = Vault(tmp_path / 'vault')
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    (vault.path / '.jotline-backups').symlink_to(outside, target_is_directory=True)
+    note = vault.new('data')
+    vault.save(note)
+    assert vault.file(note.id).exists()
+    assert not list(outside.iterdir())
+    assert 'Daily backup failed' in vault.backup_warning
 
 
 def test_failed_replace_or_history_durability_preserves_old_note(tmp_path, monkeypatch):

@@ -8,6 +8,7 @@ from pathlib import Path
 import platform
 import stat
 import sys
+import unicodedata
 
 from . import __version__
 from .store import (
@@ -33,17 +34,38 @@ def default_vault() -> Path:
         return Path(override)
     if sys.platform == "win32":
         return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "jotline/notes"
+    # The XDG specification says a relative XDG_DATA_HOME must be ignored.
+    xdg_home = os.environ.get("XDG_DATA_HOME") or ""
+    if not Path(xdg_home).is_absolute():
+        xdg_home = ""
+    xdg = Path(xdg_home or Path.home() / ".local/share") / "jotline/notes"
     # Keep existing XDG vaults discoverable when upgrading on macOS.
-    xdg = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "jotline/notes"
-    if sys.platform == "darwin" and not os.environ.get("XDG_DATA_HOME") and not xdg.exists():
+    if sys.platform == "darwin" and not xdg_home and not xdg.exists():
         return Path.home() / "Library/Application Support/jotline/notes"
     return xdg
 
 
+def vault_path(value: str) -> Path:
+    if not value.strip():
+        raise argparse.ArgumentTypeError("vault path must not be empty")
+    return Path(value)
+
+
+# Bidirectional overrides and line/paragraph separators can reorder or split
+# what a terminal shows; every other format character (joiners, soft hyphen,
+# byte-order mark) is ordinary text.
+DISRUPTIVE_FORMAT = frozenset("\u2028\u2029\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
+
+
+def is_terminal_control(character: str) -> bool:
+    return (unicodedata.category(character) in ("Cc", "Cs", "Cn") and character not in "\t\n\r") \
+        or character in DISRUPTIVE_FORMAT
+
+
 def terminal_text(value: object) -> str:
     """Render diagnostics without allowing note or filename controls to affect a terminal."""
-    return "".join(character if character.isprintable() else
-                   character.encode("unicode_escape").decode("ascii")
+    return "".join(character.encode("unicode_escape").decode("ascii")
+                   if is_terminal_control(character) or character in "\n\r\t" else character
                    for character in str(value))
 
 
@@ -177,6 +199,18 @@ def check_history(vault: Vault, warnings: list[str]) -> dict[str, object]:
     return state
 
 
+def check_stale_temps(folder: Path, label: str, limit: int, warnings: list[str]) -> int:
+    from . import history
+
+    count = 0
+    for path in bounded_children(folder, label, limit, warnings):
+        if history.STALE_TEMP.fullmatch(path.name):
+            count += 1
+            warnings.append(f"{label}: {path.name} was left by an interrupted write; "
+                            f"it is removed automatically after {history.STALE_TEMP_SECONDS // 60} minutes")
+    return count
+
+
 def check_backups(vault: Vault, warnings: list[str]) -> dict[str, object]:
     from . import history
 
@@ -186,6 +220,7 @@ def check_backups(vault: Vault, warnings: list[str]) -> dict[str, object]:
         state["exists"] = False
         return state
     state["exists"] = True
+    state["stale_temps"] = check_stale_temps(root, "backups", history.MAX_BACKUP_ENTRIES, warnings)
     for path in bounded_children(root, "backups", history.MAX_BACKUP_ENTRIES, warnings):
         try:
             info = path.lstat()
@@ -213,6 +248,7 @@ def doctor_report(vault: Vault, settings_warning: str) -> dict[str, object]:
     if settings_warning:
         warnings.append(f"settings: {settings_warning}")
     vault_state = check_vault_access(vault, warnings)
+    vault_state["stale_temps"] = check_stale_temps(vault.path, "vault", MAX_SCAN_ENTRIES, warnings)
     ancillary = {
         "settings": {"path": str(vault.path / ".jotline-settings.json"), "loaded": not settings_warning},
         "lock": check_lock(vault, warnings),
@@ -281,7 +317,11 @@ def read_capture_input() -> str:
 
 
 def has_terminal_controls(body: str) -> bool:
-    return any(character not in "\n\t" and not character.isprintable() for character in body)
+    return any(is_terminal_control(character) for character in body)
+
+
+def stdin_is_interactive() -> bool:
+    return sys.stdin is None or sys.stdin.isatty()
 
 
 def main() -> None:
@@ -291,7 +331,7 @@ def main() -> None:
                 stream.reconfigure(encoding="utf-8", newline="")
     parser = argparse.ArgumentParser(description="Jotline — a terminal home for your thoughts")
     parser.add_argument("--version", action="version", version=__version__)
-    parser.add_argument("--vault", type=Path, default=default_vault(), help="Markdown vault directory")
+    parser.add_argument("--vault", type=vault_path, default=default_vault(), help="Markdown vault directory")
     parser.add_argument("--workspace", help="Workspace name (defaults to the last workspace used in the app)")
     sub = parser.add_subparsers(dest="command")
     capture = sub.add_parser("capture", help="Capture text, or read piped stdin")
@@ -310,6 +350,7 @@ def main() -> None:
     action = sub.add_parser('run', help='Run a named local action on a note')
     action.add_argument('action')
     action.add_argument('id')
+    action.add_argument('--raw', action='store_true', help='Allow terminal control characters in exported output')
     export = sub.add_parser("export", help="Write a note's Markdown body to stdout")
     export.add_argument("id")
     export.add_argument("--raw", action="store_true", help="Allow terminal control characters on an interactive terminal")
@@ -331,15 +372,20 @@ def main() -> None:
     importing.add_argument("--duplicates", choices=("skip", "copy"), default="skip",
                            help="Skip matching bodies/UUIDs (default), or create separate copies")
     args = parser.parse_args()
+    # Commands that only read must not turn a mistyped path into a new vault.
+    read_only = {"list", "actions", "export", "workspaces", "tags", "doctor"}
     try:
-        vault = Vault(args.vault)
+        if args.command == "path":
+            print(terminal_text(args.vault.expanduser().resolve()))
+            return
+        vault = Vault(args.vault, create=args.command not in read_only)
+        # Shell captures can wait; only the interactive app needs a short lock timeout.
+        vault.lock_timeout = 10.0
         settings, settings_warning = Settings.load(vault.path / ".jotline-settings.json")
         workspace = validate_workspace(settings.active_workspace if args.workspace is None else args.workspace)
         if settings_warning and args.command not in (None, "doctor"):
             warning(settings_warning)
-        if args.command == "path":
-            print(terminal_text(vault.path))
-        elif args.command == "import" and (args.preview or args.apply or args.recursive or args.file.is_dir()
+        if args.command == "import" and (args.preview or args.apply or args.recursive or args.file.is_dir()
                                            or args.file.suffix.lower() == ".draftsexport"):
             from .importing import preview_import, apply_import
             if args.preview and args.apply:
@@ -365,7 +411,7 @@ def main() -> None:
             if args.command == "import":
                 body = read_regular_file(args.file, MAX_NOTE_BYTES, ancestor_safe=True)
             else:
-                body = " ".join(args.text) if args.text else (read_capture_input() if not sys.stdin.isatty() else "")
+                body = " ".join(args.text) if args.text else (read_capture_input() if not stdin_is_interactive() else "")
                 if not body.strip():
                     parser.error("Provide text or pipe text to jotline capture")
             if args.command == "capture" and args.daily:
@@ -378,7 +424,7 @@ def main() -> None:
         elif args.command == "backup":
             print(terminal_text(vault.backup()))
         elif args.command in {'append', 'prepend'}:
-            body = ' '.join(args.text) if args.text else (read_capture_input() if not sys.stdin.isatty() else '')
+            body = ' '.join(args.text) if args.text else (read_capture_input() if not stdin_is_interactive() else '')
             if not body:
                 parser.error('Provide text or pipe UTF-8 text to append/prepend')
             note = vault.append_note(args.id, body, workspace, prepend=args.command == 'prepend')
@@ -387,19 +433,27 @@ def main() -> None:
             for name in settings.actions:
                 print(name)
         elif args.command == 'run':
-            from .actions import ActionCommitError
+            from .actions import ActionCommitError, preview_action
             from .action_history import run_recorded_action
             if args.action not in settings.actions:
                 raise ValueError('Unknown action; use jotline actions')
             note = vault.read(args.id)
             if note.workspace != workspace:
                 raise ValueError('Note is in another workspace; pass --workspace NAME')
+            steps = settings.actions[args.action]
+            guard_output = sys.stdout.isatty() and not args.raw
+            if guard_output and any(step['type'] == 'export' for step in steps):
+                # Decide before any step runs, so a refused export cannot leave
+                # an append applied and then repeat it on every retry.
+                _, effects = preview_action(vault, note, steps)
+                if any(has_terminal_controls(effect) for effect in effects):
+                    raise ValueError('Refusing to print terminal controls; redirect stdout or pass --raw')
             def output(body):
-                if sys.stdout.isatty() and has_terminal_controls(body):
-                    raise ValueError('Refusing to print terminal controls; redirect stdout')
+                if guard_output and has_terminal_controls(body):
+                    raise ValueError('Refusing to print terminal controls; redirect stdout or pass --raw')
                 sys.stdout.write(body)
             try:
-                run_recorded_action(vault, note, settings.actions[args.action], name=args.action,
+                run_recorded_action(vault, note, steps, name=args.action,
                                     history_warning=warning, export=output)
             except ActionCommitError as error:
                 raise ValueError(f'{error}. Review action history before retrying.') from error
@@ -460,6 +514,12 @@ def main() -> None:
             Jotline(vault, workspace=workspace, initial_note=initial_note).run()
         if vault.backup_warning:
             warning(vault.backup_warning)
+    except BrokenPipeError:
+        # The reader closed early (for example `jotline list | head`); that is
+        # not an error, and Python must not print one while flushing at exit.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        raise SystemExit(0)
     except (OSError, ValueError) as error:
         parser.exit(1, f"jotline: {terminal_text(error)}\n")
 

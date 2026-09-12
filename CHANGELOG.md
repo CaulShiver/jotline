@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.9.2 — 2026-09-12
+
+Fixes from the 2026-09-12 multi-agent red team (storage, CLI, parsing, UI).
+See [docs/redteam-2026-09-12.md](docs/redteam-2026-09-12.md).
+
+- Saves fall back to rename on filesystems that refuse hard links (FAT/exFAT
+  media, SMB shares, shared folders). A failed publish now puts the original
+  note straight back under its own name, and any warning that names a retained
+  file survives sidebar refreshes.
+- A daily backup that cannot be written (full disk, unsafe backup folder) no
+  longer blocks note saves or recovery copies; it becomes a warning. The daily
+  archive is validated once per session instead of on every save, and stale
+  temporary files from interrupted writes are removed after an hour and listed
+  by `jotline doctor`.
+- One invalid settings value no longer resets every other preference: valid
+  fields are kept, the bad field is named, and the next save preserves actions,
+  views, hotkeys and unknown keys. Unreadable settings files are set aside as
+  `.jotline-settings.json.invalid-*.json` rather than overwritten.
+- Opening a note never rewrites it: notes with Unicode line separators, form
+  feeds, lone CR or mixed newlines stay clean until you actually edit them, and
+  no longer trigger false external-change dialogs.
+- Task toggle, heading/list/quote formatting, find context and arrange now use
+  the editor's own line model, fixing a crash on lone-CR notes and inserted
+  blank lines on CRLF notes.
+- Modal dialogs ignore a second dismissal (key repeat, Enter then Escape, or a
+  mouse double-click), which previously ended the app or silently closed the
+  action builder.
+- Ctrl+Q, Ctrl+N, Ctrl+S, opening a note and switching workspace re-show the
+  external-change dialog after it was dismissed; re-selecting the open note
+  keeps its undo history.
+- A byte-order mark added by an external editor no longer strips a note's
+  collection, star, workspace and created date; folder imports of Jotline's own
+  note files keep that metadata too.
+- Markdown preview refuses notes with more than 600 content lines or very wide
+  tables, which stalled the interface for ten seconds or more.
+- Jump to heading used a quadratic regular expression; a 20 KB heading line
+  took seconds and a long one minutes.
+- Text search no longer matches one or two characters against random digits of
+  every note ID; ID matching needs an 8-character prefix. Links and `title:`
+  filters match the full first line, not only its first 100 characters.
+- Terminal-safety checks accept ordinary text such as CRLF, joined emoji,
+  soft hyphens and byte-order marks; `jotline run` checks exported output
+  before any step applies and accepts `--raw`. Closed stdin and a closed pipe
+  reader are handled quietly; `--vault ""` is rejected and a relative
+  `XDG_DATA_HOME` is ignored. Shell commands wait up to ten seconds for the
+  vault lock instead of one.
+- Revision history orders versions by write time, so a clock step backwards
+  cannot offer stale content or prune the newest version.
+- A corrupt action-history file is set aside and logging resumes. One stray
+  entry in the templates folder no longer hides every template. Symlinked
+  ancestors are reported as such instead of "Not a directory".
+- Read-only commands fail with "Vault does not exist" instead of creating an
+  empty vault at a mistyped path; the preview labels unrendered HTML blocks.
+
 ## 0.9.1 — 2026-09-12
 
 - Bound cached search results to one second before the next scan rereads them.

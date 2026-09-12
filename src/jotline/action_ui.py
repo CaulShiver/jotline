@@ -6,7 +6,7 @@ from rich.text import Text
 from textual import on
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.screen import ModalScreen
+from .modal import Modal
 from textual.widgets import Button, Input, Label, OptionList, Select, Static, TextArea
 
 from .actions import BUILTIN_ACTIONS, preview_action, validate_actions
@@ -20,7 +20,7 @@ STEP_LABELS = {'uppercase': 'Uppercase text', 'lowercase': 'Lowercase text', 'st
                'restore': 'Restore original source text (keep copied/exported output)'}
 
 
-class ActionReport(ModalScreen):
+class ActionReport(Modal):
     BINDINGS = [Binding('escape', 'close', 'Close')]
     CSS = '''
     ActionReport { align: center middle; background: $background 80%; }
@@ -43,7 +43,7 @@ class ActionReport(ModalScreen):
         self.dismiss(None)
 
 
-class ActionEditor(ModalScreen[tuple | None]):
+class ActionEditor(Modal[tuple | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel'), Binding('ctrl+s', 'save', 'Save recipe')]
     CSS = '''
     ActionEditor { align: center middle; background: $background 80%; }

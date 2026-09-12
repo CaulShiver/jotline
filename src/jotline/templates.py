@@ -68,9 +68,12 @@ class Templates:
                         _name(name)
                     except ValueError:
                         continue
-                    info = os.stat(filename, dir_fd=directory, follow_symlinks=False)
+                    try:
+                        info = os.stat(filename, dir_fd=directory, follow_symlinks=False)
+                    except OSError:
+                        continue
                     if not stat.S_ISREG(info.st_mode):
-                        raise OSError(f"Not a regular template file: {filename}")
+                        continue  # One stray link or folder must not hide every template.
                     names.add(name)
         return sorted(names)
 

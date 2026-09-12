@@ -405,7 +405,7 @@ def test_last_moment_external_write_is_preserved_in_history(tmp_path, monkeypatc
     assert any("raced with save" in warning for warning in vault.warnings)
 
 
-def test_failed_publish_and_restore_retains_displaced_original(tmp_path, monkeypatch):
+def test_failed_publish_restores_the_original_under_its_own_name(tmp_path, monkeypatch):
     vault = Vault(tmp_path)
     note = vault.new('original')
     vault.save(note)
@@ -416,6 +416,7 @@ def test_failed_publish_and_restore_retains_displaced_original(tmp_path, monkeyp
     with pytest.raises(OSError, match='link failed'):
         vault.save(note)
 
-    displaced, = tmp_path.glob('.jotline-displaced-*')
-    assert 'original' in displaced.read_text()
-    assert any(displaced.name in warning for warning in vault.warnings)
+    # The displaced inode is renamed straight back, so nothing hides in a temp name.
+    assert vault.read(note.id).body == 'original'
+    assert not list(tmp_path.glob('.jotline-displaced-*'))
+    assert not [path for path in tmp_path.iterdir() if history.STALE_TEMP.fullmatch(path.name)]

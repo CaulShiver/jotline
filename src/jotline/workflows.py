@@ -8,7 +8,7 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
-from textual.screen import ModalScreen
+from .modal import Modal
 from textual.widgets import Input, Label, OptionList, SelectionList, Static, TextArea
 
 from .action_history import run_recorded_action as run_action
@@ -33,15 +33,22 @@ def headings(text):
             continue
         if fence:
             continue
-        match = re.match(r'^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$', line)
+        # Greedy capture plus manual trimming stays linear; a lazy group followed
+        # by an optional closing run of # backtracked quadratically on long lines.
+        match = re.match(r'^ {0,3}(#{1,6})[ \t]+(.*)$', line)
         if match:
-            yield row, match[2]
+            title = match[2].strip()
+            closing = title.rstrip('#')
+            if closing != title and (not closing or closing[-1] in ' \t'):
+                title = closing.rstrip()
+            if title:
+                yield row, title
         elif previous.strip() and re.fullmatch(r' {0,3}(?:=+|-+)\s*', line):
             yield row - 1, previous.strip()
         previous = line
 
 
-class Arrange(ModalScreen[str | None]):
+class Arrange(Modal[str | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel'), Binding('ctrl+s', 'apply', 'Apply'),
                 Binding('alt+up', 'move(-1)', 'Move up'), Binding('alt+down', 'move(1)', 'Move down'),
                 Binding('ctrl+d', 'duplicate', 'Duplicate')]
@@ -54,7 +61,8 @@ class Arrange(ModalScreen[str | None]):
     def __init__(self, body, paragraphs=False):
         super().__init__()
         self.separator = '\n\n' if paragraphs else '\n'
-        self.parts = body.split(self.separator)
+        # Accept CRLF documents; the editor restores its own newline style.
+        self.parts = re.split(r'(?:\r?\n){2}' if paragraphs else r'\r?\n', body)
 
     def compose(self) -> ComposeResult:
         with Vertical(id='arrange-panel'):
@@ -94,7 +102,7 @@ class Arrange(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class SelectNotes(ModalScreen[list[str] | None]):
+class SelectNotes(Modal[list[str] | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel'), Binding('ctrl+s', 'apply', 'Choose operation')]
     CSS = '''
     SelectNotes { align: center middle; background: $background 80%; }
@@ -282,7 +290,7 @@ class WorkflowMixin:
 
     def arrange(self, paragraphs):
         body = self.query_one('#editor', TextArea).text
-        if len(body.encode('utf-8')) > 256 * 1024 or len(body.split('\n\n' if paragraphs else '\n')) > 5000:
+        if len(body.encode('utf-8')) > 256 * 1024 or len(re.split(r'(?:\r?\n){2}' if paragraphs else r'\r?\n', body)) > 5000:
             self.notify('Arrange supports up to 256 KiB and 5,000 items', severity='warning')
             return
         self.push_screen(Arrange(body, paragraphs), self.replace_editor_text)
@@ -473,6 +481,7 @@ class WorkflowMixin:
             editor.replace(note.body, (0, 0), self.editor_location(len(editor.text), editor.text))
             editor.history.checkpoint()
             editor.move_cursor(position)
+        self._editor_baseline = editor.text
         self.current, self.dirty, self.last_error = note, False, ''
         self.refresh_notes()
         self.connections()

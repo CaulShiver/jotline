@@ -12,6 +12,8 @@ from uuid import uuid4
 import zipfile
 
 from .filesystem import fs as os
+import time
+
 from .store import (MAX_NOTE_BYTES, MAX_SETTINGS_BYTES, read_regular_at,
                     create_private_temp as _temp_at, replace_at as _replace_at)
 
@@ -21,6 +23,9 @@ MAX_HISTORY_ENTRIES = 4096
 MAX_BACKUP_ENTRIES = 10_000
 MAX_BACKUP_BYTES = 256 * 1024 * 1024
 REVISION_ID = re.compile(r"[0-9]{8}T[0-9]{12}-[0-9a-f]{8}")
+# Private temporary files are created with these prefixes plus a uuid4 hex.
+STALE_TEMP = re.compile(r"\.(?:jotline|backup|revision|settings|action-history|tmp|recipe)-[0-9a-f]{32}")
+STALE_TEMP_SECONDS = 3600
 BACKUP_NAME = re.compile(r"(?:daily-[0-9]{4}-[0-9]{2}-[0-9]{2}|manual-[0-9]{8}T[0-9]{12}-[0-9a-f]{8})\.zip")
 
 
@@ -32,6 +37,26 @@ class Revision:
 
 def stamp() -> str:
     return datetime.now().strftime("%Y%m%dT%H%M%S%f") + "-" + uuid4().hex[:8]
+
+
+def prune_stale_temps(directory: int) -> int:
+    """Remove private temp files left by a crash mid-write; they are never live data."""
+    removed = 0
+    cutoff = time.time() - STALE_TEMP_SECONDS
+    with os.scandir(directory) as entries:
+        for index, entry in enumerate(entries):
+            if index >= MAX_BACKUP_ENTRIES:
+                break
+            if not STALE_TEMP.fullmatch(entry.name):
+                continue
+            try:
+                info = entry.stat(follow_symlinks=False)
+                if stat.S_ISREG(info.st_mode) and info.st_mtime < cutoff:
+                    os.unlink(entry.name, dir_fd=directory)
+                    removed += 1
+            except OSError:
+                continue
+    return removed
 
 
 def sync_directory(path_or_fd: Path | int) -> None:
@@ -92,14 +117,19 @@ def _revisions_at(vault, note_id: str, folder: int) -> list[Revision]:
                     f"History {note_id} stopped after {MAX_HISTORY_ENTRIES} entries; results are incomplete")
                 break
             stem = entry.name[:-3] if entry.name.endswith(".md") else ""
-            if not REVISION_ID.fullmatch(stem) or not stat.S_ISREG(entry.stat(follow_symlinks=False).st_mode):
+            if not REVISION_ID.fullmatch(stem):
+                continue
+            info = entry.stat(follow_symlinks=False)
+            if not stat.S_ISREG(info.st_mode):
                 continue
             try:
                 when = datetime.strptime(stem.split("-")[0], "%Y%m%dT%H%M%S%f")
             except ValueError:
                 continue
-            result.append(Revision(stem, when.isoformat(timespec="seconds")))
-    return sorted(result, key=lambda revision: revision.id, reverse=True)
+            result.append((info.st_mtime_ns, Revision(stem, when.isoformat(timespec="seconds"))))
+    # Wall-clock stamps can step backwards; the file's own write time orders
+    # revisions reliably and the ID only breaks ties.
+    return [revision for _, revision in sorted(result, key=lambda item: (item[0], item[1].id), reverse=True)]
 
 
 def revisions(vault, note_id: str, *, vault_directory: int | None = None) -> list[Revision]:
@@ -277,8 +307,17 @@ def backup(vault, *, automatic: bool = False, vault_directory: int | None = None
             except FileNotFoundError:
                 target_info = None
             if automatic and target_info is not None:
+                # Inflating the whole archive on every save is expensive; the
+                # result is stable while the file's identity and size are.
+                key = (target_info.st_ino, target_info.st_size, target_info.st_mtime_ns)
+                validated = getattr(vault, "_validated_backups", None)
+                if validated is None:
+                    validated = vault._validated_backups = {}
+                if validated.get(name) == key:
+                    return target
                 valid, reason = _validate_backup_at(folder, name)
                 if valid:
+                    validated[name] = key
                     return target
                 if not stat.S_ISREG(target_info.st_mode):
                     raise OSError("Daily backup is not a regular file")
@@ -289,6 +328,11 @@ def backup(vault, *, automatic: bool = False, vault_directory: int | None = None
                 vault.backup_warning = message
                 vault.warnings.append(message)
 
+            for stale in (root, folder):
+                try:
+                    prune_stale_temps(stale)
+                except OSError:
+                    pass
             sources: list[tuple[int, str, str, int]] = []
             skipped = []
             source_bytes = 0

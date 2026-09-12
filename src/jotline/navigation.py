@@ -4,14 +4,14 @@ from dataclasses import replace
 from textual import on
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
-from textual.screen import ModalScreen
+from .modal import Modal
 from textual.widgets import Button, Input, Label, Select, Static
 
 from .settings import THEMES
 from .store import COLLECTIONS, validate_workspace
 
 
-class ViewEditor(ModalScreen[tuple[str, dict] | None]):
+class ViewEditor(Modal[tuple[str, dict] | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel'), Binding('ctrl+s', 'save_view', 'Apply')]
     CSS = '''
     ViewEditor { align: center middle; background: $background 80%; }
@@ -80,7 +80,7 @@ class ViewEditor(ModalScreen[tuple[str, dict] | None]):
         self.dismiss((name, view))
 
 
-class Walkthrough(ModalScreen[None]):
+class Walkthrough(Modal[None]):
     BINDINGS = [Binding('escape', 'done', 'Back to writing')]
     CSS = """
     Walkthrough { align: center middle; background: $background 80%; }

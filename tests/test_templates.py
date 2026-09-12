@@ -121,8 +121,9 @@ def test_unsafe_template_file(tmp_path, kind):
         os.mkfifo(path)
     with pytest.raises(OSError):
         templates.read('unsafe')
-    with pytest.raises(OSError):
-        templates.names()
+    # One stray entry is skipped rather than hiding every other template.
+    assert 'unsafe' not in templates.names()
+    assert 'meeting' in templates.names()
     with pytest.raises(FileExistsError):
         templates.save('unsafe', 'body')
     assert target.read_text() == 'keep'

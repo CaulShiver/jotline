@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .actions import ActionCommitError, run_action
 from .filesystem import fs as os
+from .history import stamp
 from .store import create_private_temp, read_regular_at, vault_lock
 
 MAX_RUNS = 100
@@ -32,8 +33,19 @@ class ActionHistory:
             return self._read(directory)
 
     def append(self, record):
+        """Append one run. Returns a warning when a corrupt log was set aside."""
+        warning = None
         with vault_lock(self.path) as directory:
-            records = (self._read(directory) + [record])[-MAX_RUNS:]
+            try:
+                records = self._read(directory)
+            except (ValueError, RecursionError) as error:
+                # A corrupt log must not disable logging forever; keep the bytes
+                # for inspection and start a fresh bounded history.
+                quarantine = f'.jotline-action-history.invalid-{stamp()}.json'
+                os.replace(HISTORY_FILE, quarantine, src_dir_fd=directory, dst_dir_fd=directory)
+                records = []
+                warning = f'Action history was unreadable ({error}); it was set aside as {quarantine}'
+            records = (records + [record])[-MAX_RUNS:]
             output = json.dumps(records, ensure_ascii=False).encode('utf-8')
             while len(output) > MAX_HISTORY_BYTES and len(records) > 1:
                 records.pop(0)
@@ -53,6 +65,7 @@ class ActionHistory:
                     os.unlink(temporary, dir_fd=directory)
                 except FileNotFoundError:
                     pass
+        return warning
 
 
 def run_recorded_action(vault, note, steps, *, name='action', history_warning=None, **kwargs):
@@ -83,7 +96,9 @@ def run_recorded_action(vault, note, steps, *, name='action', history_warning=No
         raise
     finally:
         try:
-            ActionHistory(vault.path).append(record)
+            quarantined = ActionHistory(vault.path).append(record)
+            if quarantined and history_warning:
+                history_warning(quarantined)
         except (ValueError, OSError, RecursionError) as error:
             if history_warning:
                 history_warning(f'Action history could not be saved: {error}')

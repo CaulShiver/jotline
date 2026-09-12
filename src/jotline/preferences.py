@@ -3,12 +3,12 @@ from dataclasses import asdict
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.screen import ModalScreen
+from .modal import Modal
 from textual.widgets import Button, Input, Label, Select, Static, Switch, TextArea
 from .settings import Settings, THEMES, HOTKEY_ACTIONS
 
 
-class Preferences(ModalScreen[Settings | None]):
+class Preferences(Modal[Settings | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel'), Binding('ctrl+s', 'save', 'Save settings', priority=True),
                 Binding('alt+1', 'jump("appearance")', 'Appearance'),
                 Binding('alt+2', 'jump("editor")', 'Editor'),

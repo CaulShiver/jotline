@@ -16,14 +16,14 @@ run one of these commands in its download folder. Git is not required.
 With [uv](https://docs.astral.sh/uv/):
 
 ```sh
-uv tool install ./jotline-0.9.1-py3-none-any.whl
+uv tool install ./jotline-0.9.2-py3-none-any.whl
 jotline
 ```
 
 Or with pipx:
 
 ```sh
-pipx install ./jotline-0.9.1-py3-none-any.whl
+pipx install ./jotline-0.9.2-py3-none-any.whl
 jotline
 ```
 
@@ -197,9 +197,11 @@ CLI imports also support `--preview` for a single text file and
 `--duplicates copy` to create separate copies. See [import and recovery
 details](docs/import-recovery.md) for limits and metadata mapping.
 
-Redirected export preserves the note body, including line endings. Export to an
-interactive terminal refuses unsafe control characters unless you explicitly pass
-`--raw`. Diagnostics escape terminal control characters.
+Redirected export preserves the note body, including line endings. Export and
+`run` to an interactive terminal refuse control characters (escape sequences,
+bidirectional overrides) unless you explicitly pass `--raw`; ordinary text such
+as CRLF endings, joined emoji and soft hyphens prints normally. Diagnostics
+escape terminal control characters.
 
 ## Customize hotkeys
 
@@ -459,6 +461,7 @@ jotline open NOTE_ID
 jotline list 'tag:work -blocked' --json
 jotline actions
 jotline run ACTION_NAME NOTE_ID > output.md
+jotline run ACTION_NAME NOTE_ID --raw
 ```
 
 Append/prepend preserve the supplied text exactly, without adding separators.
@@ -469,7 +472,7 @@ detection. Recipes execute only these built-in steps; there is no shell evaluati
 
 ## Status
 
-Version 0.9.1 is an early release. It offers Markdown source editing, rendered
+Version 0.9.2 is an early release. It offers Markdown source editing, rendered
 preview, configurable local actions, and guided import/recovery workflows. See
 [CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,
 cloud sync, plugins, dictation and system-wide capture hotkeys remain future work.

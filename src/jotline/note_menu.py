@@ -4,7 +4,7 @@ from textual import events, on
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.message import Message
-from textual.screen import ModalScreen
+from .modal import Modal
 from textual.widgets import Label, OptionList
 from textual.widgets.option_list import Option
 
@@ -38,7 +38,7 @@ class NoteList(OptionList):
                 self.post_message(self.ContextRequested(option.id, self.region.x + 2, self.region.y))
 
 
-class NoteMenu(ModalScreen[str | None]):
+class NoteMenu(Modal[str | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel')]
     CSS = '''
     NoteMenu { align: left top; background: transparent; }

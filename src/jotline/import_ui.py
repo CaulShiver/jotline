@@ -3,7 +3,7 @@ from pathlib import Path
 from textual import on
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
-from textual.screen import ModalScreen
+from .modal import Modal
 from textual.widgets import Button, Input, Label, Static
 from rich.text import Text
 
@@ -11,7 +11,7 @@ from .importing import preview_import, apply_import
 from .recovery_ui import RecoveryScreen
 
 
-class ImportPreviewScreen(ModalScreen[bool]):
+class ImportPreviewScreen(Modal[bool]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel')]
     CSS = '''
     ImportPreviewScreen { align: center middle; }
