@@ -20,6 +20,7 @@ from .settings import Settings, HOTKEY_ACTIONS
 from .preferences import Preferences
 from .templates import Templates
 from .workflows import WorkflowMixin
+from .note_menu import NoteList, NoteMenu
 
 
 @dataclass(frozen=True)
@@ -394,7 +395,7 @@ class Jotline(WorkflowMixin, App):
             with Vertical(id="sidebar"):
                 yield Static("INBOX", id="collection")
                 yield Input(placeholder="Search words or #tags", id="search")
-                yield OptionList(id="notes")
+                yield NoteList(id="notes")
             with Vertical(id="writing"):
                 yield Static(self.current.title + " / " + self.current.collection, id="note-heading")
                 yield TextArea("", soft_wrap=True, tab_behavior="focus", show_line_numbers=False, id="editor")
@@ -535,6 +536,75 @@ class Jotline(WorkflowMixin, App):
     def note_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option.id:
             self.load_id(event.option.id)
+
+    @on(NoteList.ContextRequested)
+    def note_context_requested(self, event: NoteList.ContextRequested) -> None:
+        event.stop()
+        try:
+            note = self.vault.read(event.note_id)
+            if note.workspace != self.workspace:
+                raise ValueError('Note moved to another workspace; refresh the vault')
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity='error')
+            return
+        choices = [('move', 'Move to collection…')]
+        if not note.id.startswith('daily-'):
+            choices.append(('workspace', 'Move to workspace…'))
+        choices.append(('restore', 'Restore to Inbox') if note.collection == 'trash'
+                       else ('trash', 'Delete · Move to Trash'))
+        self.push_screen(NoteMenu(note.title, choices, event.x, event.y),
+                         lambda action: self.note_context_action(note, action, event.x, event.y))
+
+    def note_context_action(self, note: Note, action: str | None, x: int, y: int) -> None:
+        if action in ('trash', 'restore'):
+            self.move_context_note(note, collection='trash' if action == 'trash' else 'inbox')
+        elif action == 'move':
+            choices = [(name, name.title()) for name in COLLECTIONS
+                       if name not in ('trash', note.collection)]
+            self.push_screen(NoteMenu('Move to collection', choices, x, y),
+                             lambda value: self.move_context_note(note, collection=value) if value else None)
+        elif action == 'workspace':
+            choices = [(name, name) for name in self.workspace_names() if name != self.workspace]
+            if not choices:
+                self.notify('Create another workspace with Ctrl+W first')
+                return
+            self.push_screen(NoteMenu('Move to workspace', choices, x, y),
+                             lambda value: self.move_context_note(note, workspace=value) if value else None)
+
+    def move_context_note(self, note: Note, *, collection: str | None = None,
+                          workspace: str | None = None) -> None:
+        if not self.save_current():
+            return
+        is_current = note.id == self.current.id
+        # Keep the menu's read baseline for other notes, so external edits conflict.
+        moved = replace(self.current if is_current else note)
+        try:
+            if moved.workspace != self.workspace:
+                raise ValueError('Note moved to another workspace; refresh the vault')
+            if collection is not None:
+                if collection not in COLLECTIONS:
+                    raise ValueError('Unknown collection')
+                moved.collection = collection
+            if workspace is not None:
+                validate_workspace(workspace)
+                if moved.id.startswith('daily-'):
+                    raise ValueError('Daily logs belong to their workspace')
+                moved.workspace = workspace
+            self.vault.save(moved)
+        except (OSError, ValueError) as error:
+            self.notify(f'Note was not moved: {error}', severity='error', timeout=10)
+            return
+        if is_current:
+            if moved.workspace != self.workspace or moved.collection == 'trash':
+                fresh = self.vault.new(workspace=self.workspace)
+                fresh.collection = self.settings.default_collection
+                self.load(fresh)
+            else:
+                self.load(moved)
+        self.refresh_notes()
+        self.connections()
+        self.notify_backup_warning()
+        self.notify(f'Moved to {workspace or collection}')
 
     @on(TextArea.Changed, "#editor")
     def edited(self) -> None:

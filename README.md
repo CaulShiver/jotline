@@ -68,6 +68,18 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 
 The palette also offers star, move, restore from trash, task toggle, link insertion/navigation, backlinks, recovery copies, and a writing guide. Type words to narrow commands, use arrows to choose, then Enter. Standard text selection, undo, and redo are provided by the editor. Clipboard copy uses OSC 52 and depends on your terminal's permissions and support.
 
+## Move or delete with the mouse
+
+Right-click a note in the sidebar to open its action menu. Choose **Move to
+collection…**, **Move to workspace…**, or **Delete · Move to Trash**. The menu
+acts on the clicked note, even when another note is open. Pending editor changes
+are saved before a move; a failed save leaves the note in place.
+
+In Trash, right-click and choose **Restore to Inbox**. Daily logs can move between
+collections but stay in their original workspace. Create workspaces with Ctrl+W.
+Click outside the menu or press Escape to cancel. You can also focus a sidebar
+note and press **Shift+F10** to open the menu, then use arrows and Enter.
+
 ## Make it yours
 
 Open **Ctrl+P → Settings**. Change preferences with Tab, arrows, and Space; choose
