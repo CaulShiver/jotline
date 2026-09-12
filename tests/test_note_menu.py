@@ -138,6 +138,8 @@ async def test_context_save_failure_and_daily_workspace_guard(tmp_path, monkeypa
         listing = app.query_one('#notes', OptionList)
         listing.focus()
         await pilot.press('shift+f10')
+        # The menu request travels through the message pump; let it land before asserting.
+        await pilot.pause()
         assert isinstance(app.screen, NoteMenu)
         assert not any(key == 'workspace' for key, _ in app.screen.choices)
 
