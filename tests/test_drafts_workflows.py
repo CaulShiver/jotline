@@ -163,15 +163,20 @@ def test_actions_append_then_archive_and_failure(tmp_path):
     assert output == ['keep']
 
 
-def test_cli_updates_json_and_actions(tmp_path):
+@pytest.mark.parametrize('newline', ['\n', '\r\n', '\r'])
+def test_cli_updates_json_and_actions(tmp_path, newline):
     vault = Vault(tmp_path)
     note = saved(vault, 'middle')
     def cli(*args, input=None):
         return subprocess.run([sys.executable, '-m', 'jotline', '--vault', str(tmp_path), *args],
-                              input=input, capture_output=True, text=True)
-    assert cli('append', note.id, input='\nend').returncode == 0
-    assert cli('prepend', note.id, input='start\n').returncode == 0
-    assert vault.read(note.id).body == 'start\nmiddle\nend'
+                              # Binary pipes prevent Windows text mode from
+                              # translating the fixture before Jotline reads it.
+                              input=input.encode('utf-8') if input is not None else None,
+                              capture_output=True, timeout=15)
+    assert cli('append', note.id, input=newline + 'end').returncode == 0
+    assert cli('prepend', note.id, input='start' + newline).returncode == 0
+    expected = f'start{newline}middle{newline}end'
+    assert vault.read(note.id).body == expected
     result = cli('list', '--json')
     assert json.loads(result.stdout)[0]['id'] == note.id
     other = saved(vault, 'private', 'other')
@@ -179,7 +184,7 @@ def test_cli_updates_json_and_actions(tmp_path):
     assert vault.read(other.id).body == 'private'
     Settings(actions={'shout': [{'type': 'uppercase'}, {'type': 'export'}]}).save(tmp_path / '.jotline-settings.json')
     result = cli('run', 'shout', note.id)
-    assert result.returncode == 0 and result.stdout == 'START\nMIDDLE\nEND'
+    assert result.returncode == 0 and result.stdout == expected.upper().encode('utf-8')
 
 
 @pytest.mark.parametrize('settings', [Settings(actions={'bad': [{'type': 'shell'}]}),
