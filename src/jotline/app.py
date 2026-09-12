@@ -310,16 +310,20 @@ class FindInNote(ModalScreen[None]):
                 for match in pattern.finditer(editor.text))
             if output_bytes > MAX_NOTE_BYTES - 4096:
                 self.app.notify('Replacement exceeds the note size limit', severity='error')
+                self.query_one('#find-status', Static).update('Not replaced · note size limit exceeded')
                 return
             body, count = pattern.subn(lambda match: replacement, editor.text)
-            if count:
-                self.app.replace_editor_text(body)
+            if count and not self.app.replace_editor_text(body):
+                self.query_one('#find-status', Static).update('Not replaced · note size limit exceeded')
+                return
         else:
             if not pattern.fullmatch(editor.selected_text):
                 self.show_match(initial=True)
             if not pattern.fullmatch(editor.selected_text):
                 return
-            self.app.insert_editor_text(replacement)
+            if not self.app.insert_editor_text(replacement):
+                self.query_one('#find-status', Static).update('Not replaced · note size limit exceeded')
+                return
             count = 1
         self.show_match()
         self.query_one('#find-status', Static).update(f'Replaced {count} match(es) · Undo in editor to reverse')
@@ -1018,8 +1022,11 @@ class Jotline(WorkflowMixin, App):
                             anchor: int | None = None, case_sensitive: bool = False) -> tuple[int, int] | None:
         editor = self.query_one("#editor", TextArea)
         text = editor.text
+        if not query:
+            return None
         if anchor is None:
-            location = editor.selection.start if reverse else editor.selection.end
+            start, end = sorted((editor.selection.start, editor.selection.end))
+            location = start if reverse else end
             anchor = self.editor_offset(location, text)
         # Scan once and retain only the candidate, wrap target, and counters.
         # Notes can be large; materialising every match is unnecessary memory use.

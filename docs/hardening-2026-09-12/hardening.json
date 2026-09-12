@@ -1,0 +1,35 @@
+{
+  "documentType": "codex-security.hardening-analysis",
+  "schemaVersion": "1.0",
+  "analysisId": "jotline-2026-09-12",
+  "sourceEvidence": {
+    "kind": "source_collection",
+    "label": "Jotline editing, search, and historical review",
+    "collectionSha256": "129c4d49ef8e8efcdbe610d640ae6f5185d84f33f240c2a6ae04ab0e75bf4309",
+    "artifactCount": 4,
+    "targetRevision": "c66497ba4d01cda4403533b5136f6131fe8bda07",
+    "sourceDrift": "present"
+  },
+  "assessment": {
+    "outcome": "local_remediation_preferred",
+    "summary": "Focused editing and query validation repairs are proportionate to the reproduced failures; no structural security redesign is justified by this evidence."
+  },
+  "constraints": {
+    "profile": "balanced",
+    "changeHorizons": [
+      "incremental"
+    ],
+    "nonNegotiables": [
+      "Preserve note files and existing storage protections",
+      "Use synthetic temporary vaults"
+    ],
+    "assumptions": [
+      "Prioritize correctness and clear editing feedback",
+      "No measured latency or memory budget supplied"
+    ]
+  },
+  "opportunities": [],
+  "openQuestions": [
+    "Broader security coverage and native macOS/Windows verification remain outside this targeted pass."
+  ]
+}

@@ -21,7 +21,9 @@ def compile_query(query):
         if field.endswith(('-after', '-before')):
             if value != 'today':
                 try:
-                    date.fromisoformat(value)
+                    parsed = date.fromisoformat(value)
+                    if parsed.isoformat() != value:
+                        raise ValueError('Non-canonical date')
                 except ValueError:
                     raise ValueError('Date filters use YYYY-MM-DD or today') from None
             else:

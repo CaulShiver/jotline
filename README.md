@@ -110,7 +110,9 @@ Search matches all entered words across note bodies. `#work` matches an exact ta
 
 Use **Ctrl+P → Find within current note** to search the current document without
 changing the vault search. Enter or F3 advances to the next match, Shift+F3 goes
-back, and Escape returns to writing. **Refresh vault** updates the list and backlinks after
+back, and Escape returns to writing. Navigation moves past the selected match
+whether you selected its text forwards or backwards. Clearing the search leaves
+the editor selection in place. **Refresh vault** updates the list and backlinks after
 shell captures or external changes while retaining the current editor buffer.
 
 ![Find within a note](docs/find.svg)
@@ -318,7 +320,10 @@ The command palette now includes:
 
 - **Find within current note:** enter replacement text and choose Replace or
   Replace all. Match case is optional. Replacements are literal; Undo reverses
-  one replacement operation. F3/Shift+F3 still navigate matches.
+  one replacement operation. F3/Shift+F3 still navigate matches. If replacement
+  would exceed the note size limit, the text stays unchanged and the dialog
+  shows **Not replaced**. A rejected single replacement keeps the selected match
+  so you can shorten the replacement and retry.
 - **Jump to heading**, **Previous note**, and **Recent notes:** move around
   Markdown headings and the notes visited this session. Returning to a note
   restores its cursor position; recent notes stay scoped to the workspace.
@@ -336,9 +341,10 @@ The command palette now includes:
 Search supports `"exact phrases"`, `-excluded`, `-#tag`, `tag:work`, and
 `title:"meeting notes"`. Combine these with `created-after:2026-09-01`,
 `created-before:2026-09-30`, `updated-after:today`, or `updated-before:today`.
-Date boundaries are inclusive and use the calendar date stored in note metadata;
-`today` is the current local date. Terms are ANDed. Regex and OR queries are not
-supported.
+Dates must use `YYYY-MM-DD` or `today`; compact dates such as `20260912` are
+rejected with a format hint. Date boundaries are inclusive and use the calendar
+date stored in note metadata; `today` is the current local date. Terms are ANDed.
+Regex and OR queries are not supported.
 
 Choose **Save current search as a view** to keep its query, collection, sort,
 workspace and theme. **Open saved view** lists views in the active workspace;
@@ -403,6 +409,10 @@ Version 0.8 is an early release. It offers Markdown source editing and an in-app
 ## Contributing
 
 See the [multi-model review](docs/redteam-review.md) for findings, fixes, and test coverage.
+The [September 12 hardening and usability review](docs/hardening-2026-09-12/hardening.md)
+documents the replacement feedback, selection navigation, and date-validation
+fixes. This focused pass passed 254 tests with 3 platform-specific skips on Linux,
+plus a fresh installed-wheel CLI and terminal workflow smoke check.
 
 Bug reports and focused pull requests are welcome. The package version is sourced
 from `src/jotline/__init__.py`; release builds and `jotline --version` use that same

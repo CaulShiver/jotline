@@ -147,25 +147,26 @@ class WorkflowMixin:
             ('delete-action', 'Delete local action', lambda: self.choose_action(delete=True)),
         ]]
 
-    def insert_editor_text(self, body):
+    def insert_editor_text(self, body) -> bool:
         editor = self.query_one('#editor', TextArea)
         start, end = sorted((editor.selection.start, editor.selection.end))
         if len((editor.text[:self.editor_offset(start, editor.text)] + body + editor.text[self.editor_offset(end, editor.text):]).encode('utf-8')) > MAX_NOTE_BYTES - 4096:
             self.notify('Result exceeds the note size limit', severity='error')
-            return
+            return False
         editor.history.checkpoint()
         offset = self.editor_offset(start, editor.text)
         editor.replace(body, start, end)
         editor.move_cursor(self.editor_location(offset + len(body), editor.text))
         editor.history.checkpoint()
         self.capture_current_buffer()
+        return True
 
-    def replace_editor_text(self, body):
+    def replace_editor_text(self, body) -> bool:
         if body is None:
-            return
+            return False
         if len(body.encode('utf-8')) > MAX_NOTE_BYTES - 4096:
             self.notify('Result exceeds the note size limit', severity='error')
-            return
+            return False
         editor = self.query_one('#editor', TextArea)
         position = editor.cursor_location
         editor.history.checkpoint()
@@ -173,6 +174,7 @@ class WorkflowMixin:
         editor.history.checkpoint()
         editor.move_cursor(position)
         self.capture_current_buffer()
+        return True
 
     def jump_heading(self):
         from .app import Palette
