@@ -1,4 +1,9 @@
-Jotline 0.9.0 makes the everyday capture, find, process and recover workflow more
+Jotline 0.9.1 fixes stale search results when an external edit preserves all
+tracked timestamps. Cached notes expire after one second and are reread on the
+next scan; Refresh vault forces an immediate reread. Direct reads and save-conflict
+checks continue to read the file directly.
+
+The 0.9 series makes the everyday capture, find, process and recover workflow more
 discoverable in the terminal.
 
 - Build and preview local actions without writing JSON; start from useful recipes.
@@ -8,9 +13,9 @@ discoverable in the terminal.
 - Preview folder and Drafts imports, with duplicate handling and metadata mapping.
 - Inspect bounded action history to understand completed and failed steps.
 
-Download `jotline-0.9.0-py3-none-any.whl` and install it with
-`uv tool install ./jotline-0.9.0-py3-none-any.whl` or
-`pipx install ./jotline-0.9.0-py3-none-any.whl`. Python 3.11+ is required; Git is not.
+Download `jotline-0.9.1-py3-none-any.whl` and install it with
+`uv tool install ./jotline-0.9.1-py3-none-any.whl` or
+`pipx install ./jotline-0.9.1-py3-none-any.whl`. Python 3.11+ is required; Git is not.
 For an existing installation add `--force`. `SHA256SUMS` covers both packages.
 
 Run `jotline backup` before upgrading. Existing notes remain readable. Date

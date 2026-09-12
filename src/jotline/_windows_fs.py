@@ -180,7 +180,7 @@ class WindowsFS:
             info = os.fstat(fd)
             basic = _file_info(msvcrt.get_osfhandle(fd))
             # Python's Windows st_ctime is creation time in 3.11–3.13. Use the
-            # native change time so an edit with a restored mtime invalidates cache.
+            # native change time to help detect edits with a restored mtime.
             return info.st_dev, info.st_ino, info.st_size, basic.modified * 100, basic.changed * 100
         finally:
             self.close(fd)

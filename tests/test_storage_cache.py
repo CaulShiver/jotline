@@ -31,16 +31,52 @@ def test_unchanged_searches_reuse_parse_and_refresh_can_force_read(tmp_path, mon
     assert reads == ["note", "note"]
 
 
-def test_cache_detects_same_size_edit_even_when_mtime_restored(tmp_path):
+def test_cache_detects_same_size_edit_even_when_mtime_restored(tmp_path, monkeypatch):
     vault = Vault(tmp_path)
     path = tmp_path / "note.md"
     path.write_text("alpha")
+    clock = [100.0]
+    monkeypatch.setattr(store, "monotonic", lambda: clock[0])
     assert vault.notes()[0].body == "alpha"
+    signature = store.file_signature(path)
     before = path.stat()
     path.write_text("omega")
     os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
     assert path.stat().st_mtime_ns == before.st_mtime_ns
+    if store.file_signature(path) != signature:
+        assert vault.notes()[0].body == "omega"
+    else:
+        # Native timestamps may share a clock tick. Even when metadata cannot
+        # identify the edit, the next scan after the deadline must reread it.
+        clock[0] += store.CACHE_TTL_SECONDS
+        assert vault.notes()[0].body == "omega"
+    vault.invalidate_cache()
     assert vault.notes()[0].body == "omega"
+
+
+def test_unchanged_signature_expires_from_real_read_not_cache_hit(tmp_path, monkeypatch):
+    vault = Vault(tmp_path)
+    path = tmp_path / "note.md"
+    path.write_text("alpha")
+    signature = store.file_signature(path)
+    clock = [100.0]
+    monkeypatch.setattr(store, "file_signature", lambda path: signature)
+    monkeypatch.setattr(store, "monotonic", lambda: clock[0])
+    reads = count_reads(vault, monkeypatch)
+    assert vault.notes()[0].body == "alpha"
+    path.write_text("omega")
+    for fraction in (0.25, 0.5, 0.75):
+        clock[0] = 100.0 + store.CACHE_TTL_SECONDS * fraction
+        assert vault.notes()[0].body == "alpha"
+    assert reads == ["note"]
+    clock[0] = 100.0 + store.CACHE_TTL_SECONDS
+    assert vault.notes()[0].body == "omega"
+    assert reads == ["note", "note"]
+    # Explicit refresh bypasses even an unexpired identical signature.
+    path.write_text("delta")
+    vault.invalidate_cache()
+    assert vault.notes()[0].body == "delta"
+    assert reads == ["note", "note", "note"]
 
 
 def test_cache_tracks_added_deleted_and_atomically_replaced_notes(tmp_path):

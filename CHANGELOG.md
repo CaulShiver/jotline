@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.1 — 2026-09-12
+
+- Bound cached search results to one second before the next scan rereads them.
+  External edits that preserve all tracked timestamps no longer remain cached
+  indefinitely. Refresh vault still forces an immediate reread.
+- Add deterministic coverage for timestamp collisions and cache expiry.
+
 ## 0.9.0 — 2026-09-12
 
 - Added an action builder, starter recipes, result previews, action editing and

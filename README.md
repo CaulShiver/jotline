@@ -16,14 +16,14 @@ run one of these commands in its download folder. Git is not required.
 With [uv](https://docs.astral.sh/uv/):
 
 ```sh
-uv tool install ./jotline-0.9.0-py3-none-any.whl
+uv tool install ./jotline-0.9.1-py3-none-any.whl
 jotline
 ```
 
 Or with pipx:
 
 ```sh
-pipx install ./jotline-0.9.0-py3-none-any.whl
+pipx install ./jotline-0.9.1-py3-none-any.whl
 jotline
 ```
 
@@ -283,7 +283,9 @@ warns when the vault directory is not writable, because capture and app saves ne
 write permission even though reading existing notes may still work.
 
 External Markdown files can be placed directly in the vault with filenames containing letters, numbers, underscores, or hyphens. Existing non-Jotline front matter remains part of their body. Subdirectories and attachment management are not supported in this version. An in-memory cache avoids reparsing unchanged notes. Each scan still checks file
-metadata for changes, and Refresh vault clears the cache. Very large vaults may
+metadata for changes. Cached content expires after one second and is reread on the
+next scan, even if an external edit preserves all tracked timestamps. Refresh vault
+clears the cache immediately. Very large vaults may
 still need further indexing work.
 
 ## Local backups and note history
@@ -467,14 +469,14 @@ detection. Recipes execute only these built-in steps; there is no shell evaluati
 
 ## Status
 
-Version 0.9.0 is an early release. It offers Markdown source editing, rendered
+Version 0.9.1 is an early release. It offers Markdown source editing, rendered
 preview, configurable local actions, and guided import/recovery workflows. See
 [CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,
 cloud sync, plugins, dictation and system-wide capture hotkeys remain future work.
 Automated cross-platform checks and a POSIX terminal smoke test complement the
 [native terminal and accessibility checklist](docs/terminal-testing.md);
 clipboard, IME and screen-reader compatibility still needs hands-on verification.
-See [0.9.0 verification](docs/release-verification.md) for the local test results
+See [Release verification](docs/release-verification.md) for the local test results
 and the limits of that coverage.
 
 ## Contributing

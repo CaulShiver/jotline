@@ -12,6 +12,7 @@ import re
 import stat
 import sys
 import time
+from time import monotonic
 from uuid import uuid4
 
 from .filesystem import fs as os, lock_file
@@ -23,6 +24,7 @@ MAX_SETTINGS_BYTES = 256 * 1024
 LOCK_TIMEOUT_SECONDS = 1.0
 MAX_CACHE_BYTES = 32 * 1024 * 1024
 MAX_CACHED_NOTES = 2048
+CACHE_TTL_SECONDS = 1.0
 MAX_SCAN_ENTRIES = 10_000
 MAX_SCAN_BYTES = 128 * 1024 * 1024
 MAX_DERIVED_ITEMS = 50_000
@@ -227,7 +229,7 @@ class Vault:
         self.path.mkdir(parents=True, exist_ok=True)
         self.warnings: list[str] = []
         self.backup_warning = ""
-        self._cache: dict[str, tuple[FileSignature, Note, int]] = {}
+        self._cache: dict[str, tuple[FileSignature, Note, int, float]] = {}
         self.permission_warning = ("Vault is writable by other users; use chmod go-w to protect note replacement"
                                    if os.name != "nt" and self.path.stat().st_mode & 0o022 else "")
         if self.permission_warning:
@@ -308,10 +310,15 @@ class Vault:
                     self.warnings.append(f"Vault scan stopped after {MAX_SCAN_BYTES} bytes; results are incomplete")
                     break
                 cached = self._cache.get(file.stem)
-                cache_hit = cached is not None and cached[0] == signature
+                cache_hit = cached is not None and cached[0] == signature and monotonic() < cached[3]
                 if cache_hit:
-                    note, cost = cached[1:]
+                    note, cost, expires = cached[1:]
                 else:
+                    # File timestamps are not unique content revisions. A rapid
+                    # same-size edit can retain the full signature, especially
+                    # when a sync tool restores mtime. Bound stale cache reuse
+                    # from the real read; cache hits must not extend this deadline.
+                    expires = monotonic() + CACHE_TTL_SECONDS
                     note = self.read(file.stem)
                     # Include both body and original snapshot plus a conservative
                     # allowance for the small cache entry and note attributes.
@@ -321,7 +328,7 @@ class Vault:
                 # must be read afresh next time. Never cache it under a stale stat.
                 if (len(refreshed) < MAX_CACHED_NOTES and retained_bytes + cost <= MAX_CACHE_BYTES
                         and (cache_hit or file_signature(file) == signature)):
-                    refreshed[file.stem] = (signature, note, cost)
+                    refreshed[file.stem] = (signature, note, cost, expires)
                     retained_bytes += cost
             except (ValueError, OSError) as error:
                 self.warnings.append(f"{file.name}: {error}")

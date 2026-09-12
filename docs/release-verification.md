@@ -1,4 +1,17 @@
-# 0.9.0 verification
+# Release verification
+
+## 0.9.1
+
+- Complete locked suite on Linux/Python 3.12: **311 passed, 3 platform-specific skips**.
+- Fresh 0.9.1 installed-wheel application smoke and POSIX PTY smoke passed.
+- Deterministic tests cover identical file signatures, expiry after one second,
+  repeated cache hits that do not extend expiry, and immediate forced refresh.
+- Locked dependency resolution, release identity, workflow validation and
+  `git diff --check` passed.
+- The tag workflow gates publication on all nine OS/Python combinations and
+  repeats smoke tests against the exact wheel uploaded.
+
+## 0.9.0
 
 Local verification on Linux with Python 3.12:
 
