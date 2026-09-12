@@ -17,7 +17,8 @@ def test_defaults_are_lazy_and_custom_templates_persist(tmp_path):
     assert (templates.path / 'my-template.md').read_bytes() == body.encode()
     assert Templates(tmp_path).read('my-template') == body
     assert 'my-template' in templates.names()
-    assert (templates.path / 'my-template.md').stat().st_mode & 0o777 == 0o600
+    if os.name != 'nt':
+        assert (templates.path / 'my-template.md').stat().st_mode & 0o777 == 0o600
     assert not list(templates.path.glob('.tmp-*'))
     with pytest.raises(FileExistsError, match='^Template already exists; choose a different name$'):
         templates.save('my-template', 'replacement')

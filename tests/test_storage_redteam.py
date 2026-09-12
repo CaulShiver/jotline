@@ -154,7 +154,11 @@ def test_ancestor_safe_reader_refuses_symlinked_directory(tmp_path):
     (real / "note.md").write_text("safe")
     alias = tmp_path / "alias"
     alias.symlink_to(real, target_is_directory=True)
-    assert read_regular_file(alias / "note.md") == "safe"
+    if os.name == "nt":
+        with pytest.raises(OSError):
+            read_regular_file(alias / "note.md")
+    else:
+        assert read_regular_file(alias / "note.md") == "safe"
     with pytest.raises(OSError):
         read_regular_file(alias / "note.md", ancestor_safe=True)
 

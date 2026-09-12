@@ -41,6 +41,12 @@ class AttributeTagInfo(ctypes.Structure):
     _fields_ = [("attributes", wintypes.DWORD), ("tag", wintypes.DWORD)]
 
 
+class BasicInfo(ctypes.Structure):
+    _fields_ = [("created", ctypes.c_longlong), ("accessed", ctypes.c_longlong),
+                ("modified", ctypes.c_longlong), ("changed", ctypes.c_longlong),
+                ("attributes", wintypes.DWORD)]
+
+
 @dataclass
 class Directory:
     path: str
@@ -89,7 +95,9 @@ class WindowsFS:
     def _handle(path, *, directory=False, flags=0):
         # Extended paths support long vault names without relying on machine policy.
         native = "\\\\?\\UNC\\" + path[2:] if path.startswith("\\\\") else "\\\\?\\" + path
-        access = 0 if directory else (0xC0000000 if flags & os.O_RDWR else
+        # Metadata-only access (zero) does not enforce sharing restrictions.
+        # FILE_LIST_DIRECTORY participates in sharing checks and pins the name.
+        access = 1 if directory else (0xC0000000 if flags & os.O_RDWR else
                                       0x40000000 if flags & os.O_WRONLY else 0x80000000)
         disposition = 1 if flags & os.O_CREAT and flags & os.O_EXCL else 4 if flags & os.O_CREAT else 3
         handle = CreateFileW(native, access, 3 if directory else 7, None,
@@ -101,7 +109,8 @@ class WindowsFS:
             if not GetFileInformationByHandleEx(handle, 9, ctypes.byref(info), ctypes.sizeof(info)):
                 raise ctypes.WinError(ctypes.get_last_error())
             if info.attributes & 0x400 or bool(info.attributes & 0x10) != directory or GetFileType(handle) != 1:
-                raise OSError("Not a safe directory" if directory else "Not a regular file")
+                label = "Not a safe directory" if directory else "Not a regular file"
+                raise OSError(f"{label}: {path}")
             return handle
         except BaseException:
             CloseHandle(handle)
@@ -163,6 +172,20 @@ class WindowsFS:
             os.fsync(fd)
         else:
             self._directory(fd)  # Validate even though directory flushing is unavailable.
+
+    def file_signature(self, path):
+        fd = self.open(path, os.O_RDONLY | self.O_NOFOLLOW)
+        try:
+            info = os.fstat(fd)
+            basic = BasicInfo()
+            if not GetFileInformationByHandleEx(msvcrt.get_osfhandle(fd), 0,
+                                                ctypes.byref(basic), ctypes.sizeof(basic)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            # Python's Windows st_ctime is creation time in 3.11–3.13. Use the
+            # native change time so an edit with a restored mtime invalidates cache.
+            return info.st_dev, info.st_ino, info.st_size, basic.modified * 100, basic.changed * 100
+        finally:
+            self.close(fd)
 
     def scandir(self, path):
         return os.scandir(self._directory(path).path if isinstance(path, int) else path)

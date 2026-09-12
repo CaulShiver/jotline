@@ -72,7 +72,7 @@ def check_managed_directory(path: Path, label: str, warnings: list[str]) -> Path
         return None
     try:
         info = path.lstat()
-        if not stat.S_ISDIR(info.st_mode):
+        if not stat.S_ISDIR(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
             warnings.append(f"{label}: Not a safe directory: {path.name}")
             return None
         return path

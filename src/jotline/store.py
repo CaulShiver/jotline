@@ -132,8 +132,23 @@ def vault_lock(path: Path):
     """Coordinate local writers without hanging the UI indefinitely."""
     directory = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        fd = os.open(".jotline.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
-                     0o600, dir_fd=directory)
+        # APFS can report ENOENT for concurrent O_CREAT | O_NOFOLLOW opens.
+        # Separate existing-file opens from exclusive creation and retry only
+        # when another writer wins creation. Links still fail without following.
+        flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
+        for _ in range(100):
+            try:
+                fd = os.open(".jotline.lock", flags, dir_fd=directory)
+                break
+            except FileNotFoundError:
+                try:
+                    fd = os.open(".jotline.lock", flags | os.O_CREAT | os.O_EXCL,
+                                 0o600, dir_fd=directory)
+                    break
+                except FileExistsError:
+                    continue
+        else:
+            raise OSError("Vault lock changed repeatedly; try saving again")
     except BaseException:
         os.close(directory)
         raise
@@ -163,6 +178,8 @@ def now() -> str:
 
 
 def file_signature(path: Path) -> FileSignature:
+    if os.name == "nt":
+        return os.file_signature(path)
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode):
         raise OSError(f"Not a regular file: {path.name}")

@@ -73,6 +73,40 @@ def test_unicode_cli_pipeline_without_utf8_environment(tmp_path):
     assert exported.stdout == body
 
 
+def test_separate_process_cannot_write_until_lock_is_released(tmp_path):
+    vault = Vault(tmp_path)
+    command = [sys.executable, '-m', 'jotline', '--vault', str(tmp_path), 'capture', 'saved']
+    with vault.locked():
+        blocked = subprocess.run(command, capture_output=True, timeout=15)
+        assert blocked.returncode == 1
+        assert b'busy' in blocked.stderr
+        assert not list(tmp_path.glob('*.md'))
+    saved = subprocess.run(command, capture_output=True, timeout=15)
+    assert saved.returncode == 0, saved.stderr
+    assert vault.read(saved.stdout.decode().strip()).body == 'saved'
+
+
+def test_lock_creation_race_reopens_winners_file(tmp_path, monkeypatch):
+    real_open = fs.open
+    raced = False
+
+    def open_with_race(path, flags, mode=0o777, *, dir_fd=None):
+        nonlocal raced
+        if path == '.jotline.lock' and flags & fs.O_EXCL and not raced:
+            raced = True
+            other = real_open(path, flags, mode, dir_fd=dir_fd)
+            fs.close(other)
+            raise FileExistsError('another writer created the lock')
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(fs, 'open', open_with_race)
+    vault = Vault(tmp_path)
+    note = vault.new('survives creation race')
+    vault.save(note)
+    assert raced
+    assert vault.read(note.id).body == note.body
+
+
 @pytest.mark.skipif(os.name != 'nt', reason='Native Windows handle protection')
 def test_windows_pins_directory_and_ancestors_until_close(tmp_path):
     parent = tmp_path / 'parent'
@@ -101,6 +135,9 @@ def test_windows_rejects_junctions_in_storage_and_import(tmp_path):
     _winapi.CreateJunction(str(outside), str(junction))
     try:
         from jotline.templates import Templates
+        warnings = []
+        assert cli.check_managed_directory(junction, 'templates', warnings) is None
+        assert warnings
         with pytest.raises(OSError):
             Templates(vault.path).save('test', 'must not escape')
         with pytest.raises(OSError):

@@ -44,6 +44,7 @@ def test_capture_and_export_keep_crlf_when_piped(tmp_path):
     assert exported.stdout == b"first\r\nsecond\r\n"
 
 
+@pytest.mark.skipif(sys.platform == 'win32', reason='Windows forbids control characters in filenames')
 def test_list_and_doctor_escape_controls_in_malformed_filenames(tmp_path):
     bad = tmp_path / "bad\x1b[31m.md"
     bad.write_text("---\njotline: 1\nstarred: no-json\n---\n")
@@ -84,7 +85,7 @@ def test_import_rejects_symlinked_source(tmp_path):
     imported = run_cli(tmp_path / "vault", "import", str(linked))
 
     assert imported.returncode == 1
-    assert b"Too many levels of symbolic links" in imported.stderr
+    assert b"linked.md" in imported.stderr
 
 
 def test_import_rejects_symlinked_source_ancestor(tmp_path):
