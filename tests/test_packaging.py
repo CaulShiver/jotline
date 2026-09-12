@@ -34,7 +34,8 @@ def test_ci_lower_bound_pair_matches_pytest_asyncio_floor():
     assert "'pytest==8.2.0'" in workflow
     assert "'pytest-asyncio==0.24.0'" in workflow
     assert "'pytest==8.0.0'" not in workflow
-    assert ".lower-bound/bin/python -m pytest -q tests/test_cli_redteam.py tests/test_packaging.py" in workflow
+    assert "/tmp/jotline-lower-bound/bin/python -m pytest -q tests/test_cli_redteam.py tests/test_packaging.py" in workflow
+    assert "uv venv .lower-bound" not in workflow
     assert "tests/test_storage_redteam.py tests/test_cli_redteam.py" not in workflow
 
 
