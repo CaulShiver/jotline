@@ -1,0 +1,40 @@
+{
+  "format": "jotline-actions",
+  "version": 1,
+  "actions": {
+    "clean-copy": [
+      {
+        "type": "strip"
+      },
+      {
+        "type": "copy"
+      },
+      {
+        "type": "restore"
+      }
+    ],
+    "meeting-note": [
+      {
+        "type": "template",
+        "value": "{{template:meeting}}"
+      },
+      {
+        "type": "export"
+      },
+      {
+        "type": "restore"
+      }
+    ],
+    "quote-copy": [
+      {
+        "type": "quote"
+      },
+      {
+        "type": "copy"
+      },
+      {
+        "type": "restore"
+      }
+    ]
+  }
+}

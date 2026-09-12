@@ -28,6 +28,10 @@ async def main():
             await pilot.press(*'thought')
             await pilot.pause()
             app.save_screenshot('find.svg', path='docs')
+    # Textual/Rich SVG generation leaves padding whitespace outside text nodes.
+    for name in ('screenshot.svg', 'settings.svg', 'find.svg'):
+        path = Path('docs') / name
+        path.write_text('\n'.join(line.rstrip() for line in path.read_text().splitlines()) + '\n')
 
 
 asyncio.run(main())

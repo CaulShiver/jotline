@@ -89,3 +89,25 @@ async def test_large_preview_keeps_editable_buffer(tmp_path):
         assert not isinstance(app.screen, MarkdownPreview)
         assert editor.text == body
         assert app.save_current()
+
+
+async def test_repeated_preview_close_finishes_render_tasks(tmp_path):
+    """Closing a preview must drain rendering work before the next preview."""
+    import asyncio
+
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 35)) as pilot:
+        editor = app.query_one('#editor', TextArea)
+        body = '\n\n'.join(f'# Heading {i}\n\nParagraph {i}' for i in range(105))
+        editor.load_text(body)
+        for _ in range(6):
+            app.action_preview()
+            await pilot.pause()
+            assert len(app.screen.query('MarkdownH1')) == 105
+            await pilot.press('escape')
+            await pilot.pause()
+            assert editor.has_focus and editor.text == body
+            pending = [task for task in asyncio.all_tasks()
+                       if 'Markdown.update.<locals>.await_update' in task.get_coro().__qualname__
+                       and not task.done()]
+            assert not pending, 'Dismissed preview left Markdown rendering tasks running'

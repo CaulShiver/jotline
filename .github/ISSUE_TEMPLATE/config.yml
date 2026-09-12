@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/CaulShiver/jotline/security/advisories/new
+    about: Please do not disclose exploitable issues or private notes in a public issue.

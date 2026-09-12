@@ -12,6 +12,10 @@ import time
 
 import jotline
 from jotline.app import Jotline, MarkdownPreview
+from jotline.action_history import ActionHistory
+from jotline.action_ui import ActionEditor
+from jotline.importing import apply_import, preview_import
+from jotline.navigation import ViewEditor
 from jotline.store import Vault
 from textual.widgets import TextArea
 
@@ -98,6 +102,27 @@ async def check_tui(directory: str, *, hard_exit: bool = False) -> None:
         await interact('press f3', pilot.press('f3'))
         assert isinstance(app.screen, MarkdownPreview)
         await interact('close preview after f3', pilot.press('escape'))
+        progress('action builder and recorded execution')
+        app.command('action-builder')
+        await interact('action builder opens', pilot.pause())
+        assert isinstance(app.screen, ActionEditor)
+        await interact('cancel action builder', pilot.press('escape'))
+        app.save_settings(replace(app.settings, actions={'smoke-upper': [{'type': 'uppercase'}]}))
+        app.run_local_action('smoke-upper')
+        assert app.query_one('#editor', TextArea).text == '**TEXT**'
+        assert ActionHistory(app.vault.path).read()[-1]['status'] == 'completed'
+        app.command('filters')
+        await interact('filter form opens', pilot.pause())
+        assert isinstance(app.screen, ViewEditor)
+        await interact('cancel filters', pilot.press('escape'))
+        with tempfile.TemporaryDirectory() as source_folder:
+            source = Path(source_folder) / 'import.md'
+            source.write_text('Installed import smoke', encoding='utf-8')
+            plan = preview_import(app.vault, source, workspace='work')
+            assert plan.ready == 1
+            imported = apply_import(app.vault, plan)
+            assert not imported.errors and len(imported.imported) == 1
+            assert app.vault.read(imported.imported[0]).body == 'Installed import smoke'
         backup = run(command + ['backup'], 'CLI backup')
         assert Path(backup.stdout.strip()).is_file()
         await interact('final TUI pause', pilot.pause())
@@ -120,7 +145,7 @@ def check(directory: str) -> None:
         capture_output=False,
         timeout=SMOKE_TIMEOUT_SECONDS + 5,
     )
-    print('Installed wheel: CLI capture/export, terminal writing, tags, workspaces, custom hotkeys Markdown, templates and backups passed.')
+    print('Installed wheel: CLI capture/export, writing, tags, workspaces, hotkeys, Markdown, templates, backups, actions, filters and import passed.')
 
 
 def main() -> None:

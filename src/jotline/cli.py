@@ -322,8 +322,14 @@ def main() -> None:
     sub.add_parser("path", help="Print the vault path")
     doctor = sub.add_parser("doctor", help="Check the vault, runtime and local Jotline state")
     doctor.add_argument("--json", action="store_true", help="Print machine-readable diagnostics")
-    importing = sub.add_parser("import", help="Copy a UTF-8 Markdown file into the vault")
+    importing = sub.add_parser("import", help="Import UTF-8 text, a folder, or a Drafts export")
     importing.add_argument("file", type=Path)
+    import_mode = importing.add_mutually_exclusive_group()
+    import_mode.add_argument("--preview", action="store_true", help="Preview without creating notes")
+    import_mode.add_argument("--apply", action="store_true", help="Apply a folder or Drafts import after reviewing preview")
+    importing.add_argument("--recursive", action="store_true", help="Include subfolders without following links")
+    importing.add_argument("--duplicates", choices=("skip", "copy"), default="skip",
+                           help="Skip matching bodies/UUIDs (default), or create separate copies")
     args = parser.parse_args()
     try:
         vault = Vault(args.vault)
@@ -333,6 +339,28 @@ def main() -> None:
             warning(settings_warning)
         if args.command == "path":
             print(terminal_text(vault.path))
+        elif args.command == "import" and (args.preview or args.apply or args.recursive or args.file.is_dir()
+                                           or args.file.suffix.lower() == ".draftsexport"):
+            from .importing import preview_import, apply_import
+            if args.preview and args.apply:
+                parser.error("Choose --preview or --apply")
+            plan = preview_import(vault, args.file, workspace, settings.default_collection,
+                                  args.duplicates, args.recursive)
+            print(plan.summary())
+            for item in plan.items:
+                decision = "skip" if item.duplicate and plan.duplicates == "skip" else "import"
+                print(terminal_text(f"{decision}\t{item.source}\t{item.note.collection}\t{item.note.title}"))
+            for message in plan.warnings:
+                warning(message)
+            if args.apply:
+                result = apply_import(vault, plan)
+                print(result.summary())
+                for message in result.errors:
+                    warning(message)
+                if result.errors or plan.warnings:
+                    raise SystemExit(1)
+            else:
+                print("Preview only. Repeat with --apply to create notes. Originals remain untouched.")
         elif args.command in {"capture", "import"}:
             if args.command == "import":
                 body = read_regular_file(args.file, MAX_NOTE_BYTES, ancestor_safe=True)
@@ -359,7 +387,8 @@ def main() -> None:
             for name in settings.actions:
                 print(name)
         elif args.command == 'run':
-            from .actions import run_action
+            from .actions import ActionCommitError
+            from .action_history import run_recorded_action
             if args.action not in settings.actions:
                 raise ValueError('Unknown action; use jotline actions')
             note = vault.read(args.id)
@@ -370,7 +399,10 @@ def main() -> None:
                     raise ValueError('Refusing to print terminal controls; redirect stdout')
                 sys.stdout.write(body)
             try:
-                run_action(vault, note, settings.actions[args.action], export=output)
+                run_recorded_action(vault, note, settings.actions[args.action], name=args.action,
+                                    history_warning=warning, export=output)
+            except ActionCommitError as error:
+                raise ValueError(f'{error}. Review action history before retrying.') from error
             except (ValueError, OSError) as error:
                 raise ValueError(f'Action stopped: {error}. Earlier completed steps remain applied.') from error
         elif args.command == "list":

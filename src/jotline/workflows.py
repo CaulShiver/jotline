@@ -11,7 +11,8 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, OptionList, SelectionList, Static, TextArea
 
-from .actions import run_action
+from .action_history import run_recorded_action as run_action
+from .actions import ActionCommitError
 from .store import MAX_NOTE_BYTES, tagged_body, validate_workspace
 from .templates import Templates
 
@@ -431,6 +432,12 @@ class WorkflowMixin:
 
     def choose_action(self, delete=False):
         from .app import Palette
+        if not self.settings.actions:
+            if delete:
+                self.notify('No saved actions to delete.')
+            else:
+                self.builtin_action_recipe()
+            return
         self.push_screen(Palette([(n, n) for n in self.settings.actions], 'Delete action' if delete else 'Run local action'),
                          lambda name: self.delete_config('actions', name) if delete and name else self.run_local_action(name))
 
@@ -443,13 +450,29 @@ class WorkflowMixin:
                 self.vault.save(note)
                 self.notify(f'Exported action output to new inbox note {note.id}')
             note = run_action(self.vault, self.current, self.settings.actions[name],
+                              name=name, history_warning=lambda message: self.notify(message, severity='warning'),
                               selection=self.query_one('#editor', TextArea).selected_text,
                               copy=self.copy_to_clipboard, export=export)
-            self.replace_editor_text(note.body)
-            self.current, self.dirty = note, False
-            self.refresh_notes()
-            self.connections()
+            self.accept_action_note(note)
             self.status('Saved')
             self.notify('Action completed')
+        except ActionCommitError as error:
+            self.accept_action_note(error.note)
+            self.status('Saved · durability warning')
+            self.notify(str(error) + '. Review action history before retrying.', severity='warning', timeout=12)
         except (ValueError, OSError) as error:
             self.notify(f'Action stopped: {error}. Earlier completed steps remain applied.', severity='error', timeout=12)
+
+    def accept_action_note(self, note):
+        # The action has already saved via Vault's authoritative byte limit.
+        # Do not run the more conservative insertion guard after that commit.
+        editor = self.query_one('#editor', TextArea)
+        if editor.text != note.body:
+            position = editor.cursor_location
+            editor.history.checkpoint()
+            editor.replace(note.body, (0, 0), self.editor_location(len(editor.text), editor.text))
+            editor.history.checkpoint()
+            editor.move_cursor(position)
+        self.current, self.dirty, self.last_error = note, False, ''
+        self.refresh_notes()
+        self.connections()

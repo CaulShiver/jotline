@@ -20,6 +20,9 @@ from .settings import Settings, HOTKEY_ACTIONS
 from .preferences import Preferences
 from .templates import Templates
 from .workflows import WorkflowMixin
+from .navigation import NavigationMixin
+from .action_ui import ActionWorkflowMixin
+from .import_ui import RecoveryImportMixin
 from .note_menu import NoteList, NoteMenu
 
 
@@ -158,11 +161,12 @@ class MarkdownPreview(ModalScreen[None]):
         with Vertical(id="markdown-panel"):
             yield Label("Markdown preview · Esc to return to writing")
             with VerticalScroll(id="markdown-scroll"):
-                yield Markdown(open_links=False)
+                # Let Markdown own its initial render during its mount lifecycle.
+                # A second update from the parent mount can race its empty render.
+                yield Markdown(self.body, open_links=False)
             yield Button("Back to writing", id="close-preview")
 
-    async def on_mount(self) -> None:
-        await self.query_one(Markdown).update(self.body)
+    def on_mount(self) -> None:
         self.query_one(VerticalScroll).focus()
 
     @on(Button.Pressed, "#close-preview")
@@ -339,7 +343,7 @@ class FindInNote(ModalScreen[None]):
         self.app.query_one("#editor", TextArea).focus()
 
 
-class Jotline(WorkflowMixin, App):
+class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, WorkflowMixin, App):
     TITLE = "jotline"
     ENABLE_COMMAND_PALETTE = False
     CSS = """
@@ -348,6 +352,9 @@ class Jotline(WorkflowMixin, App):
     #workspace { height: 1fr; }
     #sidebar { width: 32; min-width: 22; border-right: solid $primary-muted; padding: 0 1; }
     #collection { height: 2; padding-left: 1; color: $text-muted; }
+    .navigation-row { height: 1; }
+    .navigation-row Button { height: 1; min-height: 1; min-width: 0; width: 1fr; padding: 0; border: none; }
+    #empty-notes { height: auto; max-height: 5; color: $text-muted; }
     #search { margin-bottom: 1; border: tall $primary-muted; background: $surface; }
     #notes { border: none; background: $background; height: 1fr; }
     #notes > .option-list--option-highlighted { background: $primary-muted; color: $foreground; }
@@ -391,14 +398,25 @@ class Jotline(WorkflowMixin, App):
         self.recent_note_ids = []
         self.note_positions = {}
         self.view_sort = None
+        self.active_view = None
         self.command_registry = self.build_command_registry()
 
     def compose(self) -> ComposeResult:
         yield Static("›_ jotline     /     " + self.workspace, id="brand", markup=False)
         with Horizontal(id="workspace"):
             with Vertical(id="sidebar"):
-                yield Static("INBOX", id="collection")
+                with Horizontal(classes="navigation-row"):
+                    yield Button("Collections", id="nav-collections")
+                    yield Button("Views", id="nav-views")
+                with Horizontal(classes="navigation-row"):
+                    yield Button("Filters", id="nav-filters")
+                    yield Button("Quick start", id="nav-help")
+                with Horizontal(classes="navigation-row"):
+                    yield Button("Actions", id="nav-actions")
+                    yield Button("Import", id="nav-import")
+                yield Static("INBOX", id="collection", markup=False)
                 yield Input(placeholder="Search words or #tags", id="search")
+                yield Static("", id="empty-notes", markup=False)
                 yield NoteList(id="notes")
             with Vertical(id="writing"):
                 yield Static(self.current.title + " / " + self.current.collection, id="note-heading")
@@ -464,7 +482,7 @@ class Jotline(WorkflowMixin, App):
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         # Let modal screens own the keyboard; never run editor shortcuts underneath them.
-        if isinstance(self.screen, ModalScreen):
+        if isinstance(self.screen, ModalScreen) and action not in {'focus_next', 'focus_previous'}:
             return False
         return super().check_action(action, parameters)
 
@@ -513,6 +531,9 @@ class Jotline(WorkflowMixin, App):
             notes = self.vault.search(self.query_one("#search", Input).value, self.collection, self.workspace)
         except ValueError as error:
             self.query_one("#collection", Static).update(str(error))
+            self.query_one("#notes", OptionList).clear_options()
+            self.query_one("#empty-notes", Static).update("Fix the search above, or use Filters to change it.")
+            self.query_one("#empty-notes").remove_class("hidden")
             return
         if (self.view_sort or self.settings.sort_order) == 'title':
             notes.sort(key=lambda n: (not n.starred, n.title.casefold(), n.id))
@@ -527,10 +548,52 @@ class Jotline(WorkflowMixin, App):
             if note.id == self.current.id:
                 listing.highlighted = index
                 break
-        self.query_one("#collection", Static).update(f"{self.collection.upper()}  /  {len(notes)}")
+        label = f"{self.collection.upper()} / {len(notes)}"
+        if self.active_view and self.active_view in self.settings.saved_views:
+            view = self.settings.saved_views[self.active_view]
+            current = self.current_view()
+            matches = all(current[k] == view[k] for k in current if k != 'theme') and self.theme == (view['theme'] or self.settings.theme)
+            label += f" · {self.active_view}" + (" (modified)" if not matches else "")
+        self.query_one("#collection", Static).update(label)
+        empty = self.query_one("#empty-notes", Static)
+        empty.set_class(bool(notes), "hidden")
+        empty.update(self.shortcut_text(
+            "No matches. Adjust search or use Filters; Clear view and search resets filters."
+            if self.query_one("#search", Input).value else
+            "Nothing here yet. Ctrl+N captures a new note. Collections shows your other notes."))
         self.query_one("#brand", Static).update(self.shortcut_text(
             f"›_ jotline     /     {self.workspace}     ·     ctrl+w workspaces · ctrl+t tags"))
         self.notify_storage_warnings()
+
+    @on(Button.Pressed, "#nav-collections")
+    def navigation_collections(self):
+        self.browse_collections()
+
+    @on(Button.Pressed, "#nav-views")
+    def navigation_views(self):
+        self.push_screen(Palette([('views', 'Open saved view'), ('save-view', 'Save current filters'),
+                                  ('manage-views', 'Edit, rename or duplicate views'),
+                                  ('clear-view', 'Clear view and search')], 'Saved views'), self.command)
+
+    @on(Button.Pressed, "#nav-filters")
+    def navigation_filters(self):
+        self.edit_filters()
+
+    @on(Button.Pressed, "#nav-help")
+    def navigation_help(self):
+        self.show_walkthrough()
+
+    @on(Button.Pressed, "#nav-actions")
+    def navigation_actions(self):
+        self.push_screen(Palette([
+            ('actions', 'Run a saved action'), ('action-recipes', 'Start from a recipe'),
+            ('action-builder', 'Build an action'), ('manage-actions', 'Edit or share an action'),
+            ('import-actions', 'Import recipes'), ('action-history', 'Action history'),
+        ], 'Actions'), self.command)
+
+    @on(Button.Pressed, "#nav-import")
+    def navigation_import(self):
+        self.import_library()
 
     @on(Input.Changed, "#search")
     def search_changed(self) -> None:
@@ -651,6 +714,8 @@ class Jotline(WorkflowMixin, App):
             if guidance != self.last_error:
                 self.notify(guidance, severity="error", timeout=12)
                 self.last_error = guidance
+                if conflict and not isinstance(self.screen, ModalScreen):
+                    self.show_recovery_dialog()
             return False
         self.dirty, self.last_error = False, ""
         self.status("Saved")
@@ -809,6 +874,7 @@ class Jotline(WorkflowMixin, App):
             self.notify(str(error), severity="error")
             return
         self.settings, self.workspace = settings, name
+        self.active_view = None
         self.view_sort = None
         self.theme = self.settings.theme
         self.collection = self.settings.default_collection
@@ -1121,6 +1187,12 @@ class Jotline(WorkflowMixin, App):
                                 lambda collection=collection: self.move_to_collection(collection))
                         for collection in COLLECTIONS)
         commands.extend(self.workflow_commands(Command))
+        commands.extend(self.navigation_commands(Command))
+        commands.extend(Command(key, label, handler) for key, label, handler in self.action_workflow_commands())
+        commands.extend([
+            Command('resolve-conflict', 'Review external change and recover draft', self.show_recovery_dialog),
+            Command('import-library', 'Import notes from file, folder or Drafts export', self.import_library),
+        ])
         return {command.key: command for command in commands}
 
     def command_choices(self) -> list[tuple[str, str]]:
@@ -1152,6 +1224,7 @@ class Jotline(WorkflowMixin, App):
                                  "Move note to workspace"), self.move_workspace)
 
     def show_collection(self, collection: str) -> None:
+        self.active_view = None
         self.collection = collection
         self.query_one("#search", Input).value = ""
         self.refresh_notes()

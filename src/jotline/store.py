@@ -328,11 +328,11 @@ class Vault:
         self._cache = refreshed
         return sorted(notes, key=lambda n: (n.starred, n.updated, n.id), reverse=True)
 
-    def save(self, note: Note) -> None:
+    def save(self, note: Note, *, preserve_updated: bool = False) -> None:
         with self.locked() as directory:
-            self._save_locked(note, directory)
+            self._save_locked(note, directory, preserve_updated=preserve_updated)
 
-    def _save_locked(self, note: Note, directory: int) -> None:
+    def _save_locked(self, note: Note, directory: int, *, preserve_updated: bool = False) -> None:
         validate_workspace(note.workspace)
         if note.collection not in COLLECTIONS:
             raise ValueError("Unknown collection")
@@ -352,7 +352,18 @@ class Vault:
             if all(getattr(previous, key) == getattr(note, key)
                    for key in ("body", "collection", "created", "starred", "workspace")):
                 return
-        stamp = now()
+        if preserve_updated:
+            if actual is not None:
+                raise ValueError("Import timestamps can only be preserved for new notes")
+            for timestamp in (note.created, note.updated):
+                if timestamp:
+                    try:
+                        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                        if timestamp[:10] != parsed.date().isoformat():
+                            raise ValueError("Non-canonical timestamp date")
+                    except (AttributeError, TypeError, ValueError):
+                        raise ValueError("Invalid import timestamp") from None
+        stamp = (note.updated if preserve_updated else "") or now()
         meta = {"collection": note.collection, "created": note.created or stamp,
                 "updated": stamp, "starred": note.starred, "workspace": note.workspace}
         raw = "---\njotline: 1\n" + "\n".join(f"{k}: {json.dumps(v)}" for k, v in meta.items()) + "\n---\n" + note.body

@@ -9,25 +9,31 @@ Jotline opens to a blank page. Start typing; your writing saves automatically to
 ## Install
 
 Requires Python 3.11+ and a terminal with Unicode and color support on Linux,
-macOS, or Windows. Windows runs natively; WSL is optional. The commands below
-work in PowerShell as well as macOS and Linux shells (Git is required for these
-source installs).
+macOS, or Windows. Windows runs natively; WSL is optional. Download the wheel from
+the [latest release](https://github.com/CaulShiver/jotline/releases/latest), then
+run one of these commands in its download folder. Git is not required.
 
 With [uv](https://docs.astral.sh/uv/):
 
 ```sh
-uv tool install git+https://github.com/CaulShiver/jotline.git
+uv tool install ./jotline-0.9.0-py3-none-any.whl
 jotline
 ```
 
 Or with pipx:
 
 ```sh
-pipx install git+https://github.com/CaulShiver/jotline.git
+pipx install ./jotline-0.9.0-py3-none-any.whl
 jotline
 ```
 
-For development:
+To update, download the new wheel and repeat your install command with `--force`.
+Run `jotline backup` first. Uninstall with `uv tool uninstall jotline` or
+`pipx uninstall jotline`; your vault remains on disk. See the
+[install, update and rollback guide](docs/install.md) for PATH help, plain Python
+installation, and checksums.
+
+For development (requires Git):
 
 ```sh
 git clone https://github.com/CaulShiver/jotline.git
@@ -45,6 +51,13 @@ uv run pytest
 4. **Review.** Run **Start weekly review** for a checklist. Move notes into projects, areas, resources, or archive when useful.
 
 These are optional practices, not a compulsory system. An inbox and search are enough to start.
+
+The sidebar offers **Collections**, **Views**, **Filters**, **Actions**, **Import**,
+and **Quick start**. The optional walkthrough opens without creating a note or
+replacing your writing. On narrow terminals, Ctrl+F reveals the sidebar; Escape
+returns to writing. Empty lists explain how to find other notes or adjust filters.
+All features also remain available from Ctrl+P. See [navigation and saved
+views](docs/navigation.md).
 
 The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingstarted/), [GTD's capture and reflection](https://gettingthingsdone.com/what-is-gtd/), [Bullet Journal's daily rapid logging](https://bulletjournal.com/pages/how-to-bullet-journal), [Zettelkasten's connected ideas](https://zettelkasten.de/overview/), and [PARA's organization by use](https://fortelabs.com/blog/para/). Jotline is independent of these products and authors.
 
@@ -167,6 +180,23 @@ scripts. `jotline import FILE` copies a regular UTF-8 file into a new note in yo
 default collection; the original file is left untouched. Imports refuse symlinked
 files and symlinked source directories.
 
+Use **Import** in the sidebar to preview a file, folder, or Drafts `.draftsExport`
+library, then confirm the import. Folder imports include subfolders in the app.
+Drafts imports preserve dates, inbox/archive/trash state and flags, and map tags
+into the note text. Matching bodies or Drafts IDs are skipped by default.
+Warnings and partial failures are reported; existing notes are never overwritten.
+
+```sh
+jotline import ~/Downloads/notes --recursive          # preview
+jotline import ~/Downloads/notes --recursive --apply  # import
+jotline import ~/Downloads/library.draftsExport      # preview
+jotline import ~/Downloads/library.draftsExport --apply
+```
+
+CLI imports also support `--preview` for a single text file and
+`--duplicates copy` to create separate copies. See [import and recovery
+details](docs/import-recovery.md) for limits and metadata mapping.
+
 Redirected export preserves the note body, including line endings. Export to an
 interactive terminal refuses unsafe control characters unless you explicitly pass
 `--raw`. Diagnostics escape terminal control characters.
@@ -238,6 +268,13 @@ checks the entire vault.
 - Trash is reversible. There is no permanent-delete command.
 - Keep a backup of your vault. Sync and encryption are up to your existing tools; simultaneous edits through an external editor or sync provider are not a collaborative editing protocol.
 - Only the source code is published to GitHub. Your notes are stored separately.
+
+On a save conflict, a comparison dialog offers **Save copy, then review external
+version**, **Save and open recovery copy**, or **Keep editing**. Both save options
+preserve your full local draft before changing what is open. If recovery fails,
+the unsaved editor text stays available. Use **Review external change and recover
+draft** in Commands to reopen the dialog. Large comparisons show excerpts while
+preserving the complete draft.
 
 Notes are limited to 10 MiB including metadata; settings to 256 KiB. Symbolic links
 and special files are skipped and reported. A busy vault lock returns an error after
@@ -352,6 +389,11 @@ workspace and theme. **Open saved view** lists views in the active workspace;
 without moving notes between workspaces. **Delete saved view** removes a saved
 configuration. Views persist in vault settings and are included in backups.
 
+**Views → Edit, rename or duplicate views** opens a form for existing views.
+**Filters** adjusts the query, collection, sort and theme without saving a view.
+The list heading names the active view and marks it modified when filters differ.
+Use **Update active saved view from current filters** to save those changes.
+
 Templates additionally accept `{{title}}`, `{{body}}`, `{{selection}}`,
 `{{date:%Y-%m-%d}}` (strftime formatting), and `{{template:other-name}}`.
 Title/body/selection refer to the current note when inserting a template or
@@ -360,6 +402,24 @@ Inserted context is literal, and unknown placeholders stay unchanged. Includes
 are limited to eight levels and 64 expansions, with a 10 MiB output limit.
 
 ## Local actions and shell automation
+
+Open **Actions → Start from a recipe** for copy-clean-text, copy-markdown-quote,
+create-from-template, or append-and-archive. The builder lets you name the action,
+choose operations, edit values, reorder steps and select append targets by note
+title. **Preview** shows intended effects and output without changing notes or
+using the clipboard. Save the recipe, then choose **Run a saved action** to run it.
+Copy/create starter recipes preserve your source text.
+
+**Actions → Edit or share an action** supports editing, renaming, duplication and
+export to a portable JSON file. **Import recipes** adds recipes without running
+them. **Action history** shows up to 100 runs and the outcome of each step, without
+storing note bodies or template values. Logs are limited to 256 KiB in
+`.jotline-action-history.json`. Earlier side effects can remain after a failed
+action; inspect its history before retrying.
+
+See the [action builder and sharing guide](docs/actions.md) and
+[community recipes](examples/actions/README.md). You can also define actions
+directly as JSON:
 
 Write a JSON step list in a note and choose **Save action recipe from this note**,
 then give it a unique name. **Run local action** lists saved recipes; **Delete
@@ -379,7 +439,10 @@ current text followed by a newline, then archives the source after success.
 
 Available step types are `uppercase`, `lowercase`, `strip`, `template` (with a
 `value` containing template text), `append` (with a target note ID in `value`),
-`archive`, `copy`, and `export`. There can be up to 16 steps per recipe. Copy uses
+`archive`, `copy`, `export`, `quote`, and `restore`. `quote` prefixes each line for
+a Markdown blockquote. `restore` resets the working text to
+the source text without undoing earlier effects or collection changes; copy/create
+recipes use it to preserve the source. There can be up to 16 steps per recipe. Copy uses
 the terminal clipboard and is available in the app. Export creates a new inbox
 note in the app, or writes to stdout in the CLI. To create a plain Markdown file,
 redirect CLI output. Text transforms and archive status are saved to the source
@@ -404,7 +467,15 @@ detection. Recipes execute only these built-in steps; there is no shell evaluati
 
 ## Status
 
-Version 0.8 is an early release. It offers Markdown source editing and an in-app rendered preview. Full Vim emulation is not supported. Cloud sync, plugins, dictation, and system-wide capture hotkeys are future work. Tested with Textual's headless terminal driver; terminal-specific clipboard behavior varies.
+Version 0.9.0 is an early release. It offers Markdown source editing, rendered
+preview, configurable local actions, and guided import/recovery workflows. See
+[CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,
+cloud sync, plugins, dictation and system-wide capture hotkeys remain future work.
+Automated cross-platform checks and a POSIX terminal smoke test complement the
+[native terminal and accessibility checklist](docs/terminal-testing.md);
+clipboard, IME and screen-reader compatibility still needs hands-on verification.
+See [0.9.0 verification](docs/release-verification.md) for the local test results
+and the limits of that coverage.
 
 ## Contributing
 
@@ -416,4 +487,6 @@ plus a fresh installed-wheel CLI and terminal workflow smoke check.
 
 Bug reports and focused pull requests are welcome. The package version is sourced
 from `src/jotline/__init__.py`; release builds and `jotline --version` use that same
-value. See [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under [MIT](LICENSE).
+value. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and release checks,
+[ROADMAP.md](ROADMAP.md) for starter contributions, and [SECURITY.md](SECURITY.md)
+for private vulnerability reporting. Licensed under [MIT](LICENSE).

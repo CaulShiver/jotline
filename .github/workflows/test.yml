@@ -1,5 +1,9 @@
 name: Tests
-on: [push, pull_request]
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
 permissions:
   contents: read
 jobs:
@@ -45,7 +49,7 @@ jobs:
         run: uv sync --locked --extra dev --python '${{ matrix.python }}'
       - name: Run tests
         timeout-minutes: 5
-        run: uv run --locked pytest -q
+        run: uv run --locked pytest -q -o faulthandler_timeout=60
       - name: Build distributions
         timeout-minutes: 3
         run: uv build --clear

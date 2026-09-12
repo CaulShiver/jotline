@@ -1,0 +1,32 @@
+name: Bug report
+description: Report unexpected behavior with reproducible steps.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please use synthetic notes. For security vulnerabilities, follow SECURITY.md instead of posting publicly.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Jotline version, Python version, OS, terminal and terminal version.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest example that shows the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics or screenshots
+      description: Optional jotline doctor --json output. Review local paths before sharing; remove personal information.
