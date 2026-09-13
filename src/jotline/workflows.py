@@ -25,13 +25,6 @@ def split_parts(body, paragraphs):
     return re.split(r'(?:\r?\n){2}' if paragraphs else r'\r?\n', body)
 
 
-def headings(text):
-    """(row, title) for ATX and setext headings, excluding fenced code."""
-    from .markdown_editor import headings as markdown_headings
-    for row, _, title in markdown_headings(text.split('\n')):
-        yield row, title
-
-
 class Arrange(Modal[str | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel'), Binding('ctrl+s', 'apply', 'Apply'),
                 Binding('alt+up', 'move(-1)', 'Move up'), Binding('alt+down', 'move(1)', 'Move down'),

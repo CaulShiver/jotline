@@ -30,9 +30,9 @@ HIGHLIGHT_MAX_CHARS = 512 * 1024
 JOTLINE_THEME = Theme(name="jotline", primary="#a8d5a2", accent="#a8d5a2", foreground="#d6ddd8",
                       background="#101619", surface="#162024", panel="#162024")
 
-HEADING = re.compile(r"(?P<indent> {0,3})(?P<marker>#{1,6})(?:(?P<gap>[ \t]+)(?P<text>.*?))?[ \t]*$")
+HEADING = re.compile(r"(?P<indent> {0,3})(?P<marker>#{1,6})(?:(?P<gap>[ \t]+)(?P<text>.*))?$")
 # A closing run of # counts only after whitespace, so "C#" keeps its hash.
-CLOSING_HASHES = re.compile(r"(?:^|[ \t]+)#+[ \t]*$")
+CLOSING_HASHES = re.compile(r"(?:^|(?<=[ \t]))#+[ \t]*$")
 SETEXT = re.compile(r" {0,3}(=+|-+)[ \t]*$")
 RULE = re.compile(r" {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
 QUOTE = re.compile(r"(?P<marker>[ \t]*(?:>[ \t]?)+)")
@@ -65,7 +65,7 @@ def _bytes(text: str, index: int) -> int:
 
 def list_item(line: str, pos: int = 0) -> re.Match | None:
     """The list marker at ``pos``, unless the line is a thematic break like ``- - -``."""
-    if RULE.match(line):
+    if RULE.match(line, pos):
         return None
     return LIST_ITEM.match(line, pos)
 
@@ -126,14 +126,16 @@ def highlight_line(line: str) -> list[Highlight]:
         if free(match.start(), match.end()):
             add((match.start("label"), match.end("label"), "link.label"))
             add((match.start("uri"), match.end("uri"), "link.uri"))
-    for pattern, name in ((WIKI, "md.wikilink"), (FOOTNOTE, "link.label"), (TAG, "md.tag")):
-        for match in pattern.finditer(line, body_start):
-            if free(match.start(), match.end()):
-                add((match.start(), match.end(), name))
     for match in BARE_URL.finditer(line, body_start):
         # A URL already inside (…) of a Markdown link is highlighted there.
         if free(match.start(), match.end()) and line[max(match.start() - 1, 0):match.start()] != "(":
             add((match.start(), match.end(), "link.uri"))
+    for pattern, name in ((WIKI, "md.wikilink"), (FOOTNOTE, "link.label"), (TAG, "md.tag")):
+        for match in pattern.finditer(line, body_start):
+            if free(match.start(), match.end()) and not any(
+                    kind == "link.uri" and start < match.end() and end > match.start()
+                    for start, end, kind in spans):
+                add((match.start(), match.end(), name))
     spans = [span for span in spans if span[1] > span[0]]
     if line.isascii():
         return spans
@@ -175,7 +177,8 @@ def headings(lines: list[str]) -> list[tuple[int, int, str]]:
         else:
             # Only a paragraph line can be underlined; "---" after a list item or
             # quote is a rule.
-            previous = "" if list_item(line) or line.lstrip().startswith((">", "|")) else line
+            previous = ("" if list_item(line) or RULE.match(line) or line.startswith(("    ", "\t"))
+                        or line.lstrip().startswith((">", "|")) else line)
     return found
 
 
@@ -188,6 +191,8 @@ def continuation(line: str, column: int) -> tuple[str, bool] | None:
     """
     quote = QUOTE.match(line)
     quote_prefix = quote[0] if quote and ">" in quote[0] else ""
+    if RULE.match(line, len(quote_prefix)):
+        return None
     if item := list_item(line, len(quote_prefix)):
         if column < item.end():
             return None
@@ -227,7 +232,9 @@ def toggle_lines(lines: list[str], style: str) -> list[str]:
     A numbered list keeps task checkboxes (``1. [x] done``); a bullet list drops
     them, which is how a task list becomes plain bullets.
     """
-    content = [line for line in lines if line.strip()] or lines
+    content = [line for line in lines if line.strip() and not RULE.match(line)]
+    if not content:
+        content = [line for line in lines if not RULE.match(line)]
     skip_blank = len(lines) > 1
     if level_match := re.fullmatch(r"h([1-6])", style):
         level = int(level_match[1])
@@ -236,7 +243,7 @@ def toggle_lines(lines: list[str], style: str) -> list[str]:
         result = []
         for line in lines:
             heading = HEADING.match(line)
-            if not line.strip() and skip_blank:
+            if RULE.match(line) or (not line.strip() and skip_blank):
                 result.append(line)
             elif remove:
                 result.append(heading["indent"] + heading_title(heading["text"] or "") if heading else line)
@@ -248,7 +255,8 @@ def toggle_lines(lines: list[str], style: str) -> list[str]:
     if style == "quote":
         if all(line.lstrip().startswith(">") for line in content):
             return [re.sub(r"^([ \t]*)>[ \t]?", r"\1", line, count=1) for line in lines]
-        return ["> " + line if line.strip() or len(lines) == 1 else line for line in lines]
+        return ["> " + line if not RULE.match(line) and (line.strip() or len(lines) == 1) else line
+                for line in lines]
 
     def has(line: str) -> bool:
         if not (item := list_item(line)):
@@ -262,7 +270,7 @@ def toggle_lines(lines: list[str], style: str) -> list[str]:
     remove = all(has(line) for line in content)
     result, number = [], 0
     for line in lines:
-        if not line.strip() and skip_blank:
+        if RULE.match(line) or (not line.strip() and skip_blank):
             result.append(line)
             continue
         indent, text = _strip_block_prefix(line, keep_task=style == "numbered" and not remove)
@@ -365,12 +373,13 @@ def table_bounds(lines: list[str], row: int) -> tuple[int, int] | None:
 
     if not is_row(row):
         return None
-    separator = row
-    while not is_separator(separator) and is_row(separator - 1):
-        separator -= 1
-    if not is_separator(separator):
-        separator = row + 1  # the cursor may be on the header row
-    if not (is_separator(separator) and is_row(separator - 1)):
+    first = row
+    while is_row(first - 1):
+        first -= 1
+    separator = first + 1
+    while is_row(separator) and not is_separator(separator):
+        separator += 1
+    if not (is_separator(separator) and is_row(separator - 1) and separator - 1 <= row):
         return None
     first, last = separator - 1, separator
     while is_row(last + 1):

@@ -27,6 +27,7 @@ from .note_menu import NoteList, NoteMenu
 from .review_ui import ReviewMixin
 from .encryption_ui import EncryptionMixin
 from .export import printable_markdown
+from .tasks import closes_fence
 from .markdown_editor import (TABLE_TEMPLATE, FENCE, JOTLINE_THEME, MarkdownEditor, fence_for, format_table,
                               headings, indent_lines, table_bounds, toggle_lines, unwrap_span)
 
@@ -1292,10 +1293,12 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         editor = self.query_one("#editor", TextArea)
         rows = editor.document.lines
         first, last = self.selected_rows(start, end)
-        if end[1] == 0 and end[0] > first and FENCE.fullmatch(rows[first]) and FENCE.fullmatch(rows[end[0]]):
+        opener = FENCE.fullmatch(rows[first])
+        if (end[1] == 0 and end[0] > first and opener and closes_fence(rows[end[0]], opener)
+                and not any(closes_fence(rows[row], opener) for row in range(first + 1, end[0]))):
             last = end[0]  # a selection ending at the start of the closing fence still means the block
         lines = rows[first:last + 1]
-        if last > first and FENCE.fullmatch(lines[0]) and FENCE.fullmatch(lines[-1]):
+        if last > first and opener and closes_fence(lines[-1], opener):
             inner = lines[1:-1]
             editor.replace("\n".join(inner), (first, 0), (last, len(lines[-1])))
             editor.move_cursor((first, 0))

@@ -6,7 +6,8 @@ import sys
 import pytest
 from textual.widgets import Input, TextArea, SelectionList
 from jotline.app import Jotline
-from jotline.workflows import Arrange, SelectNotes, headings
+from jotline.workflows import Arrange, SelectNotes
+from jotline.markdown_editor import headings
 from jotline.settings import Settings
 from jotline.store import Vault
 from jotline.templates import Templates
@@ -45,7 +46,7 @@ def test_templates_context_includes_and_cycles(tmp_path):
 
 
 def test_heading_parser_excludes_fenced_code():
-    assert list(headings('# One\n```md\n# Hidden\n```\nTwo\n---\n~~~\n# Nope\n~~~\n## Three')) == [(0, 'One'), (4, 'Two'), (9, 'Three')]
+    assert headings('# One\n```md\n# Hidden\n```\nTwo\n---\n~~~\n# Nope\n~~~\n## Three'.split('\n')) == [(0, 1, 'One'), (4, 2, 'Two'), (9, 2, 'Three')]
 
 
 async def test_replace_all_is_literal_and_one_undo(tmp_path):

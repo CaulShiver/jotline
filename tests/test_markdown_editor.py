@@ -390,3 +390,53 @@ async def test_preview_shows_checkboxes_and_link_titles(tmp_path):
         source = app.screen.body
         assert '☐ open' in source and '☒ done' in source and 'See Target note' in source
         assert app.screen.query_one(Markdown)
+
+
+@pytest.mark.parametrize('body,end,expected', [
+    ('```python\na\n```\n~~~\nb\n~~~', (3, 0), 'a\n~~~\nb\n~~~'),
+    ('```\na\n```', (2, 0), 'a'),
+    ('```\na\n~~~', (2, 3), '````\n```\na\n~~~\n````'),
+])
+async def test_code_block_only_unwraps_matching_closer(tmp_path, body, end, expected):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test() as pilot:
+        editor = app.query_one('#editor', TextArea)
+        editor.load_text(body)
+        select(editor, (0, 0), end)
+        app.command('format:codeblock')
+        await pilot.pause()
+        assert editor.text == expected
+
+
+def test_table_bounds_uses_first_separator_even_with_dash_body():
+    lines = ['| h |', '|---|', '| a |', '| --- |', '| b |']
+    for row in range(len(lines)):
+        assert table_bounds(lines, row) == (0, 4)
+    lines = ['Use a | b', '| h |', '|---|', '| a |']
+    assert table_bounds(lines, 3) == (1, 3)
+    assert table_bounds(lines, 1) == (1, 3)
+    assert table_bounds(lines, 0) is None
+
+
+@pytest.mark.parametrize('lines', [['***', '---'], ['- - -', '==='], ['    code', '---'], ['\tcode', '---']])
+def test_setext_does_not_promote_rules_or_code(lines):
+    assert headings(lines) == []
+    assert headings(['Title', '---']) == [(0, 2, 'Title')]
+
+
+@pytest.mark.parametrize('style', ['bullet', 'numbered', 'task', 'h1', 'quote'])
+@pytest.mark.parametrize('rule', ['- - -', '* * *'])
+def test_formatting_preserves_rules(style, rule):
+    assert toggle_lines([rule], style) == [rule]
+    assert toggle_lines([rule, '', rule], style) == [rule, '', rule]
+    assert continuation('> ' + rule, len(rule) + 2) is None
+
+
+@pytest.mark.parametrize('line', ['see https://x.y/#top', '[site](https://x.y/#top)', '[site](#top)'])
+def test_tags_do_not_overlap_url_destinations(line):
+    assert 'link.uri' in names(highlight_markdown([line]), 0)
+    assert 'md.tag' not in names(highlight_markdown([line]), 0)
+
+
+def test_numeric_tags_follow_vault_index_rule():
+    assert 'md.tag' in names(highlight_markdown(['issue #123']), 0)

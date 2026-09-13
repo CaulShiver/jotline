@@ -10,6 +10,13 @@ FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
 CODE_SPAN = re.compile(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)")
 
 
+def closes_fence(line: str, opener: re.Match) -> bool:
+    """Whether a line closes this opener under the shared fenced-code rules."""
+    marker = FENCE.fullmatch(line)
+    return bool(marker and marker[1][0] == opener[1][0]
+                and len(marker[1]) >= len(opener[1]) and not marker[2].strip())
+
+
 def fenced_rows(lines: list[str]) -> set[int]:
     """Rows inside or delimiting a fenced code block.
 
@@ -24,10 +31,10 @@ def fenced_rows(lines: list[str]) -> set[int]:
         marker = FENCE.fullmatch(line)
         if fence is not None:
             rows.add(row)
-            if marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence) and not marker[2].strip():
+            if closes_fence(line, fence):
                 fence = None
         elif marker and not (marker[1][0] == "`" and "`" in marker[2]):
-            fence = marker[1]
+            fence = marker
             rows.add(row)
     return rows
 
