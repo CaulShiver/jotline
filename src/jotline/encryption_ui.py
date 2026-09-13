@@ -101,9 +101,7 @@ class EncryptionMixin:
             return
         self.vault.lock()
         if self.current.encrypted:
-            fresh = self.vault.new(workspace=self.workspace)
-            fresh.collection = self.settings.default_collection
-            self.load(fresh)
+            self.load(self.new_note())
         self.refresh_notes()
         self.notify("Encrypted notes locked.")
 

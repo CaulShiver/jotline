@@ -320,7 +320,7 @@ def test_history_stays_on_pinned_vault_during_root_swap(tmp_path, monkeypatch):
     vault.save(note)
     note.body = 'second'
     moved = tmp_path / 'moved-vault'
-    original_temp = history._temp_at
+    original_temp = history.create_private_temp
     swapped = False
 
     def swap(directory, prefix):
@@ -331,7 +331,7 @@ def test_history_stays_on_pinned_vault_during_root_swap(tmp_path, monkeypatch):
             original.mkdir()
         return original_temp(directory, prefix)
 
-    monkeypatch.setattr(history, '_temp_at', swap)
+    monkeypatch.setattr(history, 'create_private_temp', swap)
     vault.save(note)
     assert Vault(moved).read(note.id).body == 'second'
     assert not (original / f'{note.id}.md').exists()
@@ -343,7 +343,7 @@ def test_backup_stays_on_pinned_folder_during_folder_swap(tmp_path, monkeypatch)
     (tmp_path / 'plain.md').write_text('data')
     backups = tmp_path / '.jotline-backups'
     retained = tmp_path / 'retained-backups'
-    original_temp = history._temp_at
+    original_temp = history.create_private_temp
 
     def swap(directory, prefix):
         if prefix == '.backup-' and backups.exists() and not retained.exists():
@@ -351,7 +351,7 @@ def test_backup_stays_on_pinned_folder_during_folder_swap(tmp_path, monkeypatch)
             backups.mkdir()
         return original_temp(directory, prefix)
 
-    monkeypatch.setattr(history, '_temp_at', swap)
+    monkeypatch.setattr(history, 'create_private_temp', swap)
     vault.backup()
     assert not list(backups.iterdir())
     archive, = retained.glob('manual-*.zip')
@@ -399,9 +399,74 @@ def test_backup_temp_failure_closes_template_descriptor(tmp_path, monkeypatch, r
     templates.mkdir()
     (templates / 'custom.md').write_text('template')
     before = resource_count()
-    monkeypatch.setattr(history, '_temp_at',
+    monkeypatch.setattr(history, 'create_private_temp',
                         lambda *args, **kwargs: (_ for _ in ()).throw(OSError('disk full')))
     for _ in range(16):
         with pytest.raises(OSError, match='disk full'):
             vault.backup()
     assert resource_count() == before
+
+
+@pytest.mark.parametrize('error_type', [FileNotFoundError, PermissionError, OSError])
+def test_history_stat_only_ignores_disappeared_revisions(tmp_path, fault_entry_stat, error_type):
+    vault = Vault(tmp_path)
+    note = vault.new('first')
+    vault.save(note)
+    note.body = 'second'
+    vault.save(note)
+    revisions = vault.history(note.id)
+    assert len(revisions) == 2
+
+    def fail():
+        raise error_type('injected stat failure')
+
+    fault_entry_stat(history.os, revisions[0].id + '.md', fail)
+    if error_type is FileNotFoundError:
+        assert vault.history(note.id) == revisions[1:]
+    else:
+        with pytest.raises(error_type, match='injected stat failure'):
+            vault.history(note.id)
+
+
+@pytest.mark.skipif(os.name == 'nt' or getattr(os, 'geteuid', lambda: 0)() == 0,
+                    reason='Requires POSIX permissions and an unprivileged user')
+def test_history_permission_error_propagates(tmp_path):
+    vault = Vault(tmp_path)
+    note = vault.new('saved')
+    vault.save(note)
+    folder = tmp_path / '.jotline-history' / note.id
+    folder.chmod(0o400)
+    try:
+        with pytest.raises(PermissionError):
+            vault.history(note.id)
+    finally:
+        folder.chmod(0o700)
+
+
+def test_daily_backup_survives_concurrent_prune(tmp_path, monkeypatch, fault_entry_stat):
+    vault = Vault(tmp_path)
+    prune = history._prune_backups
+    raced = []
+
+    def prune_with_race(vault, folder, keep_name):
+        stale = tmp_path / '.jotline-backups' / 'daily-2020-01-01.zip'
+        stale.write_bytes(b'stale archive')
+
+        def disappear():
+            stale.unlink()
+            raced.append(True)
+
+        fault_entry_stat(history.os, stale.name, disappear)
+        prune(vault, folder, keep_name)
+
+    monkeypatch.setattr(history, '_prune_backups', prune_with_race)
+    note = vault.new('saved despite concurrent pruning')
+    vault.save(note)
+    assert raced == [True]
+    assert vault.backup_warning == ''
+    assert vault.read(note.id).body == note.body
+    archives = list((tmp_path / '.jotline-backups').glob('daily-*.zip'))
+    assert len(archives) == 1
+    with zipfile.ZipFile(archives[0]) as archive:
+        assert archive.testzip() is None
+        assert note.id + '.md' in archive.namelist()

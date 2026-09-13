@@ -4,13 +4,11 @@ from __future__ import annotations
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.theme import Theme
 from textual.widgets import Static, TextArea
 
+from .markdown_editor import JOTLINE_THEME
+
 HINT = "Ctrl+S save · Esc cancel"
-# The same palette as the main app's default theme.
-JOTLINE_THEME = Theme(name="jotline", primary="#a8d5a2", accent="#a8d5a2", foreground="#d6ddd8",
-                      background="#101619", surface="#162024", panel="#162024")
 
 
 class QuickCapture(App[str | None]):

@@ -14,16 +14,26 @@ class ActionCommitError(OSError):
         self.note = note
 
 
+MAX_STEPS = 16
+STEP_TYPES = ('uppercase', 'lowercase', 'strip', 'quote', 'template', 'append', 'archive', 'copy', 'export', 'restore')
+PREVIEW_CHARS = 20_000
+
+
+def truncate_preview(body):
+    if len(body) <= PREVIEW_CHARS:
+        return body
+    return body[:PREVIEW_CHARS] + f'\n[Preview truncated at {PREVIEW_CHARS:,} characters]'
+
+
 def validate_actions(actions):
     if not isinstance(actions, dict) or len(actions) > 128:
         raise ValueError('At most 128 actions are allowed')
-    allowed = {'uppercase', 'lowercase', 'strip', 'quote', 'template', 'append', 'archive', 'copy', 'export', 'restore'}
     for name, steps in actions.items():
         validate_workspace(name)
-        if not isinstance(steps, list) or not 1 <= len(steps) <= 16:
-            raise ValueError('An action needs 1–16 steps')
+        if not isinstance(steps, list) or not 1 <= len(steps) <= MAX_STEPS:
+            raise ValueError(f'An action needs 1–{MAX_STEPS} steps')
         for step in steps:
-            if not isinstance(step, dict) or not isinstance(step.get('type'), str) or step['type'] not in allowed:
+            if not isinstance(step, dict) or not isinstance(step.get('type'), str) or step['type'] not in STEP_TYPES:
                 raise ValueError('Unknown action step')
             kind = step['type']
             expected = {'type', 'value'} if kind in {'template', 'append'} else {'type'}
@@ -112,8 +122,7 @@ def preview_action(vault, note, steps, *, selection=''):
     effects = []
 
     def output(label, body):
-        excerpt = body[:20000] + ('\n[Preview truncated at 20,000 characters]' if len(body) > 20000 else '')
-        effects.append(f'{label} ({len(body)} characters):\n{excerpt}')
+        effects.append(f'{label} ({len(body)} characters):\n{truncate_preview(body)}')
 
     class PreviewVault:
         path = vault.path

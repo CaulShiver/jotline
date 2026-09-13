@@ -74,6 +74,3 @@ class NoteMenu(Modal[str | None]):
         if not self.query_one('#note-menu').region.contains(event.screen_x, event.screen_y):
             event.stop()
             self.dismiss(None)
-
-    def action_cancel(self):
-        self.dismiss(None)

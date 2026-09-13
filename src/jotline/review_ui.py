@@ -28,12 +28,12 @@ class ReviewMixin:
         if not found:
             self.notify("No open tasks in this workspace. Start a line with - [ ] in any note to add one.")
             return
-        today = date.today().isoformat()
+        today = date.today()
         choices = []
         for task in found:
             label = "☐ " + task.text
             if task.due:
-                label += f" · due {task.due}" + (" (overdue)" if task.due < today else "")
+                label += f" · due {task.due}" + (" (overdue)" if task.overdue(today) else "")
             choices.append((task.reference(), label + " · " + task.note_title))
         self.push_screen(Palette(choices, f"Open tasks · {len(found)}"), self.open_task)
 
@@ -59,15 +59,16 @@ class ReviewMixin:
     def export_current(self, fmt: str, path: str) -> None:
         if not self.save_current(explicit=True):
             return
-        note = self.current
-        titles = {other.id: other.title for other in self.vault.search(workspace=self.workspace)}
+        # Snapshot the text now; the worker must not see edits typed while it runs.
+        title, body = self.current.title, self.current.body
+        titles = self.vault.titles(self.workspace)
         target = Path(path).expanduser()
         self.notify(f"Exporting {FORMAT_NAMES[fmt]}…")
 
         def export() -> None:
             # Converters can take seconds; keep the editor responsive meanwhile.
             try:
-                written = write_export(target, export_bytes(note.title, note.body, fmt, titles))
+                written = write_export(target, export_bytes(title, body, fmt, titles))
             except (OSError, ExportError) as error:
                 self.call_from_thread(self.notify, f"Export failed: {error}", severity="error", timeout=12)
             else:

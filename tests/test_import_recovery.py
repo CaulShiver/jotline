@@ -177,3 +177,25 @@ def test_invalid_import_entries_are_bounded(tmp_path, monkeypatch):
     source.write_text(json.dumps([None] * 20))
     plan = preview_import(Vault(tmp_path / 'vault'), source)
     assert len(plan.warnings) == 4 and not plan.items
+
+
+def test_folder_import_warns_and_continues_after_unreadable_entry(tmp_path, fault_entry_stat):
+    from jotline.importing import fs
+
+    source = tmp_path / 'source'
+    source.mkdir()
+    (source / 'unreadable.md').write_text('unreadable', encoding='utf-8')
+    (source / 'good.md').write_text('import me', encoding='utf-8')
+    vault = Vault(tmp_path / 'vault')
+
+    def fail():
+        raise PermissionError('entry cannot be read')
+
+    fault_entry_stat(fs, 'unreadable.md', fail)
+    plan = preview_import(vault, source)
+    assert plan.ready == 1
+    assert any('unreadable.md' in warning and 'entry cannot be read' in warning for warning in plan.warnings)
+    result = apply_import(vault, plan)
+    assert not result.errors
+    assert len(result.imported) == 1
+    assert vault.read(result.imported[0]).body == 'import me'

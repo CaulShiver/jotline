@@ -7,6 +7,47 @@ import re
 
 TASK = re.compile(r"(?P<lead>[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+\[)(?P<mark>[ xX])(?P<gap>\][ \t]+)(?P<text>\S.*)")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
+CODE_SPAN = re.compile(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)")
+
+
+def closes_fence(line: str, opener: re.Match) -> bool:
+    """Whether a line closes this opener under the shared fenced-code rules."""
+    marker = FENCE.fullmatch(line)
+    return bool(marker and marker[1][0] == opener[1][0]
+                and len(marker[1]) >= len(opener[1]) and not marker[2].strip())
+
+
+def fenced_rows(lines: list[str]) -> set[int]:
+    """Rows inside or delimiting a fenced code block.
+
+    The one place fence state is decided, so the editor, task gathering,
+    exports and the heading outline agree on which lines are code. As in
+    CommonMark, a backtick fence whose info string contains a backtick does not
+    open a block, and a block closes on a fence of the same character at least
+    as long as the opener with nothing after it.
+    """
+    rows, fence = set(), None
+    for row, line in enumerate(lines):
+        marker = FENCE.fullmatch(line)
+        if fence is not None:
+            rows.add(row)
+            if closes_fence(line, fence):
+                fence = None
+        elif marker and not (marker[1][0] == "`" and "`" in marker[2]):
+            fence = marker
+            rows.add(row)
+    return rows
+
+
+def split_lines(body: str) -> list[tuple[str, str]]:
+    """(content, line ending) pairs following str.splitlines, the editor's line model."""
+    pairs = []
+    for line in body.splitlines(keepends=True):
+        content = line.splitlines()[0]
+        pairs.append((content, line[len(content):]))
+    return pairs
+
+
 # `due:2026-09-20`, or the 📅 marker used by Obsidian's Tasks plugin.
 DUE = re.compile(r"(?:(?<!\S)due:|\U0001F4C5\uFE0F?[ \t]*)(\d{4}-\d{2}-\d{2})(?!\S)")
 
@@ -37,26 +78,22 @@ def due_date(text: str) -> str | None:
     return None
 
 
+def fenced_pairs(body: str) -> tuple[list[tuple[str, str]], set[int]]:
+    """Line contents/endings together with their fenced-code rows."""
+    pairs = split_lines(body)
+    return pairs, fenced_rows([content for content, _ in pairs])
+
+
 def task_lines(body: str):
     """(line number, line without its ending, ending, match) for each task outside fenced code.
 
     Lines follow str.splitlines, the same model as the editor, so line numbers
     match the rows shown in the app.
     """
-    fence = None
-    for number, line in enumerate(body.splitlines(keepends=True), start=1):
-        content = line.splitlines()[0] if line.splitlines() else ""
-        ending = line[len(content):]
-        marker = FENCE.fullmatch(content)
-        if marker:
-            run, suffix = marker.groups()
-            if fence is None:
-                fence = run
-            elif run[0] == fence[0] and len(run) >= len(fence) and not suffix.strip():
-                fence = None
-            continue
-        if fence is None and (match := TASK.fullmatch(content)):
-            yield number, content, ending, match
+    pairs, fenced = fenced_pairs(body)
+    for row, (content, ending) in enumerate(pairs):
+        if row not in fenced and (match := TASK.fullmatch(content)):
+            yield row + 1, content, ending, match
 
 
 def note_tasks(note) -> list[Task]:
@@ -68,7 +105,7 @@ def gather(notes, *, include_done: bool = False, due_by: str | None = None) -> l
     """Tasks from the given notes: dated tasks first by due date, then the rest in note order."""
     found = []
     for note in notes:
-        if note.collection == "trash" or getattr(note, "locked", False):
+        if note.collection == "trash" or note.locked:
             continue
         found.extend(task for task in note_tasks(note)
                      if (include_done or not task.done) and (due_by is None or (task.due and task.due <= due_by)))

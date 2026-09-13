@@ -6,13 +6,19 @@ from pathlib import Path
 import weakref
 
 from .filesystem import fs as os
-from .store import (MAX_SETTINGS_BYTES, create_private_temp, read_regular_at,
-                    read_regular_file, validate_workspace, vault_lock)
+from .store import (COLLECTIONS, MAX_SETTINGS_BYTES, create_private_temp, read_regular_at,
+                    read_regular_file, replace_at, unlink_quietly, validate_workspace, vault_lock)
 
 THEMES = ('jotline', 'nord', 'gruvbox', 'catppuccin-mocha', 'dracula', 'tokyo-night',
           'solarized-dark', 'solarized-light', 'textual-light',
           'monokai', 'flexoki', 'catppuccin-latte', 'catppuccin-frappe',
           'catppuccin-macchiato', 'rose-pine', 'rose-pine-moon', 'rose-pine-dawn')
+SORT_ORDERS = ('updated', 'created', 'title')
+# What a view or the sidebar can show; new thoughts can only land somewhere not archived.
+VIEW_COLLECTIONS = ('all', 'starred', *COLLECTIONS)
+DEFAULT_COLLECTIONS = ('inbox', 'projects', 'areas', 'resources')
+BOOLEAN_SETTINGS = ('line_numbers', 'soft_wrap', 'highlight_line', 'markdown_highlighting', 'smart_lists',
+                    'focus_on_start', 'show_hints')
 
 
 HOTKEY_ACTIONS = {
@@ -55,14 +61,11 @@ RESERVED_HOTKEYS = {"ctrl+" + letter for letter in "acehijkmuvxyz"}
 # retain their nearest load baseline.
 _BASELINES: dict[Path, list[tuple[dict, dict | None]]] = {}
 _OBJECT_BASELINES: dict[int, tuple[weakref.ReferenceType, tuple[dict, dict | None]]] = {}
-
-
-def _settings_values(settings: "Settings") -> dict:
-    return asdict(settings)
+_NO_BASELINE = object()
 
 
 def _remember(path: Path, settings: "Settings", disk: dict | None) -> None:
-    values = _settings_values(settings)
+    values = asdict(settings)
     key = path.absolute()
     entries = _BASELINES.setdefault(key, [])
     entry = (values, disk)
@@ -74,27 +77,18 @@ def _remember(path: Path, settings: "Settings", disk: dict | None) -> None:
 
 
 def _nearest_baseline(path: Path, settings: "Settings", desired: dict) -> tuple[dict, dict | None] | object:
-    missing = _NO_BASELINE
     exact = _OBJECT_BASELINES.get(id(settings))
     if exact is not None and exact[0]() is settings:
         return exact[1]
     entries = _BASELINES.get(path.absolute(), [])
-    if entries and any(values == desired for values, _ in entries[:-1]) and entries[-1][0] != desired:
+    if not entries:
+        return _NO_BASELINE
+    if any(values == desired for values, _ in entries[:-1]) and entries[-1][0] != desired:
         # A rebuilt dataclass that exactly returns to an older saved value is a
         # normal explicit reversion; compare it with the most recent baseline.
         return entries[-1]
-    best: tuple[int, dict | None] | None = None
-    best_entry = None
-    for entry in entries:
-        values, disk = entry
-        distance = sum(values.get(key) != value for key, value in desired.items())
-        if best is None or distance < best[0]:
-            best = (distance, disk)
-            best_entry = entry
-    return missing if best_entry is None else best_entry
-
-
-_NO_BASELINE = object()
+    # Otherwise the baseline whose values differ from the desired ones in the fewest fields.
+    return min(entries, key=lambda entry: sum(entry[0].get(key) != value for key, value in desired.items()))
 
 
 @dataclass
@@ -140,9 +134,9 @@ class Settings:
             if not isinstance(view['query'], str) or len(view['query']) > 2000:
                 raise ValueError("View query must be text under 2,000 characters")
             compile_query(view['query'])
-            if view['collection'] not in ('all', 'starred', 'inbox', 'projects', 'areas', 'resources', 'archive', 'trash'):
+            if view['collection'] not in VIEW_COLLECTIONS:
                 raise ValueError("Invalid view collection")
-            if view['sort'] not in ('updated', 'created', 'title') or view['theme'] not in (*THEMES, ''):
+            if view['sort'] not in SORT_ORDERS or view['theme'] not in (*THEMES, ''):
                 raise ValueError("Invalid view sort or theme")
 
         if not isinstance(self.hotkeys, dict) or set(self.hotkeys) - HOTKEY_ACTIONS.keys():
@@ -168,8 +162,7 @@ class Settings:
             raise ValueError("At most 256 workspace names may be saved")
         for name in self.workspace_names:
             validate_workspace(name)
-        for name in ('line_numbers', 'soft_wrap', 'highlight_line', 'markdown_highlighting', 'smart_lists',
-                     'focus_on_start', 'show_hints'):
+        for name in BOOLEAN_SETTINGS:
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f'{name} must be true or false')
         if self.theme not in THEMES:
@@ -178,11 +171,11 @@ class Settings:
             raise ValueError('Sidebar width must be 22–60 columns')
         if type(self.autosave_seconds) not in (int, float) or not 0.2 <= self.autosave_seconds <= 5:
             raise ValueError('Autosave interval must be 0.2–5 seconds')
-        if self.sort_order not in ('updated', 'created', 'title'):
+        if self.sort_order not in SORT_ORDERS:
             raise ValueError('Unknown sort order')
         if self.startup not in ('new', 'daily'):
             raise ValueError('Unknown startup page')
-        if self.default_collection not in ('inbox', 'projects', 'areas', 'resources'):
+        if self.default_collection not in DEFAULT_COLLECTIONS:
             raise ValueError('Unknown default collection')
         if not isinstance(self.daily_template, str) or len(self.daily_template) > 20000:
             raise ValueError('Daily template must be text under 20,000 characters')
@@ -258,13 +251,12 @@ class Settings:
                 # Never overwrite bytes that could not be understood; keep them
                 # next to the fresh file so nothing hand-written is lost.
                 from .history import stamp
-                os.replace(path.name, f'{path.name}.invalid-{stamp()}.json',
-                           src_dir_fd=directory, dst_dir_fd=directory)
-            desired = _settings_values(self)
+                replace_at(directory, path.name, f'{path.name}.invalid-{stamp()}.json')
+            desired = asdict(self)
             baseline = _nearest_baseline(path, self, desired)
             if current is not None and baseline is not _NO_BASELINE and baseline[1] is not None:
                 merged = dict(current)
-                defaults = _settings_values(Settings())
+                defaults = asdict(Settings())
                 # Values that failed validation on disk are replaced, never merged.
                 _, rejected = Settings._partial(current)
                 for key, value in desired.items():
@@ -275,7 +267,7 @@ class Settings:
                 known = {field.name for field in fields(Settings)}
                 effective = Settings(**{key: value for key, value in merged.items() if key in known})
                 effective.validate()
-                desired = _settings_values(effective)
+                desired = asdict(effective)
                 output = {**merged, **desired}
             else:
                 output = desired
@@ -283,7 +275,7 @@ class Settings:
             _remember(path, self, output)
 
     def _save_locked(self, path: Path, data: dict | None = None, directory: int | None = None):
-        output = json.dumps(_settings_values(self) if data is None else data, indent=2, ensure_ascii=False) + '\n'
+        output = json.dumps(asdict(self) if data is None else data, indent=2, ensure_ascii=False) + '\n'
         if len(output.encode('utf-8')) > MAX_SETTINGS_BYTES:
             raise ValueError('Settings exceed the file size limit')
         if directory is None:
@@ -302,12 +294,9 @@ class Settings:
                 stream.write(output)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(temp, path.name, src_dir_fd=directory, dst_dir_fd=directory)
+            replace_at(directory, temp, path.name)
             os.fsync(directory)
         finally:
-            try:
-                os.unlink(temp, dir_fd=directory)
-            except FileNotFoundError:
-                pass
+            unlink_quietly(directory, temp)
             if own_directory:
                 os.close(directory)

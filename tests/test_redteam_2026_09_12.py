@@ -1,5 +1,4 @@
 """Regressions from the 2026-09-12 multi-agent red team (storage, CLI, parsing, UI)."""
-import asyncio
 from dataclasses import replace
 import errno
 import json
@@ -25,7 +24,7 @@ from jotline.settings import Settings
 from jotline.store import Vault
 import jotline.store as store
 from jotline.templates import Templates
-from jotline.workflows import headings
+from jotline.markdown_editor import headings, heading_title
 
 posix_only = pytest.mark.skipif(os.name == "nt", reason="POSIX-only behaviour")
 
@@ -298,11 +297,12 @@ def test_broken_pipe_exits_quietly(tmp_path):
 # --- parsing and search ---------------------------------------------------------
 
 def test_headings_regex_is_linear():
-    line = "# " + "#" * 20000 + " x"
+    title = "x" + " " * 40000 + "x"
     started = time.perf_counter()
-    assert list(headings(line)) == [(0, "#" * 20000 + " x")]
-    assert time.perf_counter() - started < 0.25
-    assert list(headings("## Title ##\n# ##\n#\n# a#b #\n")) == [(0, "Title"), (3, "a#b")]
+    assert headings(["# " + title]) == [(0, 1, title)]
+    assert heading_title(title) == title
+    assert time.perf_counter() - started < 0.05
+    assert headings("## Title ##\n# ##\n#\n# a#b #\n".split("\n")) == [(0, 2, "Title"), (3, 1, "a#b")]
 
 
 def test_text_query_does_not_match_random_id_digits(tmp_path):

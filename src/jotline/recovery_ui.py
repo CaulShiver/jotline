@@ -5,6 +5,9 @@ from textual.containers import Vertical, VerticalScroll
 from .modal import Modal
 from textual.widgets import Button, Label, TextArea
 
+# Rendering two huge read-only editors would stall the dialog; the full draft is still preserved.
+COMPARE_LIMIT = 100_000
+
 
 class RecoveryScreen(Modal[str | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Keep editing')]
@@ -25,12 +28,12 @@ class RecoveryScreen(Modal[str | None]):
             yield Label('This note changed outside Jotline')
             with VerticalScroll(id='recovery-scroll'):
                 yield Label('Your on-screen draft (unsaved)')
-                yield TextArea(self.local_body[:100_000], read_only=True, id='recovery-local')
+                yield TextArea(self.local_body[:COMPARE_LIMIT], read_only=True, id='recovery-local')
                 yield Label('External version on disk' if self.external_body is not None
                             else 'External version unavailable: ' + self.external_error, markup=False)
-                yield TextArea((self.external_body or '')[:100_000], read_only=True, id='recovery-external')
-                if len(self.local_body) > 100_000 or len(self.external_body or '') > 100_000:
-                    yield Label('Comparison limited to 100,000 characters. The full draft will be preserved.')
+                yield TextArea((self.external_body or '')[:COMPARE_LIMIT], read_only=True, id='recovery-external')
+                if len(self.local_body) > COMPARE_LIMIT or len(self.external_body or '') > COMPARE_LIMIT:
+                    yield Label(f'Comparison limited to {COMPARE_LIMIT:,} characters. The full draft will be preserved.')
                 yield Label('Both save options first create a separate inbox recovery copy of your full draft.')
                 yield Button('Save copy, then review external version', id='preserve-reload',
                              disabled=self.external_body is None, variant='primary')
@@ -40,6 +43,3 @@ class RecoveryScreen(Modal[str | None]):
     @on(Button.Pressed)
     def choose(self, event):
         self.dismiss(None if event.button.id == 'cancel' else event.button.id)
-
-    def action_cancel(self):
-        self.dismiss(None)

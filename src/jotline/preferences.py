@@ -5,7 +5,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from .modal import Modal
 from textual.widgets import Button, Input, Label, Select, Static, Switch, TextArea
-from .settings import Settings, THEMES, HOTKEY_ACTIONS
+from .settings import BOOLEAN_SETTINGS, DEFAULT_COLLECTIONS, HOTKEY_ACTIONS, Settings, THEMES
 
 
 class Preferences(Modal[Settings | None]):
@@ -41,17 +41,17 @@ class Preferences(Modal[Settings | None]):
             yield Static('Alt+1 Appearance · Alt+2 Editor · Alt+3 Shortcuts · Alt+4 Daily template',
                          id='preferences-outline')
             with VerticalScroll(id='preferences-scroll'):
-                yield Label('Appearance', id='section-appearance', classes='pref-section')
+                yield Label('Appearance', classes='pref-section')
                 yield Label('Theme', classes='pref-label')
                 yield Select([(t.replace('-', ' ').title(), t) for t in THEMES], value=s.theme, allow_blank=False, id='pref-theme')
                 for name, title, options in (
                     ('sort_order', 'Sort notes (stars stay first)', [('Last edited', 'updated'), ('Newest created', 'created'), ('Title A–Z', 'title')]),
                     ('startup', 'When Jotline opens', [('Blank thought', 'new'), ("Today’s daily log", 'daily')]),
-                    ('default_collection', 'New thoughts go to', [(c.title(), c) for c in ('inbox', 'projects', 'areas', 'resources')]),
+                    ('default_collection', 'New thoughts go to', [(c.title(), c) for c in DEFAULT_COLLECTIONS]),
                 ):
                     yield Label(title, classes='pref-label')
                     yield Select(options, value=getattr(s, name), allow_blank=False, id='pref-' + name)
-                yield Label('Editor and layout', id='section-editor', classes='pref-section')
+                yield Label('Editor and layout', classes='pref-section')
                 for name, title in (('line_numbers', 'Line numbers'), ('soft_wrap', 'Wrap long lines'),
                                     ('highlight_line', 'Highlight current line'),
                                     ('markdown_highlighting', 'Highlight Markdown syntax'),
@@ -65,7 +65,7 @@ class Preferences(Modal[Settings | None]):
                 yield Input(str(s.sidebar_width), type='integer', id='pref-sidebar_width')
                 yield Label('Autosave interval · 0.2–5 seconds', classes='pref-label')
                 yield Input(str(s.autosave_seconds), type='number', id='pref-autosave_seconds')
-                yield Label('Keyboard shortcuts', id='section-shortcuts', classes='pref-section')
+                yield Label('Keyboard shortcuts', classes='pref-section')
                 yield Static('Use ctrl+letter, alt+letter, or f2–f12. Editing keys are reserved. '
                              'Leave optional Markdown shortcuts blank to keep them unassigned. '
                              'F1 always opens Settings; Esc closes dialogs. Ctrl+S saves this dialog. Changes apply when saved.')
@@ -74,7 +74,7 @@ class Preferences(Modal[Settings | None]):
                     yield Label(label, classes='pref-label')
                     yield Input(hotkeys[action], placeholder='Unassigned' if not default else '', id='hotkey-' + action)
                 yield Button('Reset hotkeys', id='reset-hotkeys')
-                yield Label('Daily template', id='section-template', classes='pref-section')
+                yield Label('Daily template', classes='pref-section')
                 yield Label('Daily template · {{date}} becomes today’s date; existing logs stay unchanged', classes='pref-label')
                 yield TextArea(s.daily_template, tab_behavior='focus', id='daily-template')
             yield Static('', id='preferences-error', markup=False)
@@ -82,9 +82,6 @@ class Preferences(Modal[Settings | None]):
                 yield Button('Save', variant='primary', id='save-preferences')
                 yield Button('Cancel', id='cancel-preferences')
                 yield Button('Use defaults', id='default-preferences')
-
-    def action_cancel(self):
-        self.dismiss(None)
 
     def action_jump(self, section: str):
         targets = {
@@ -101,8 +98,7 @@ class Preferences(Modal[Settings | None]):
             data = asdict(self.settings)
             for name in ('theme', 'sort_order', 'startup', 'default_collection'):
                 data[name] = self.query_one('#pref-' + name, Select).value
-            for name in ('line_numbers', 'soft_wrap', 'highlight_line', 'markdown_highlighting', 'smart_lists',
-                         'focus_on_start', 'show_hints'):
+            for name in BOOLEAN_SETTINGS:
                 data[name] = self.query_one('#pref-' + name, Switch).value
             sidebar_width = self.query_one('#pref-sidebar_width', Input).value.strip()
             autosave_seconds = self.query_one('#pref-autosave_seconds', Input).value.strip()

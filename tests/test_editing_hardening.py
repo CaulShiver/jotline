@@ -53,7 +53,7 @@ async def test_rejected_single_replace_preserves_text_selection_and_status(tmp_p
         app.screen.query_one('#replace-value', Input).value = 'much longer'
         await pilot.pause()
         before = editor.selection
-        monkeypatch.setattr(workflows, 'MAX_NOTE_BYTES', 4103)
+        monkeypatch.setattr(workflows, 'EDIT_LIMIT_BYTES', 7)
         app.screen.replace_matches()
         assert editor.text == 'cat cat'
         assert editor.selection == before

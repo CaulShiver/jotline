@@ -21,6 +21,10 @@ SCRYPT_N = 2 ** 17
 SCRYPT_R = 8
 SCRYPT_P = 1
 MIN_PASSPHRASE = 8
+KEY_BYTES = 32  # AES-256 note key
+SALT_BYTES = 16
+NONCE_BYTES = 12  # The standard AES-GCM nonce size
+TAG_BYTES = 16  # AES-GCM appends this authentication tag to every ciphertext
 MISSING_LIBRARY = ("Note encryption needs the cryptography package; install it with "
                    "uv tool install 'jotline[encryption]' or pip install cryptography")
 LOCKED = "This note is encrypted; unlock encrypted notes first"
@@ -54,7 +58,7 @@ def check_passphrase(passphrase: str) -> str:
 def _derive(passphrase: str, salt: bytes, n: int, r: int, p: int) -> bytes:
     # scrypt needs about 128 * n * r bytes; allow that plus headroom.
     return hashlib.scrypt(passphrase.encode("utf-8"), salt=salt, n=n, r=r, p=p,
-                          maxmem=256 * n * r * p + 16 * 1024 * 1024, dklen=32)
+                          maxmem=256 * n * r * p + 16 * 1024 * 1024, dklen=KEY_BYTES)
 
 
 def _b64(data: bytes) -> str:
@@ -84,7 +88,7 @@ class KeyFile:
 
     @classmethod
     def create(cls, passphrase: str, note_key: bytes, *, n: int = SCRYPT_N) -> "KeyFile":
-        salt, nonce = os.urandom(16), os.urandom(12)
+        salt, nonce = os.urandom(SALT_BYTES), os.urandom(NONCE_BYTES)
         wrapping = _derive(check_passphrase(passphrase), salt, n, SCRYPT_R, SCRYPT_P)
         return cls(salt, n, SCRYPT_R, SCRYPT_P, nonce, _aead(wrapping).encrypt(nonce, note_key, _KEY_CONTEXT))
 
@@ -115,27 +119,27 @@ class KeyFile:
         if (not all(type(value) is int for value in (n, r, p)) or not 2 ** 10 <= n <= 2 ** 20
                 or n & (n - 1) or not 1 <= r <= 16 or not 1 <= p <= 4):
             raise EncryptionError("The encryption key file has unsupported settings")
-        return cls(_unb64(data.get("salt"), 16), n, r, p, _unb64(data.get("nonce"), 12),
-                   _unb64(data.get("wrapped"), 48))
+        return cls(_unb64(data.get("salt"), SALT_BYTES), n, r, p, _unb64(data.get("nonce"), NONCE_BYTES),
+                   _unb64(data.get("wrapped"), KEY_BYTES + TAG_BYTES))
 
 
 class NoteCipher:
     """Seals note bodies with the unlocked note key, bound to the note ID."""
 
     def __init__(self, note_key: bytes):
-        if len(note_key) != 32:
+        if len(note_key) != KEY_BYTES:
             raise EncryptionError("The encryption key file is damaged")
         self._aead = _aead(note_key)
 
     def seal(self, note_id: str, body: str) -> str:
-        nonce = os.urandom(12)
+        nonce = os.urandom(NONCE_BYTES)
         data = nonce + self._aead.encrypt(nonce, body.encode("utf-8"), _NOTE_CONTEXT + note_id.encode("ascii"))
         return MARKER + "\n" + "\n".join(textwrap.wrap(_b64(data), 76)) + "\n"
 
     def open(self, note_id: str, sealed: str) -> str:
         data = sealed_bytes(sealed)
         try:
-            plain = self._aead.decrypt(data[:12], data[12:], _NOTE_CONTEXT + note_id.encode("ascii"))
+            plain = self._aead.decrypt(data[:NONCE_BYTES], data[NONCE_BYTES:], _NOTE_CONTEXT + note_id.encode("ascii"))
         except _invalid_tag():
             raise EncryptionError("Encrypted note could not be decrypted; the file is damaged or was "
                                   "encrypted with another vault's key") from None
@@ -153,10 +157,10 @@ def sealed_bytes(sealed: str) -> bytes:
         data = base64.b64decode("".join(sealed.split()[2:]), validate=True)
     except (binascii.Error, ValueError):
         raise EncryptionError("Encrypted note text is damaged") from None
-    if len(data) < 28:
+    if len(data) < NONCE_BYTES + TAG_BYTES:
         raise EncryptionError("Encrypted note text is damaged")
     return data
 
 
 def new_note_key() -> bytes:
-    return os.urandom(32)
+    return os.urandom(KEY_BYTES)

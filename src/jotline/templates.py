@@ -124,7 +124,6 @@ class Templates:
         remaining = 64
 
         def expand(text, stack):
-            nonlocal remaining
             def substitute(match):
                 nonlocal remaining
                 key = match[1]
