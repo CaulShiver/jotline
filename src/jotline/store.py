@@ -620,12 +620,23 @@ class Vault:
             self._save_locked(note, directory)
             return note
 
-    def append_note(self, note_id: str, body: str, workspace: str, *, prepend: bool = False) -> Note:
-        """Update a target under one lock, preserving piped text exactly."""
+    def append_note(self, note_id: str, body: str, workspace: str, *, prepend: bool = False,
+                    line_break: bool = False) -> Note:
+        """Update a target under one lock, preserving piped text exactly.
+
+        With line_break, text that would run into the existing body is joined
+        on a new line in the note's own newline style.
+        """
         with self.locked() as directory:
             note = self.read(note_id, directory=directory)
             if note.workspace != workspace:
                 raise ValueError("Note is in another workspace; pass --workspace NAME")
+            if line_break and note.body and body:
+                newline = "\r\n" if "\r\n" in note.body else ("\r" if "\r" in note.body else "\n")
+                if prepend and not body.endswith(("\n", "\r")):
+                    body += newline
+                elif not prepend and not note.body.endswith(("\n", "\r")) and not body.startswith(("\n", "\r")):
+                    body = newline + body
             note.body = body + note.body if prepend else note.body + body
             self._save_locked(note, directory)
             return note

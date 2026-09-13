@@ -324,6 +324,29 @@ def stdin_is_interactive() -> bool:
     return sys.stdin is None or sys.stdin.isatty()
 
 
+def utf8_error_message(args: argparse.Namespace, error: UnicodeDecodeError) -> str:
+    if args.command == "import":
+        source = f"{terminal_text(args.file)} is"
+    elif args.command in {"capture", "append", "prepend"} and not args.text:
+        source = "Piped input is"
+    else:
+        source = "The note file is"
+    return f"{source} not valid UTF-8 text (bad byte at position {error.start}); convert it to UTF-8 and retry"
+
+
+def missing_file_message(args: argparse.Namespace, error: FileNotFoundError) -> str:
+    # Windows reports a missing file without its name, so check the target itself.
+    note_id = getattr(args, "id", None)
+    vault = Path(args.vault).expanduser()
+    if note_id and vault.is_dir() and not (vault / f"{note_id}.md").exists():
+        return f"No note with ID {terminal_text(note_id)}; run jotline list to find IDs"
+    if args.command == "import" and not args.file.exists():
+        return f"No such file or directory: {terminal_text(args.file)}"
+    if error.filename is None:
+        return terminal_text(error)
+    return f"No such file or directory: {terminal_text(os.fsdecode(error.filename))}"
+
+
 def main() -> None:
     if sys.platform == "win32":
         for stream in (sys.stdout, sys.stderr):
@@ -344,6 +367,8 @@ def main() -> None:
         update = sub.add_parser(command, help=f'{command.title()} text to an existing note')
         update.add_argument('id')
         update.add_argument('text', nargs='*')
+        update.add_argument('--no-newline', action='store_true',
+                            help='Join the text exactly, without adding a line break')
     opening = sub.add_parser('open', help='Open a note by ID in the terminal editor')
     opening.add_argument('id')
     sub.add_parser('actions', help='List local actions')
@@ -427,7 +452,8 @@ def main() -> None:
             body = ' '.join(args.text) if args.text else (read_capture_input() if not stdin_is_interactive() else '')
             if not body:
                 parser.error('Provide text or pipe UTF-8 text to append/prepend')
-            note = vault.append_note(args.id, body, workspace, prepend=args.command == 'prepend')
+            note = vault.append_note(args.id, body, workspace, prepend=args.command == 'prepend',
+                                     line_break=not args.no_newline)
             print(note.id)
         elif args.command == 'actions':
             for name in settings.actions:
@@ -520,6 +546,10 @@ def main() -> None:
         devnull = os.open(os.devnull, os.O_WRONLY)
         os.dup2(devnull, sys.stdout.fileno())
         raise SystemExit(0)
+    except UnicodeDecodeError as error:
+        parser.exit(1, f"jotline: {utf8_error_message(args, error)}\n")
+    except FileNotFoundError as error:
+        parser.exit(1, f"jotline: {missing_file_message(args, error)}\n")
     except (OSError, ValueError) as error:
         parser.exit(1, f"jotline: {terminal_text(error)}\n")
 

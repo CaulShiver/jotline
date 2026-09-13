@@ -16,14 +16,14 @@ run one of these commands in its download folder. Git is not required.
 With [uv](https://docs.astral.sh/uv/):
 
 ```sh
-uv tool install ./jotline-0.9.2-py3-none-any.whl
+uv tool install ./jotline-0.9.3-py3-none-any.whl
 jotline
 ```
 
 Or with pipx:
 
 ```sh
-pipx install ./jotline-0.9.2-py3-none-any.whl
+pipx install ./jotline-0.9.3-py3-none-any.whl
 jotline
 ```
 
@@ -455,8 +455,8 @@ side effects remain applied; review before retrying to avoid duplicate output.
 Actions cannot append a note to itself or access a different workspace.
 
 ```sh
-printf '\nNext step' | jotline append NOTE_ID
-printf 'Introduction\n' | jotline prepend NOTE_ID
+jotline append NOTE_ID 'Next step'
+printf 'Introduction' | jotline prepend NOTE_ID
 jotline open NOTE_ID
 jotline list 'tag:work -blocked' --json
 jotline actions
@@ -464,7 +464,9 @@ jotline run ACTION_NAME NOTE_ID > output.md
 jotline run ACTION_NAME NOTE_ID --raw
 ```
 
-Append/prepend preserve the supplied text exactly, without adding separators.
+Append/prepend put the text on its own line: when it would otherwise run into
+the note, they add one line break in the note's newline style. Pass
+`--no-newline` to join the text exactly as supplied.
 `list --json` returns metadata and tags, not note bodies. `open` takes precedence
 over the startup-page preference. Use `--workspace NAME` before a subcommand to
 choose a different workspace. All updates use normal locking, history and conflict
@@ -472,7 +474,7 @@ detection. Recipes execute only these built-in steps; there is no shell evaluati
 
 ## Status
 
-Version 0.9.2 is an early release. It offers Markdown source editing, rendered
+Version 0.9.3 is an early release. It offers Markdown source editing, rendered
 preview, configurable local actions, and guided import/recovery workflows. See
 [CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,
 cloud sync, plugins, dictation and system-wide capture hotkeys remain future work.

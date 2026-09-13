@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.3 — 2026-09-12
+
+- `jotline append` and `prepend` put the text on its own line. They add one
+  line break in the note's newline style when the text would otherwise run into
+  the note, which merged words and created false tags such as `#ideaappended`.
+  Pass `--no-newline` for the previous exact join. Actions are unchanged.
+- CLI errors are plain language: a missing note reads "No note with ID …", a
+  missing file no longer shows `[Errno 2]`, and non-UTF-8 input names its source
+  instead of printing a Python codec error.
+
 ## 0.9.2 — 2026-09-12
 
 Fixes from the 2026-09-12 multi-agent red team (storage, CLI, parsing, UI).

@@ -1,5 +1,17 @@
 # Release verification
 
+## 0.9.3
+
+- Complete locked suite on Linux/Python 3.12: **372 passed, 3 platform-specific skips**,
+  including 12 new tests for append/prepend line joining and CLI error messages.
+- Fresh 0.9.3 installed-wheel application smoke and POSIX PTY smoke passed.
+- Installed wheel checked by hand: `append` puts text on its own line and a
+  missing note ID prints the plain-language message.
+- Locked dependency resolution, release identity, checksum generation, workflow
+  validation (`actionlint`) and `git diff --check` passed.
+- Windows reports missing files without a filename, so the new messages check
+  the note or import path directly; the tag workflow's Windows jobs verify this.
+
 ## 0.9.2
 
 - Complete locked suite on Linux/Python 3.12: **360 passed, 3 platform-specific skips**,
