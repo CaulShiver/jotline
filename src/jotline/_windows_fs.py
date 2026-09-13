@@ -8,6 +8,9 @@ points without a check/open race. File descriptors always use binary mode.
 See https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
 Windows has no equivalent of POSIX directory fsync; file contents are flushed,
 but directory metadata durability across power loss is filesystem dependent.
+The mode argument of open() is accepted for interface parity but has no effect:
+new files inherit the folder's ACL, so private temporary files are exactly as
+private as the vault folder itself.
 """
 from contextlib import contextmanager
 import ctypes
@@ -185,11 +188,14 @@ class WindowsFS:
         finally:
             self.close(fd)
 
+    def _as_path(self, path):
+        return self._directory(path).path if isinstance(path, int) else path
+
     def scandir(self, path):
-        return os.scandir(self._directory(path).path if isinstance(path, int) else path)
+        return os.scandir(self._as_path(path))
 
     def listdir(self, path):
-        return os.listdir(self._directory(path).path if isinstance(path, int) else path)
+        return os.listdir(self._as_path(path))
 
     def stat(self, path, *, dir_fd=None, follow_symlinks=True):
         return os.stat(self._path(path, dir_fd), follow_symlinks=follow_symlinks)

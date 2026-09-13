@@ -5,10 +5,10 @@ from textual import on
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from .modal import Modal
-from textual.widgets import Button, Input, Label, Select, Static
+from textual.widgets import Button, Input, Label, Select, Static, TextArea
 
-from .settings import THEMES
-from .store import COLLECTIONS, validate_workspace
+from .settings import SORT_ORDERS, THEMES, VIEW_COLLECTIONS
+from .store import validate_workspace
 
 
 class ViewEditor(Modal[tuple[str, dict] | None]):
@@ -35,10 +35,10 @@ class ViewEditor(Modal[tuple[str, dict] | None]):
             yield Label('Search · words, #tags, -excluded, updated-before:YYYY-MM-DD')
             yield Input(self.view['query'], id='view-query')
             yield Label('Collection')
-            yield Select([(x.title(), x) for x in ('all', 'starred', *COLLECTIONS)],
+            yield Select([(x.title(), x) for x in VIEW_COLLECTIONS],
                          value=self.view['collection'], allow_blank=False, id='view-collection')
             yield Label('Sort')
-            yield Select([(x.title(), x) for x in ('updated', 'created', 'title')],
+            yield Select([(x.title(), x) for x in SORT_ORDERS],
                          value=self.view['sort'], allow_blank=False, id='view-sort')
             yield Label('Theme')
             yield Select([('Use settings theme', '')] + [(x, x) for x in THEMES],
@@ -47,9 +47,6 @@ class ViewEditor(Modal[tuple[str, dict] | None]):
             with Horizontal(id='view-buttons'):
                 yield Button('Apply' if self.filters else 'Save', variant='primary', id='view-save')
                 yield Button('Cancel', id='view-cancel')
-
-    def action_cancel(self):
-        self.dismiss(None)
 
     @on(Button.Pressed, '#view-cancel')
     def cancel_button(self):
@@ -100,7 +97,6 @@ class Walkthrough(Modal[None]):
 
     @on(Button.Pressed, '#walkthrough-close')
     def action_done(self):
-        from textual.widgets import TextArea
         self.dismiss(None)
         self.app.query_one('#editor', TextArea).focus()
 
@@ -119,7 +115,7 @@ class NavigationMixin:
 
     def browse_collections(self):
         from .app import Palette
-        self.push_screen(Palette([(c, c.title()) for c in ('all', 'starred', *COLLECTIONS)],
+        self.push_screen(Palette([(c, c.title()) for c in VIEW_COLLECTIONS],
                                  'Collections · choose where to look'),
                          lambda c: self.show_collection(c) if c else None)
 

@@ -15,6 +15,7 @@ from .store import (COLLECTIONS, MAX_NOTE_BYTES, Note, Vault, decode_problem, pi
 
 MAX_IMPORT_BYTES = 32 * 1024 * 1024
 MAX_IMPORT_ENTRIES = 1000
+IMPORT_SUFFIXES = ('.md', '.txt', '.draftsexport')
 
 
 @dataclass
@@ -137,6 +138,39 @@ def _jotline_note(vault, raw, workspace, default_collection):
     return note
 
 
+def _scan_folder(root: Path, recursive: bool, plan: ImportPlan) -> list[Path]:
+    """Importable files under a folder, bounded by MAX_IMPORT_ENTRIES and never following links."""
+    paths = []
+    pending = [root]
+    scanned = 0
+    while pending and scanned < MAX_IMPORT_ENTRIES:
+        folder = pending.pop()
+        try:
+            with _open_directory(folder) as directory, fs.scandir(directory) as children:
+                for entry in children:
+                    scanned += 1
+                    if scanned > MAX_IMPORT_ENTRIES:
+                        plan.warnings.append(f'Scan stopped at {MAX_IMPORT_ENTRIES} entries')
+                        break
+                    child = folder / entry.name
+                    try:
+                        info = entry.stat(follow_symlinks=False)
+                    except OSError as error:
+                        plan.warnings.append(f'{child.name}: {error}')
+                        continue
+                    if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
+                        plan.warnings.append(f'Skipped link: {child.name}')
+                    elif stat.S_ISDIR(info.st_mode) and recursive:
+                        pending.append(child)
+                    elif stat.S_ISREG(info.st_mode) and child.suffix.lower() in IMPORT_SUFFIXES:
+                        paths.append(child)
+        except OSError as error:
+            plan.warnings.append(f'{folder.name}: {error}')
+    if pending:
+        plan.warnings.append('Some subfolders were not scanned because the entry limit was reached')
+    return sorted(paths)
+
+
 def preview_import(vault: Vault, path: Path, workspace='default', default_collection='inbox',
                    duplicates='skip', recursive=False, encoding='utf-8', errors='strict') -> ImportPlan:
     validate_workspace(workspace)
@@ -150,35 +184,7 @@ def preview_import(vault: Vault, path: Path, workspace='default', default_collec
     total_bytes = 0
     total_records = 0
     path = path.expanduser().absolute()
-    info = path.lstat()
-    paths = []
-    if stat.S_ISDIR(info.st_mode):
-        pending = [path]
-        scanned = 0
-        while pending and scanned < MAX_IMPORT_ENTRIES:
-            folder = pending.pop()
-            try:
-                with _open_directory(folder) as directory, fs.scandir(directory) as children:
-                    for entry in children:
-                        scanned += 1
-                        if scanned > MAX_IMPORT_ENTRIES:
-                            plan.warnings.append(f'Scan stopped at {MAX_IMPORT_ENTRIES} entries')
-                            break
-                        child = folder / entry.name
-                        info = entry.stat(follow_symlinks=False)
-                        if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
-                            plan.warnings.append(f'Skipped link: {child.name}')
-                        elif stat.S_ISDIR(info.st_mode) and recursive:
-                            pending.append(child)
-                        elif stat.S_ISREG(info.st_mode) and child.suffix.lower() in ('.md', '.txt', '.draftsexport'):
-                            paths.append(child)
-            except OSError as error:
-                plan.warnings.append(f'{folder.name}: {error}')
-        if pending:
-            plan.warnings.append('Some subfolders were not scanned because the entry limit was reached')
-        paths.sort()
-    else:
-        paths = [path]
+    paths = _scan_folder(path, recursive, plan) if stat.S_ISDIR(path.lstat().st_mode) else [path]
     for source in paths:
         if total_bytes >= MAX_IMPORT_BYTES or total_records >= MAX_IMPORT_ENTRIES:
             plan.warnings.append('Import limit reached; split the source into smaller batches')
@@ -223,7 +229,7 @@ def preview_import(vault: Vault, path: Path, workspace='default', default_collec
                     plan.warnings.append(f'{label}: {error}')
         except UnicodeDecodeError as error:
             plan.warnings.append(f'{source.name}: {decode_problem(error, encoding)}')
-        except (OSError, ValueError, UnicodeError) as error:
+        except (OSError, ValueError) as error:
             plan.warnings.append(f'{source.name}: {error}')
     return plan
 

@@ -9,10 +9,11 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from .modal import Modal
 from textual.widgets import Button, Input, Label, OptionList, Select, Static, TextArea
 
-from .actions import BUILTIN_ACTIONS, preview_action, validate_actions
+from .actions import BUILTIN_ACTIONS, MAX_STEPS, STEP_TYPES, preview_action, truncate_preview, validate_actions
 from .action_history import ActionHistory, format_history
 from .action_recipes import merge_recipes, read_recipes, write_recipes
 
+# One label per entry in actions.STEP_TYPES; the builder looks every step type up here.
 STEP_LABELS = {'uppercase': 'Uppercase text', 'lowercase': 'Lowercase text', 'strip': 'Trim surrounding whitespace',
                'quote': 'Quote every line as Markdown',
                'template': 'Render template', 'append': 'Append to another note', 'archive': 'Archive source note',
@@ -68,7 +69,7 @@ class ActionEditor(Modal[tuple | None]):
             yield Input(self.recipe_name, placeholder='Name: lowercase letters, numbers, hyphens', id='recipe-name')
             yield Static('1. Select a step. 2. Choose its operation and value. 3. Apply step, then preview or save.')
             yield OptionList(id='recipe-steps')
-            yield Select([(label, key) for key, label in STEP_LABELS.items()], allow_blank=False, id='step-type')
+            yield Select([(STEP_LABELS[key], key) for key in STEP_TYPES], allow_blank=False, id='step-type')
             yield Static('Template: use {{body}}, {{selection}}, {{title}}, {{date}} or {{template:meeting}}.\nAppend: enter the target note ID from this workspace. Other steps need no value.')
             yield TextArea('', id='step-value')
             yield Button('Choose append target by title', id='step-target')
@@ -125,50 +126,61 @@ class ActionEditor(Modal[tuple | None]):
 
     @on(Button.Pressed)
     def button(self, event):
-        key = event.button.id
+        handlers = {'step-apply': self.apply_step, 'step-target': self.prompt_target, 'step-add': self.add_step,
+                    'step-remove': self.remove_step, 'step-up': lambda: self.move_step(-1),
+                    'step-down': lambda: self.move_step(1), 'recipe-preview': self.preview,
+                    'recipe-save': self.action_save, 'recipe-cancel': self.action_cancel}
         try:
-            index = self.query_one('#recipe-steps', OptionList).highlighted
-            if key == 'step-apply':
-                self.apply_step()
-            elif key == 'step-target':
-                from .app import Palette
-                targets = [(note.id, f'{note.title} · {note.collection} · {note.id}')
-                           for note in self.vault.notes()
-                           if note.workspace == self.note.workspace and note.id != self.note.id
-                           and note.collection != 'trash']
-                if not targets:
-                    raise ValueError('Create a target note in this workspace first')
-                self.app.push_screen(Palette(targets, 'Append target in this workspace'), self.choose_target)
-            elif key == 'step-add':
-                if len(self.steps) >= 16:
-                    raise ValueError('An action supports at most 16 steps')
-                if self.steps:
-                    self.apply_step()
-                self.steps.append({'type': 'strip'})
-                self.refresh_steps(len(self.steps) - 1)
-            elif key == 'step-remove' and index is not None:
-                if len(self.steps) == 1:
-                    raise ValueError('Keep at least one step; change its operation instead')
-                self.steps.pop(index)
-                self.refresh_steps(min(index, len(self.steps) - 1))
-            elif key in {'step-up', 'step-down'} and index is not None:
-                self.apply_step()
-                target = index + (-1 if key == 'step-up' else 1)
-                if 0 <= target < len(self.steps):
-                    self.steps[index], self.steps[target] = self.steps[target], self.steps[index]
-                    self.refresh_steps(target)
-            elif key == 'recipe-preview':
-                self.apply_step()
-                result, effects = preview_action(self.vault, self.note, self.steps, selection=self.selection)
-                self.app.push_screen(ActionReport('Preview — no changes made', '\n'.join(effects) +
-                    '\n\nTargets, conflicts and permissions are checked when run.\n\nSource text after action:\n\n' +
-                    result.body[:20000] + ('\n[Preview truncated at 20,000 characters]' if len(result.body) > 20000 else '')))
-            elif key == 'recipe-save':
-                self.action_save()
-            elif key == 'recipe-cancel':
-                self.action_cancel()
+            handlers[event.button.id]()
         except (ValueError, OSError) as error:
             self.notify(str(error), severity='error')
+
+    def selected_index(self):
+        return self.query_one('#recipe-steps', OptionList).highlighted
+
+    def prompt_target(self):
+        from .app import Palette
+        targets = [(note.id, f'{note.title} · {note.collection} · {note.id}')
+                   for note in self.vault.notes()
+                   if note.workspace == self.note.workspace and note.id != self.note.id
+                   and note.collection != 'trash']
+        if not targets:
+            raise ValueError('Create a target note in this workspace first')
+        self.app.push_screen(Palette(targets, 'Append target in this workspace'), self.choose_target)
+
+    def add_step(self):
+        if len(self.steps) >= MAX_STEPS:
+            raise ValueError(f'An action supports at most {MAX_STEPS} steps')
+        if self.steps:
+            self.apply_step()
+        self.steps.append({'type': 'strip'})
+        self.refresh_steps(len(self.steps) - 1)
+
+    def remove_step(self):
+        index = self.selected_index()
+        if index is None:
+            return
+        if len(self.steps) == 1:
+            raise ValueError('Keep at least one step; change its operation instead')
+        self.steps.pop(index)
+        self.refresh_steps(min(index, len(self.steps) - 1))
+
+    def move_step(self, delta):
+        index = self.selected_index()
+        if index is None:
+            return
+        self.apply_step()
+        target = index + delta
+        if 0 <= target < len(self.steps):
+            self.steps[index], self.steps[target] = self.steps[target], self.steps[index]
+            self.refresh_steps(target)
+
+    def preview(self):
+        self.apply_step()
+        result, effects = preview_action(self.vault, self.note, self.steps, selection=self.selection)
+        self.app.push_screen(ActionReport('Preview — no changes made', '\n'.join(effects) +
+            '\n\nTargets, conflicts and permissions are checked when run.\n\nSource text after action:\n\n' +
+            truncate_preview(result.body)))
 
     def choose_target(self, note_id):
         if note_id:
@@ -191,17 +203,14 @@ class ActionEditor(Modal[tuple | None]):
         except (ValueError, OSError) as error:
             self.notify(str(error), severity='error')
 
-    def action_cancel(self):
-        self.dismiss(None)
-
 
 class ActionWorkflowMixin:
-    def action_workflow_commands(self):
-        return [('action-builder', 'Create action with step-by-step builder', self.create_action_recipe),
-                ('action-recipes', 'Use a built-in action recipe', self.builtin_action_recipe),
-                ('manage-actions', 'Edit, rename, duplicate or export action', self.manage_action_recipe),
-                ('import-actions', 'Import shared action recipes', self.import_action_recipes),
-                ('action-history', 'View action run history', self.show_action_history)]
+    def action_workflow_commands(self, Command):
+        return [Command('action-builder', 'Create action with step-by-step builder', self.create_action_recipe),
+                Command('action-recipes', 'Use a built-in action recipe', self.builtin_action_recipe),
+                Command('manage-actions', 'Edit, rename, duplicate or export action', self.manage_action_recipe),
+                Command('import-actions', 'Import shared action recipes', self.import_action_recipes),
+                Command('action-history', 'View action run history', self.show_action_history)]
 
     def open_action_editor(self, name='', steps=None, original=None):
         # Snapshot current unsaved editor text; opening a builder must not save it.

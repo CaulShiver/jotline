@@ -13,8 +13,8 @@ from pathlib import Path
 import re
 import stat
 import sys
-import time
-from time import monotonic
+from time import monotonic, sleep
+from typing import NamedTuple
 from uuid import uuid4
 
 from .crypto import KEY_FILE, LOCKED, EncryptionError, KeyFile, NoteCipher, is_sealed, new_note_key
@@ -31,8 +31,22 @@ CACHE_TTL_SECONDS = 1.0
 MAX_SCAN_ENTRIES = 10_000
 MAX_SCAN_BYTES = 128 * 1024 * 1024
 MAX_DERIVED_ITEMS = 50_000
+# Editor insertions stop this far short of the file limit so the metadata header always fits.
+EDIT_LIMIT_BYTES = MAX_NOTE_BYTES - 4096
 
-FileSignature = tuple[int, int, int, int, int]
+CONFLICT_MESSAGE = "This note changed outside Jotline. Save a recovery copy to preserve your changes."
+OTHER_WORKSPACE = "Note is in another workspace; pass --workspace NAME"
+
+
+class FileSignature(NamedTuple):
+    """What must match for a cached parse of a note file to be reused."""
+
+    device: int
+    inode: int
+    size: int
+    mtime_ns: int
+    ctime_ns: int
+
 
 LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|[^\[\]]*)?\]\]")
 TAG = re.compile(r"(?<![\w#])#([\w][\w/-]*)", re.UNICODE)
@@ -51,6 +65,12 @@ def validate_workspace(name: str) -> str:
     if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,47}", name):
         raise ValueError("Workspace names need 1–48 lowercase letters, numbers, hyphens or underscores")
     return name
+
+
+def validate_note_id(note_id: str) -> str:
+    if not re.fullmatch(r"[a-zA-Z0-9_-]+", note_id):
+        raise ValueError("Invalid note ID")
+    return note_id
 
 
 def tagged_body(body: str, tags: str) -> str:
@@ -115,6 +135,14 @@ def create_private_temp(directory: int, prefix: str) -> tuple[int, str]:
 def replace_at(directory: int, source: str, target: str) -> None:
     """Replace within a pinned directory, failing closed if dir_fd is unsupported."""
     os.replace(source, target, src_dir_fd=directory, dst_dir_fd=directory)
+
+
+def unlink_quietly(directory: int, name: str) -> None:
+    """Remove a temporary file from a pinned directory; it may already be gone."""
+    try:
+        os.unlink(name, dir_fd=directory)
+    except FileNotFoundError:
+        pass
 
 
 # Hard links are refused on FAT/exFAT media, most SMB shares and shared folders.
@@ -215,15 +243,15 @@ def vault_lock(path: Path, timeout: float = LOCK_TIMEOUT_SECONDS):
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise OSError("Jotline lock is not a regular file")
-        deadline = time.monotonic() + timeout
+        deadline = monotonic() + timeout
         while True:
             try:
                 lock_file(fd)
                 break
             except BlockingIOError:
-                if time.monotonic() >= deadline:
+                if monotonic() >= deadline:
                     raise OSError("Vault is busy in another process; try saving again") from None
-                time.sleep(0.025)
+                sleep(0.025)
         try:
             yield directory
         finally:
@@ -239,11 +267,11 @@ def now() -> str:
 
 def file_signature(path: Path) -> FileSignature:
     if os.name == "nt":
-        return os.file_signature(path)
+        return FileSignature(*os.file_signature(path))
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode):
         raise OSError(f"Not a regular file: {path.name}")
-    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+    return FileSignature(info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
 @dataclass
@@ -316,6 +344,7 @@ class Vault:
             self.warnings.append(self.permission_warning)
 
     def locked(self):
+        """Hold the vault's write lock (unrelated to Note.locked, which means encrypted and sealed)."""
         return vault_lock(self.path, self.lock_timeout)
 
     def retain_warning(self, message: str) -> None:
@@ -323,9 +352,7 @@ class Vault:
         self.warnings.append(message)
 
     def file(self, note_id: str) -> Path:
-        if not re.fullmatch(r"[a-zA-Z0-9_-]+", note_id):
-            raise ValueError("Invalid note ID")
-        return self.path / f"{note_id}.md"
+        return self.path / f"{validate_note_id(note_id)}.md"
 
     def new(self, body: str = "", workspace: str = "default") -> Note:
         stamp = now()
@@ -399,7 +426,7 @@ class Vault:
                 break
             try:
                 signature = file_signature(file)
-                scanned_bytes += signature[2]
+                scanned_bytes += signature.size
                 if scanned_bytes > MAX_SCAN_BYTES:
                     self.warnings.append(f"Vault scan stopped after {MAX_SCAN_BYTES} bytes; results are incomplete")
                     break
@@ -433,7 +460,7 @@ class Vault:
         with self.locked() as directory:
             self._save_locked(note, directory, preserve_updated=preserve_updated)
 
-    def _save_locked(self, note: Note, directory: int, *, preserve_updated: bool = False) -> None:
+    def _check_saveable(self, note: Note) -> None:
         validate_workspace(note.workspace)
         if note.collection not in COLLECTIONS:
             raise ValueError("Unknown collection")
@@ -447,13 +474,16 @@ class Vault:
         if (note.locked and (note.body or not note.encrypted)) or (
                 note.encrypted and not note.locked and self.cipher is None):
             raise ValueError(LOCKED)
+
+    def _save_locked(self, note: Note, directory: int, *, preserve_updated: bool = False) -> None:
+        self._check_saveable(note)
         path = self.file(note.id)
         try:
             actual = read_regular_at(directory, path.name)
         except FileNotFoundError:
             actual = None
         if actual != note.original:
-            raise ConflictError("This note changed outside Jotline. Save a recovery copy to preserve your changes.")
+            raise ConflictError(CONFLICT_MESSAGE)
         previous = None
         if actual is not None:
             previous = self.parse_note(note.id, actual, None if note.locked else self.cipher)
@@ -517,7 +547,7 @@ class Vault:
             if latest != actual:
                 if latest is not None:
                     history.snapshot(self, note.id, latest, vault_directory=directory)
-                raise ConflictError("This note changed outside Jotline. Save a recovery copy to preserve your changes.")
+                raise ConflictError(CONFLICT_MESSAGE)
             if actual is None:
                 try:
                     publish_new(directory, temp, path.name)
@@ -525,13 +555,10 @@ class Vault:
                     try:
                         history.snapshot(self, note.id, read_regular_at(directory, path.name),
                                          vault_directory=directory)
-                    except (OSError, ValueError, UnicodeError):
+                    except (OSError, ValueError):
                         pass
-                    raise ConflictError("This note changed outside Jotline. Save a recovery copy to preserve your changes.") from None
-                try:
-                    os.unlink(temp, dir_fd=directory)
-                except FileNotFoundError:
-                    pass
+                    raise ConflictError(CONFLICT_MESSAGE) from None
+                unlink_quietly(directory, temp)
             else:
                 displaced = ".jotline-displaced-" + uuid4().hex
                 keep_displaced = False
@@ -564,26 +591,20 @@ class Vault:
                             self.retain_warning(
                                 f"Save collided with another writer; the original note was retained as {displaced}")
                         raise
-                    try:
-                        os.unlink(temp, dir_fd=directory)
-                    except FileNotFoundError:
-                        pass  # The rename fallback already consumed the temp file.
+                    unlink_quietly(directory, temp)  # The rename fallback may have consumed it.
                     try:
                         displaced_raw = read_regular_at(directory, displaced)
                         if displaced_raw != actual:
                             history.snapshot(self, note.id, displaced_raw, vault_directory=directory)
                             self.warnings.append(
                                 "An external edit raced with save and was preserved in note history")
-                    except (OSError, ValueError, UnicodeError) as error:
+                    except (OSError, ValueError) as error:
                         keep_displaced = True
                         self.retain_warning(
                             f"A displaced external edit was retained as {displaced}: {error}")
                 finally:
                     if not keep_displaced:
-                        try:
-                            os.unlink(displaced, dir_fd=directory)
-                        except FileNotFoundError:
-                            pass
+                        unlink_quietly(directory, displaced)
             # Replacement has committed even if the directory durability check fails.
             # Keep the baseline current so retrying does not invent an edit conflict.
             note.original, note.updated, note.created = raw, stamp, meta["created"]
@@ -592,10 +613,7 @@ class Vault:
         finally:
             if note.original != raw and candidate is not None:
                 history.remove_revision(self, note.id, candidate.stem, vault_directory=directory)
-            try:
-                os.unlink(temp, dir_fd=directory)
-            except FileNotFoundError:
-                pass
+            unlink_quietly(directory, temp)
         try:
             history.prune_history(self, note.id, vault_directory=directory)
         except OSError as error:
@@ -629,7 +647,7 @@ class Vault:
                             raw = read_revision_raw(
                                 self, note_id, revision.id, vault_directory=directory)
                             note = self.parse_note(note_id, raw, self.cipher)
-                        except (ValueError, OSError, UnicodeError) as error:
+                        except (ValueError, OSError) as error:
                             self.warnings.append(f"History {note_id}/{revision.id}: {error}")
                             continue
                         if note.workspace == workspace:
@@ -682,7 +700,7 @@ class Vault:
         with self.locked() as directory:
             note = self.read(note_id, directory=directory)
             if note.workspace != workspace:
-                raise ValueError("Note is in another workspace; pass --workspace NAME")
+                raise ValueError(OTHER_WORKSPACE)
             if line_break and note.body and body:
                 newline = "\r\n" if "\r\n" in note.body else ("\r" if "\r" in note.body else "\n")
                 if prepend and not body.endswith(("\n", "\r")):
@@ -768,10 +786,7 @@ class Vault:
                 publish_new(directory, temp, KEY_FILE)
             os.fsync(directory)
         finally:
-            try:
-                os.unlink(temp, dir_fd=directory)
-            except FileNotFoundError:
-                pass
+            unlink_quietly(directory, temp)
 
     def unlock(self, passphrase: str) -> None:
         """Unwrap the note key so encrypted notes read and save as text."""
@@ -816,7 +831,7 @@ class Vault:
         with self.locked() as directory:
             note = self.read(note_id, directory=directory)
             if note.workspace != workspace:
-                raise ValueError("Note is in another workspace; pass --workspace NAME")
+                raise ValueError(OTHER_WORKSPACE)
             if note.locked or (encrypted and self.cipher is None):
                 raise ValueError(LOCKED)
             if note.encrypted == encrypted:
@@ -830,7 +845,7 @@ class Vault:
         with self.locked() as directory:
             note = self.read(note_id, directory=directory)
             if note.workspace != workspace:
-                raise ValueError("Note is in another workspace; pass --workspace NAME")
+                raise ValueError(OTHER_WORKSPACE)
             if note.locked:
                 raise ValueError(LOCKED)
             note.body = change(note.body)

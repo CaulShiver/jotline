@@ -114,7 +114,7 @@ async def test_switch_save_conflict_preserves_workspace_and_buffer(tmp_path):
     note = vault.new('original')
     vault.save(note)
     app = Jotline(vault)
-    async with app.run_test() as pilot:
+    async with app.run_test():
         app.load_id(note.id)
         other = vault.read(note.id)
         other.body = 'external'

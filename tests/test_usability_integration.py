@@ -108,7 +108,7 @@ async def test_saved_action_output_uses_storage_limit_not_insertion_reserve(tmp_
     app = Jotline(vault, initial_note=note)
     async with app.run_test() as pilot:
         app.settings = replace(app.settings, actions={'upper': [{'type': 'uppercase'}]})
-        monkeypatch.setattr(workflows, 'MAX_NOTE_BYTES', 4097)
+        monkeypatch.setattr(workflows, 'EDIT_LIMIT_BYTES', 1)
         app.run_local_action('upper')
         await pilot.pause()
         assert app.query_one('#editor', TextArea).text == 'SOURCE'

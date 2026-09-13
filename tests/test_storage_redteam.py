@@ -192,7 +192,7 @@ def test_atomic_replace_failure_keeps_file_and_baseline(tmp_path, monkeypatch):
     assert not [path for path in tmp_path.glob(".jotline-*") if path.is_file()]
 
 
-@pytest.mark.parametrize("helper", [store.replace_at, history._replace_at])
+@pytest.mark.parametrize("helper", [store.replace_at, history.replace_at])
 def test_descriptor_replace_never_retries_by_path(tmp_path, monkeypatch, helper):
     (tmp_path / "source").write_text("source")
     (tmp_path / "target").write_text("target")

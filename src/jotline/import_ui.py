@@ -49,7 +49,7 @@ class ImportPreviewScreen(Modal[bool]):
 
 class RecoveryImportMixin:
     def show_recovery_dialog(self):
-        if getattr(self, '_recovery_dialog_open', False):
+        if self._recovery_dialog_open:
             return
         self.capture_current_buffer()
         try:

@@ -19,3 +19,7 @@ class Modal(ModalScreen[ScreenResultType]):
             return None
         self._dismissed = True
         return super().dismiss(result)
+
+    def action_cancel(self) -> None:
+        """The default Escape binding target: close with no result."""
+        self.dismiss(None)

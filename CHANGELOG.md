@@ -13,6 +13,28 @@
   is no longer mistaken for a terminal: a missing passphrase fails with the
   `JOTLINE_PASSPHRASE` hint instead of waiting forever, and `capture` reads the
   empty input instead of opening the editor.
+- Markdown editing fixes from a code review. Format link keeps a multi-line
+  selection on one line in CRLF notes and accepts a selected `<autolink>`.
+  Insert or tidy table no longer pulls a paragraph containing a pipe into the
+  table. Toggling a code block off works when the selection ends at the start
+  of the closing fence. Numbered lists keep task checkboxes. Jump to heading
+  keeps a `#` that is part of a title (such as `C#`), lists setext headings,
+  and is one command again. Enter after a `- - -` rule no longer starts a
+  list. A horizontal rule gets exactly one blank line on each side. The
+  side-by-side preview follows the cursor as well as edits, waits for its
+  content before scrolling, and stops rendering while the terminal is too
+  small to show it. Highlighting rescans only the edited rows, so typing in
+  large notes no longer lags. Exports, tasks and highlighting share one rule
+  for fenced code, and `[[links]]` inside code spans are left alone.
+- Storage fixes from the same review. A revision removed by another process
+  between listing and stat no longer makes a note's history read as empty.
+  Exporting a note snapshots its text first, so typing during a slow PDF
+  export cannot change what is written. A folder import skips an unreadable
+  entry instead of abandoning the rest of that folder.
+- Internal cleanup with no behaviour change: the CLI dispatches commands
+  through one handler per command, repeated messages and limits are named
+  constants, temporary-file removal and modal cancel share one helper each,
+  and dead code was removed.
 - Full Markdown editing in the app. The editor highlights Markdown syntax in the
   current theme's colours, with no new dependency. Enter continues bullet,
   numbered, task and quote lines, and Enter on an empty item ends the list.

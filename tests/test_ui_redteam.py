@@ -201,7 +201,7 @@ async def test_find_starts_at_cursor_on_later_line_with_unicode(tmp_path):
 
 async def test_search_and_collection_view_restore_visible_hints(tmp_path):
     app = Jotline(Vault(tmp_path))
-    async with app.run_test(size=(100, 30)) as pilot:
+    async with app.run_test(size=(100, 30)):
         app.action_focus_mode()
         assert app.query_one('#hint').has_class('hidden')
 

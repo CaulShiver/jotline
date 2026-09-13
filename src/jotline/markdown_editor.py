@@ -2,11 +2,13 @@
 
 The text functions here are pure so they can be tested without a terminal. The
 highlighter is a line scanner rather than a tree-sitter grammar: it needs no
-compiled dependency, understands inline emphasis, and stays fast enough to
-rerun after every keystroke on notes of a few hundred kilobytes.
+compiled dependency, understands inline emphasis, and after an edit only the
+rows the edit touched are scanned again, so typing never waits on the rest of
+the note.
 """
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections import defaultdict
 import re
 
@@ -14,23 +16,33 @@ from rich.cells import cell_len
 from rich.style import Style
 from textual import events
 from textual.color import Color
+from textual.theme import Theme
 from textual.widgets import TextArea
-from textual.widgets.text_area import TextAreaTheme
+from textual.widgets.text_area import Edit, TextAreaTheme
 
-from .tasks import FENCE
+from .store import LINK as WIKI, TAG
+from .tasks import CODE_SPAN, FENCE, fenced_rows
 
 # Above this size the editor stays plain so typing never waits on highlighting.
 HIGHLIGHT_MAX_CHARS = 512 * 1024
 
+# The default palette, shared by the main app and the quick-capture window.
+JOTLINE_THEME = Theme(name="jotline", primary="#a8d5a2", accent="#a8d5a2", foreground="#d6ddd8",
+                      background="#101619", surface="#162024", panel="#162024")
+
 HEADING = re.compile(r"(?P<indent> {0,3})(?P<marker>#{1,6})(?:(?P<gap>[ \t]+)(?P<text>.*?))?[ \t]*$")
+# A closing run of # counts only after whitespace, so "C#" keeps its hash.
+CLOSING_HASHES = re.compile(r"(?:^|[ \t]+)#+[ \t]*$")
+SETEXT = re.compile(r" {0,3}(=+|-+)[ \t]*$")
 RULE = re.compile(r" {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
 QUOTE = re.compile(r"(?P<marker>[ \t]*(?:>[ \t]?)+)")
+# The gap group takes whitespace or the end of the line, so a match already
+# guarantees the marker is a list marker rather than the start of a word.
 LIST_ITEM = re.compile(
     r"(?P<indent>[ \t]*)(?P<marker>[-*+]|(?P<number>\d{1,9})(?P<delimiter>[.)]))"
     r"(?P<gap>[ \t]+|$)(?P<task>\[[ xX]\](?:[ \t]+|$))?")
 TABLE_SEPARATOR = re.compile(r"[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$")
 
-CODE_SPAN = re.compile(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)")
 INLINE = [
     ("bold", re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1")),
     ("italic", re.compile(r"(?<![*\w])(\*)(?=[^\s*])(.+?)(?<=[^\s*])\*(?!\*)")),
@@ -40,8 +52,9 @@ INLINE = [
 LINK = re.compile(r"(?P<bang>!?)\[(?P<label>[^\]\n]*)\]\((?P<uri>[^)\s]*)(?:[ \t]+\"[^\"\n]*\")?\)")
 FOOTNOTE = re.compile(r"\[\^[^\]\s]+\]")
 BARE_URL = re.compile(r"<?(?:https?|mailto):[^\s<>()]+>?")
-WIKI = re.compile(r"\[\[[^\[\]\n]+\]\]")
-TAG = re.compile(r"(?<![\w#&/])#[^\W\d][\w/-]*")
+# Marker runs that a wrap command removes again. Emphasis checks the whole run
+# so italic never strips half of a bold marker.
+UNWRAP_RUNS = {"bold": {"**", "__", "***", "___"}, "italic": {"*", "_", "***", "___"}, "strike": {"~~"}}
 
 Highlight = tuple[int, int | None, str]
 
@@ -50,19 +63,15 @@ def _bytes(text: str, index: int) -> int:
     return len(text[:index].encode("utf-8"))
 
 
-def fenced_rows(lines: list[str]) -> set[int]:
-    """Rows inside or delimiting a fenced code block."""
-    rows, fence = set(), None
-    for row, line in enumerate(lines):
-        marker = FENCE.fullmatch(line)
-        if fence is not None:
-            rows.add(row)
-            if marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence) and not marker[2].strip():
-                fence = None
-        elif marker and not (marker[1][0] == "`" and "`" in marker[2]):
-            fence = marker[1]
-            rows.add(row)
-    return rows
+def list_item(line: str, pos: int = 0) -> re.Match | None:
+    """The list marker at ``pos``, unless the line is a thematic break like ``- - -``."""
+    if RULE.match(line):
+        return None
+    return LIST_ITEM.match(line, pos)
+
+
+def heading_title(text: str) -> str:
+    return CLOSING_HASHES.sub("", text).strip()
 
 
 def highlight_line(line: str) -> list[Highlight]:
@@ -95,11 +104,16 @@ def highlight_line(line: str) -> list[Highlight]:
                 add((match.start(), match.end(), "md.table"))
 
     code = [(match.start(), match.end()) for match in CODE_SPAN.finditer(line, body_start)]
+    code_starts = [start for start, _ in code]
     for start, end in code:
         add((start, end, "inline_code"))
 
     def free(start: int, end: int) -> bool:
-        return all(end <= left or start >= right for left, right in code)
+        # Code spans are sorted and disjoint, so only the neighbours can overlap.
+        index = bisect_right(code_starts, start)
+        if index and code[index - 1][1] > start:
+            return False
+        return index == len(code) or code[index][0] >= end
 
     for name, pattern in INLINE:
         for match in pattern.finditer(line, body_start):
@@ -120,29 +134,48 @@ def highlight_line(line: str) -> list[Highlight]:
         # A URL already inside (…) of a Markdown link is highlighted there.
         if free(match.start(), match.end()) and line[max(match.start() - 1, 0):match.start()] != "(":
             add((match.start(), match.end(), "link.uri"))
-    return [(_bytes(line, start), _bytes(line, end), name) for start, end, name in spans if end > start]
+    spans = [span for span in spans if span[1] > span[0]]
+    if line.isascii():
+        return spans
+    return [(_bytes(line, start), _bytes(line, end), name) for start, end, name in spans]
 
 
-def highlight_markdown(lines: list[str]) -> dict[int, list[Highlight]]:
+def highlight_fenced(line: str) -> list[Highlight]:
+    name = "md.fence" if FENCE.fullmatch(line) else "md.code"
+    return [(0, len(line.encode("utf-8")), name)] if line else []
+
+
+def highlight_markdown(lines: list[str], fenced: set[int] | None = None) -> dict[int, list[Highlight]]:
     highlights: dict[int, list[Highlight]] = defaultdict(list)
-    fenced = fenced_rows(lines)
+    if fenced is None:
+        fenced = fenced_rows(lines)
     for row, line in enumerate(lines):
         if row in fenced:
-            name = "md.fence" if FENCE.fullmatch(line) else "md.code"
-            if line:
-                highlights[row].append((0, len(line.encode("utf-8")), name))
+            highlights[row].extend(highlight_fenced(line))
         elif line:
             highlights[row].extend(highlight_line(line))
     return highlights
 
 
 def headings(lines: list[str]) -> list[tuple[int, int, str]]:
-    """(row, level, title) for every ATX heading outside fenced code."""
+    """(row, level, title) for every ATX or setext heading outside fenced code."""
     fenced = fenced_rows(lines)
     found = []
+    previous = ""
     for row, line in enumerate(lines):
-        if row not in fenced and (match := HEADING.match(line)) and match["text"]:
-            found.append((row, len(match["marker"]), match["text"].rstrip("# \t") or match["text"]))
+        if row in fenced:
+            previous = ""
+        elif match := HEADING.match(line):
+            if title := heading_title(match["text"] or ""):
+                found.append((row, len(match["marker"]), title))
+            previous = ""
+        elif previous.strip() and (underline := SETEXT.fullmatch(line)):
+            found.append((row - 1, 1 if underline[1][0] == "=" else 2, previous.strip()))
+            previous = ""
+        else:
+            # Only a paragraph line can be underlined; "---" after a list item or
+            # quote is a rule.
+            previous = "" if list_item(line) or line.lstrip().startswith((">", "|")) else line
     return found
 
 
@@ -155,8 +188,7 @@ def continuation(line: str, column: int) -> tuple[str, bool] | None:
     """
     quote = QUOTE.match(line)
     quote_prefix = quote[0] if quote and ">" in quote[0] else ""
-    item = LIST_ITEM.match(line, len(quote_prefix))
-    if item and (item["gap"] or item.end() == len(line)):
+    if item := list_item(line, len(quote_prefix)):
         if column < item.end():
             return None
         if not line[item.end():].strip() and column >= len(line.rstrip()):
@@ -176,11 +208,13 @@ def continuation(line: str, column: int) -> tuple[str, bool] | None:
     return None
 
 
-def _strip_block_prefix(line: str) -> tuple[str, str]:
-    """Split indentation from a line with any list or task marker removed."""
-    item = LIST_ITEM.match(line)
-    if item and (item["gap"] or item.end() == len(line)):
-        return item["indent"], line[item.end():]
+def _strip_block_prefix(line: str, keep_task: bool = False) -> tuple[str, str]:
+    """Split indentation from a line with its list marker (and checkbox, unless kept) removed."""
+    if item := list_item(line):
+        text = line[item.end():]
+        if keep_task and item["task"]:
+            text = item["task"] + text
+        return item["indent"], text
     stripped = line.lstrip(" \t")
     return line[:len(line) - len(stripped)], stripped
 
@@ -190,22 +224,26 @@ def toggle_lines(lines: list[str], style: str) -> list[str]:
 
     If every non-blank line already has the style it is removed; otherwise it is
     applied, replacing a different list or heading marker rather than stacking.
+    A numbered list keeps task checkboxes (``1. [x] done``); a bullet list drops
+    them, which is how a task list becomes plain bullets.
     """
     content = [line for line in lines if line.strip()] or lines
-    if style.startswith("h") and style[1:].isdigit():
-        level = int(style[1:])
+    skip_blank = len(lines) > 1
+    if level_match := re.fullmatch(r"h([1-6])", style):
+        level = int(level_match[1])
         marker = "#" * level + " "
         remove = all((m := HEADING.match(line)) and len(m["marker"]) == level for line in content)
         result = []
         for line in lines:
             heading = HEADING.match(line)
-            if not line.strip() and len(lines) > 1:
+            if not line.strip() and skip_blank:
                 result.append(line)
             elif remove:
-                result.append(heading["indent"] + (heading["text"] or "") if heading else line)
+                result.append(heading["indent"] + heading_title(heading["text"] or "") if heading else line)
             else:
                 # Replace a different heading level instead of stacking markers.
-                result.append(heading["indent"] + marker + (heading["text"] or "") if heading else marker + line)
+                result.append(heading["indent"] + marker + heading_title(heading["text"] or "") if heading
+                              else marker + line)
         return result
     if style == "quote":
         if all(line.lstrip().startswith(">") for line in content):
@@ -213,22 +251,21 @@ def toggle_lines(lines: list[str], style: str) -> list[str]:
         return ["> " + line if line.strip() or len(lines) == 1 else line for line in lines]
 
     def has(line: str) -> bool:
-        item = LIST_ITEM.match(line)
-        if not item or not (item["gap"] or item.end() == len(line)):
+        if not (item := list_item(line)):
             return False
         if style == "task":
             return bool(item["task"])
         if style == "numbered":
-            return bool(item["number"]) and not item["task"]
+            return bool(item["number"])
         return not item["number"] and not item["task"]
 
     remove = all(has(line) for line in content)
     result, number = [], 0
     for line in lines:
-        if not line.strip() and len(lines) > 1:
+        if not line.strip() and skip_blank:
             result.append(line)
             continue
-        indent, text = _strip_block_prefix(line)
+        indent, text = _strip_block_prefix(line, keep_task=style == "numbered" and not remove)
         if remove:
             result.append(indent + text)
         elif style == "numbered":
@@ -242,13 +279,46 @@ def toggle_lines(lines: list[str], style: str) -> list[str]:
 def indent_lines(lines: list[str], outdent: bool = False) -> list[str]:
     if not outdent:
         return ["  " + line if line.strip() else line for line in lines]
-    return [line[2:] if line.startswith("  ") else line[1:] if line[:1] in (" ", "\t") else line
-            for line in lines]
+    return [re.sub(r"^(?:  ?|\t)", "", line) for line in lines]
 
 
 def fence_for(text: str) -> str:
     longest = max((len(run) for run in re.findall(r"`{3,}", text)), default=2)
     return "`" * (longest + 1)
+
+
+def unwrap_span(style: str, text: str, begin: int, finish: int) -> tuple[int, int, str] | None:
+    """If the selection is already formatted with ``style``, the span to replace and its content.
+
+    Both a selection of the inner text and one that includes the markers count.
+    """
+    body = text[begin:finish]
+    if style == "code":
+        # A selection that includes backticks is literal text to quote, so
+        # only a selection inside an existing code span removes it.
+        before = len(text[:begin]) - len(text[:begin].rstrip("`"))
+        after = len(text[finish:]) - len(text[finish:].lstrip("`"))
+        if before and before == after:
+            inner = body[1:-1] if body.startswith(" ") and body.endswith(" ") and len(body) > 1 else body
+            if text[begin - before - 1:begin - before] != "`":
+                return begin - before, finish + after, inner
+        return None
+    runs = UNWRAP_RUNS[style]
+    size = 1 if style == "italic" else 2
+    leading = re.match(r"[*_~]+", body)
+    trailing = re.search(r"[*_~]+$", body)
+    if leading and trailing and leading.end() < trailing.start() and leading[0] == trailing[0][::-1] \
+            and leading[0] in runs:
+        run = leading[0]
+        inner = body[len(run):len(body) - len(run)]
+        if run not in inner:
+            keep = run[:len(run) - size]
+            return begin, finish, keep + inner + keep
+    before = re.search(r"[*_~]+$", text[:begin])
+    after = re.match(r"[*_~]+", text[finish:])
+    if before and after and before[0] == after[0][::-1] and before[0] in runs:
+        return begin - size, finish + size, body
+    return None
 
 
 def split_cells(line: str) -> list[str]:
@@ -282,19 +352,29 @@ def split_cells(line: str) -> list[str]:
 
 
 def table_bounds(lines: list[str], row: int) -> tuple[int, int] | None:
-    """First and last row of the pipe table containing ``row``, if any."""
+    """First and last row of the pipe table containing ``row``, if any.
+
+    The table is anchored on its separator row so a paragraph above the table
+    that happens to contain a pipe is not taken for part of it.
+    """
     def is_row(index: int) -> bool:
         return 0 <= index < len(lines) and "|" in lines[index] and bool(lines[index].strip())
 
+    def is_separator(index: int) -> bool:
+        return is_row(index) and bool(TABLE_SEPARATOR.fullmatch(lines[index]))
+
     if not is_row(row):
         return None
-    first = last = row
-    while is_row(first - 1):
-        first -= 1
+    separator = row
+    while not is_separator(separator) and is_row(separator - 1):
+        separator -= 1
+    if not is_separator(separator):
+        separator = row + 1  # the cursor may be on the header row
+    if not (is_separator(separator) and is_row(separator - 1)):
+        return None
+    first, last = separator - 1, separator
     while is_row(last + 1):
         last += 1
-    if last == first or not any(TABLE_SEPARATOR.fullmatch(lines[index]) for index in (first + 1,)):
-        return None
     return first, last
 
 
@@ -337,10 +417,11 @@ def format_table(lines: list[str]) -> list[str]:
 TABLE_TEMPLATE = ["| Column | Column |", "| ------ | ------ |", "|        |        |"]
 
 
-def _muted(theme, factor: float = 0.45) -> str:
-    foreground = Color.parse(theme.foreground or "#d6ddd8")
-    background = Color.parse(theme.background or "#101619")
-    return foreground.blend(background, factor).hex
+def _muted(theme) -> str:
+    """The foreground blended most of the way into the background, for markers and syntax."""
+    foreground = Color.parse(theme.foreground or JOTLINE_THEME.foreground)
+    background = Color.parse(theme.background or JOTLINE_THEME.background)
+    return foreground.blend(background, 0.45).hex
 
 
 def syntax_styles(theme) -> dict[str, Style]:
@@ -377,30 +458,34 @@ def syntax_styles(theme) -> dict[str, Style]:
 
 
 class MarkdownEditor(TextArea):
-    """The writing surface: TextArea plus Markdown highlighting and list continuation."""
+    """The writing surface: TextArea plus Markdown highlighting and list continuation.
+
+    Textual rebuilds the highlight map after every edit. The base class does
+    that from a tree-sitter query; here the map is kept by hand, and after an
+    ordinary edit only the rows it touched are scanned again. A full rescan
+    happens when text is loaded, on undo and redo, and when an edit adds or
+    removes a fence line, since that can change which rows are code.
+    """
 
     THEME_NAME = "jotline-markdown"
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.markdown_highlighting = True
-        self.smart_lists = True
+    # Class-level defaults: TextArea.__init__ builds the highlight map before a
+    # subclass __init__ could run, so these must exist on the class.
+    markdown_highlighting = True
+    smart_lists = True
+    _pending_edit: Edit | None = None
+    # Fence state of the current highlight map; None when the map is not built.
+    _fenced: set[int] | None = None
+    _fence_markers: set[int] = set()
 
     def on_mount(self) -> None:
-        self._apply_markdown_theme()
+        self._register_markdown_theme()
+        self.theme = self.THEME_NAME
 
-    def _apply_markdown_theme(self) -> None:
+    def _register_markdown_theme(self) -> None:
         self.register_theme(TextAreaTheme(self.THEME_NAME, syntax_styles=syntax_styles(self.app.current_theme)))
-        if self.theme == self.THEME_NAME:
-            self._set_theme(self.THEME_NAME)
-        else:
-            self.theme = self.THEME_NAME
-        self._line_cache.clear()
-        self.refresh()
 
     def _app_theme_changed(self) -> None:
-        if self.is_mounted:
-            self.register_theme(TextAreaTheme(self.THEME_NAME, syntax_styles=syntax_styles(self.app.current_theme)))
+        self._register_markdown_theme()
         super()._app_theme_changed()
 
     def set_markdown_options(self, *, highlighting: bool, smart_lists: bool) -> None:
@@ -410,30 +495,78 @@ class MarkdownEditor(TextArea):
             self._build_highlight_map()
             self.refresh()
 
+    def edit(self, edit: Edit):
+        self._pending_edit = edit
+        try:
+            return super().edit(edit)
+        finally:
+            self._pending_edit = None
+
     def _build_highlight_map(self) -> None:
         self._line_cache.clear()
         highlights = self._highlights
-        highlights.clear()
-        if not getattr(self, "markdown_highlighting", False):
-            return
         lines = self.document.lines
-        if sum(len(line) for line in lines) > HIGHLIGHT_MAX_CHARS:
+        if not self.markdown_highlighting or sum(len(line) for line in lines) > HIGHLIGHT_MAX_CHARS:
+            highlights.clear()
+            self._fenced = None
             return
-        highlights.update(highlight_markdown(lines))
+        edit = self._pending_edit
+        if edit is None or self._fenced is None or not self._rehighlight_edit(edit, lines):
+            highlights.clear()
+            self._fenced = fenced_rows(lines)
+            self._fence_markers = {row for row, line in enumerate(lines) if FENCE.fullmatch(line)}
+            highlights.update(highlight_markdown(lines, self._fenced))
+
+    def _rehighlight_edit(self, edit: Edit, lines: list[str]) -> bool:
+        """Rescan only the rows ``edit`` touched; False when fence state may have changed."""
+        if edit._edit_result is None:
+            return False
+        top, bottom = edit.top[0], edit.bottom[0]
+        end = edit._edit_result.end_location[0]
+        if (any(row in self._fence_markers for row in range(top, bottom + 1))
+                or any(FENCE.fullmatch(lines[row]) for row in range(top, end + 1))):
+            return False
+        # No fence line was added or removed, so rows outside the edit keep
+        # their state and the edited rows share the state of the first one.
+        inside = top in self._fenced
+        delta = end - bottom
+        highlights = self._highlights
+        if delta:
+            def shift(rows):
+                return {row + delta if row > bottom else row: rows[row] for row in rows if row < top or row > bottom}
+            moved = shift(highlights)
+            highlights.clear()
+            highlights.update(moved)
+            self._fenced = set(shift(dict.fromkeys(self._fenced)))
+            self._fence_markers = set(shift(dict.fromkeys(self._fence_markers)))
+        for row in range(top, end + 1):
+            line = lines[row]
+            if inside:
+                self._fenced.add(row)
+                spans = highlight_fenced(line)
+            else:
+                spans = highlight_line(line) if line else []
+            if spans:
+                highlights[row] = spans
+            else:
+                highlights.pop(row, None)
+        return True
 
     async def _on_key(self, event: events.Key) -> None:
         if event.key == "enter" and self.smart_lists and not self.read_only and self.selection.is_empty:
             row, column = self.cursor_location
             line = self.document.get_line(row)
             action = continuation(line, column)
-            if action and row not in fenced_rows(self.document.lines[:row + 1]):
-                event.stop()
-                event.prevent_default()
-                self._restart_blink()
-                prefix, clear = action
-                if clear:
-                    self._replace_via_keyboard("", (row, 0), (row, len(line)))
-                else:
-                    self._replace_via_keyboard("\n" + prefix, (row, column), (row, column))
-                return
+            if action:
+                fenced = self._fenced if self._fenced is not None else fenced_rows(self.document.lines[:row + 1])
+                if row not in fenced:
+                    event.stop()
+                    event.prevent_default()
+                    self._restart_blink()
+                    prefix, clear = action
+                    if clear:
+                        self._replace_via_keyboard("", (row, 0), (row, len(line)))
+                    else:
+                        self._replace_via_keyboard("\n" + prefix, (row, column), (row, column))
+                    return
         await super()._on_key(event)

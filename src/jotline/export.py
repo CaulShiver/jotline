@@ -17,7 +17,7 @@ import tempfile
 import time
 from uuid import uuid4
 
-from .tasks import FENCE, TASK
+from .tasks import CODE_SPAN, TASK, fenced_rows, split_lines
 
 FORMATS = ("markdown", "html", "docx", "pdf")
 FORMAT_NAMES = {"markdown": "Markdown", "html": "HTML", "docx": "Word", "pdf": "PDF"}
@@ -72,22 +72,28 @@ def format_for(requested: str | None, output: Path | None) -> str:
 def printable_markdown(body: str, titles: dict[str, str] | None = None) -> str:
     """Show checkboxes as ☐/☒ and wiki links as their labels, leaving fenced code alone."""
     titles = titles or {}
-    result, fence = [], None
-    for line in body.splitlines(keepends=True):
-        content = line.splitlines()[0] if line.splitlines() else ""
-        ending = line[len(content):]
-        marker = FENCE.fullmatch(content)
-        if marker:
-            run, suffix = marker.groups()
-            if fence is None:
-                fence = run
-            elif run[0] == fence[0] and len(run) >= len(fence) and not suffix.strip():
-                fence = None
-        elif fence is None:
+
+    def link_titles(text: str) -> str:
+        return WIKI_LINK.sub(lambda link: link[2] or titles.get(link[1], link[1]), text)
+
+    def outside_code_spans(text: str) -> str:
+        # `[[x]]` inside backticks is documentation of the syntax, not a link.
+        pieces, last = [], 0
+        for span in CODE_SPAN.finditer(text):
+            pieces.append(link_titles(text[last:span.start()]) + span[0])
+            last = span.end()
+        pieces.append(link_titles(text[last:]))
+        return "".join(pieces)
+
+    pairs = split_lines(body)
+    fenced = fenced_rows([content for content, _ in pairs])
+    result = []
+    for row, (content, ending) in enumerate(pairs):
+        if row not in fenced:
             if task := TASK.fullmatch(content):
                 # ☒ has no emoji form, unlike ☑, so both boxes print in the text font.
                 content = task["lead"][:-1] + ("☐ " if task["mark"] == " " else "☒ ") + task["text"]
-            content = WIKI_LINK.sub(lambda link: link[2] or titles.get(link[1], link[1]), content)
+            content = outside_code_spans(content)
         result.append(content + ending)
     return "".join(result)
 

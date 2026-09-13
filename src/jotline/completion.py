@@ -52,6 +52,7 @@ def positionals(parser: argparse.ArgumentParser) -> tuple[list[str], bool]:
         if _is_subparsers(action) or action.option_strings:
             continue
         kinds.append(value_kind(action) if action.choices else POSITIONAL_KINDS.get(action.dest, "none"))
+        # Only the last positional's nargs matters: the scripts reuse its kind for extra arguments.
         repeat = action.nargs in ("*", "+")
     return kinds, repeat
 
@@ -159,9 +160,10 @@ complete -F _jotline jotline
 
 def bash_body(parser: argparse.ArgumentParser) -> str:
     global_flags, global_valued = options(parser)
+    subcommands = commands(parser)
     valued = dict(global_valued)
     arms = []
-    for name, sub, _ in commands(parser):
+    for name, sub, _ in subcommands:
         flags, sub_valued = options(sub)
         kinds, repeat = positionals(sub)
         valued.update(sub_valued)
@@ -174,7 +176,7 @@ def bash_body(parser: argparse.ArgumentParser) -> str:
         "@COMMAND_ARMS@": "\n".join(arms),
         "@VALUE_ARMS@": "\n".join(f"            {option}) kind={shlex.quote(kind)} ;;" for option, kind in valued.items()),
         "@GLOBAL_FLAGS@": shlex.quote("\n".join(flag for flag, _ in global_flags)),
-        "@COMMANDS@": shlex.quote("\n".join(name for name, _, _ in commands(parser))),
+        "@COMMANDS@": shlex.quote("\n".join(name for name, _, _ in subcommands)),
     }
     body = BASH
     for marker, value in replacements.items():
@@ -355,14 +357,15 @@ def fish_value_args(kind: str | None) -> str:
 
 def fish_script(parser: argparse.ArgumentParser) -> str:
     global_flags, global_valued = options(parser)
+    subcommands = commands(parser)
     valued = dict(global_valued)
     valued_arms, positional_arms, lines = [], [], []
-    for name, _, help_text in commands(parser):
+    for name, _, help_text in subcommands:
         lines.append(f"complete -c jotline -n '__jotline_is command' -a {name} -d {fish_quote(help_text)}")
     for flag, help_text in global_flags:
         lines.append(f"complete -c jotline -n '__jotline_in -' -l {flag[2:]}"
                      f"{fish_value_args(global_valued.get(flag))} -d {fish_quote(help_text)}")
-    for name, sub, _ in commands(parser):
+    for name, sub, _ in subcommands:
         flags, sub_valued = options(sub)
         kinds, repeat = positionals(sub)
         valued.update(sub_valued)

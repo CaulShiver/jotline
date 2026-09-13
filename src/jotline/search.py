@@ -1,9 +1,14 @@
 """Small, literal query language shared by the UI, saved views and CLI."""
+from collections.abc import Callable
 from datetime import date
 import shlex
 
+DATE_FIELDS = ('created-after', 'created-before', 'updated-after', 'updated-before')
+FIELDS = ('tag', 'title', *DATE_FIELDS)
 
-def compile_query(query):
+
+def compile_query(query: str) -> Callable[[object], bool]:
+    """A note predicate for a query of words, #tags, field:value terms and -exclusions."""
     try:
         terms = shlex.split(query.casefold())
     except ValueError:
@@ -16,9 +21,9 @@ def compile_query(query):
         field, separator, value = term.partition(':')
         if term.startswith('#'):
             field, value = 'tag', term[1:]
-        elif not separator or field not in {'tag', 'title', 'created-after', 'created-before', 'updated-after', 'updated-before'}:
+        elif not separator or field not in FIELDS:
             field, value = 'text', term
-        if field.endswith(('-after', '-before')):
+        if field in DATE_FIELDS:
             if value != 'today':
                 try:
                     parsed = date.fromisoformat(value)

@@ -1,5 +1,4 @@
 """Regressions from the 2026-09-12 multi-agent red team (storage, CLI, parsing, UI)."""
-import asyncio
 from dataclasses import replace
 import errno
 import json

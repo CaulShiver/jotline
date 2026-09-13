@@ -320,7 +320,7 @@ def test_history_stays_on_pinned_vault_during_root_swap(tmp_path, monkeypatch):
     vault.save(note)
     note.body = 'second'
     moved = tmp_path / 'moved-vault'
-    original_temp = history._temp_at
+    original_temp = history.create_private_temp
     swapped = False
 
     def swap(directory, prefix):
@@ -331,7 +331,7 @@ def test_history_stays_on_pinned_vault_during_root_swap(tmp_path, monkeypatch):
             original.mkdir()
         return original_temp(directory, prefix)
 
-    monkeypatch.setattr(history, '_temp_at', swap)
+    monkeypatch.setattr(history, 'create_private_temp', swap)
     vault.save(note)
     assert Vault(moved).read(note.id).body == 'second'
     assert not (original / f'{note.id}.md').exists()
@@ -343,7 +343,7 @@ def test_backup_stays_on_pinned_folder_during_folder_swap(tmp_path, monkeypatch)
     (tmp_path / 'plain.md').write_text('data')
     backups = tmp_path / '.jotline-backups'
     retained = tmp_path / 'retained-backups'
-    original_temp = history._temp_at
+    original_temp = history.create_private_temp
 
     def swap(directory, prefix):
         if prefix == '.backup-' and backups.exists() and not retained.exists():
@@ -351,7 +351,7 @@ def test_backup_stays_on_pinned_folder_during_folder_swap(tmp_path, monkeypatch)
             backups.mkdir()
         return original_temp(directory, prefix)
 
-    monkeypatch.setattr(history, '_temp_at', swap)
+    monkeypatch.setattr(history, 'create_private_temp', swap)
     vault.backup()
     assert not list(backups.iterdir())
     archive, = retained.glob('manual-*.zip')
@@ -399,7 +399,7 @@ def test_backup_temp_failure_closes_template_descriptor(tmp_path, monkeypatch, r
     templates.mkdir()
     (templates / 'custom.md').write_text('template')
     before = resource_count()
-    monkeypatch.setattr(history, '_temp_at',
+    monkeypatch.setattr(history, 'create_private_temp',
                         lambda *args, **kwargs: (_ for _ in ()).throw(OSError('disk full')))
     for _ in range(16):
         with pytest.raises(OSError, match='disk full'):

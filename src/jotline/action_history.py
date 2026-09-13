@@ -3,10 +3,10 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 
-from .actions import ActionCommitError, run_action
+from .actions import MAX_STEPS, ActionCommitError, run_action
 from .filesystem import fs as os
 from .history import stamp
-from .store import create_private_temp, read_regular_at, vault_lock
+from .store import create_private_temp, read_regular_at, replace_at, unlink_quietly, vault_lock
 
 MAX_RUNS = 100
 MAX_HISTORY_BYTES = 256 * 1024
@@ -22,9 +22,10 @@ class ActionHistory:
             data = json.loads(read_regular_at(directory, HISTORY_FILE, MAX_HISTORY_BYTES))
         except FileNotFoundError:
             return []
+        # A run records each recipe step plus the final save step.
         if not isinstance(data, list) or len(data) > MAX_RUNS or any(
                 not isinstance(item, dict) or not isinstance(item.get('steps'), list)
-                or len(item['steps']) > 17 for item in data):
+                or len(item['steps']) > MAX_STEPS + 1 for item in data):
             raise ValueError('Invalid action history')
         return data
 
@@ -42,7 +43,7 @@ class ActionHistory:
                 # A corrupt log must not disable logging forever; keep the bytes
                 # for inspection and start a fresh bounded history.
                 quarantine = f'.jotline-action-history.invalid-{stamp()}.json'
-                os.replace(HISTORY_FILE, quarantine, src_dir_fd=directory, dst_dir_fd=directory)
+                replace_at(directory, HISTORY_FILE, quarantine)
                 records = []
                 warning = f'Action history was unreadable ({error}); it was set aside as {quarantine}'
             records = (records + [record])[-MAX_RUNS:]
@@ -58,13 +59,10 @@ class ActionHistory:
                     stream.write(output)
                     stream.flush()
                     os.fsync(stream.fileno())
-                os.replace(temporary, HISTORY_FILE, src_dir_fd=directory, dst_dir_fd=directory)
+                replace_at(directory, temporary, HISTORY_FILE)
                 os.fsync(directory)
             finally:
-                try:
-                    os.unlink(temporary, dir_fd=directory)
-                except FileNotFoundError:
-                    pass
+                unlink_quietly(directory, temporary)
         return warning
 
 

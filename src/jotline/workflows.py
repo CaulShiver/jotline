@@ -13,39 +13,23 @@ from textual.widgets import Input, Label, OptionList, SelectionList, Static, Tex
 
 from .action_history import run_recorded_action as run_action
 from .actions import ActionCommitError
-from .store import MAX_NOTE_BYTES, tagged_body, validate_workspace
+from .store import EDIT_LIMIT_BYTES, tagged_body, validate_workspace
 from .templates import Templates
+
+MAX_ARRANGE_ITEMS = 5000
+MAX_ARRANGE_BYTES = 256 * 1024
+
+
+def split_parts(body, paragraphs):
+    """Lines, or paragraphs separated by a blank line; CRLF documents split the same way."""
+    return re.split(r'(?:\r?\n){2}' if paragraphs else r'\r?\n', body)
 
 
 def headings(text):
-    """ATX and setext headings, excluding fenced code."""
-    fence = None
-    previous = ''
-    for row, line in enumerate(text.split('\n')):
-        marker = re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$', line)
-        if marker:
-            run, suffix = marker.groups()
-            if fence is None:
-                fence = run
-            elif run[0] == fence[0] and len(run) >= len(fence) and not suffix.strip():
-                fence = None
-            previous = ''
-            continue
-        if fence:
-            continue
-        # Greedy capture plus manual trimming stays linear; a lazy group followed
-        # by an optional closing run of # backtracked quadratically on long lines.
-        match = re.match(r'^ {0,3}(#{1,6})[ \t]+(.*)$', line)
-        if match:
-            title = match[2].strip()
-            closing = title.rstrip('#')
-            if closing != title and (not closing or closing[-1] in ' \t'):
-                title = closing.rstrip()
-            if title:
-                yield row, title
-        elif previous.strip() and re.fullmatch(r' {0,3}(?:=+|-+)\s*', line):
-            yield row - 1, previous.strip()
-        previous = line
+    """(row, title) for ATX and setext headings, excluding fenced code."""
+    from .markdown_editor import headings as markdown_headings
+    for row, _, title in markdown_headings(text.split('\n')):
+        yield row, title
 
 
 class Arrange(Modal[str | None]):
@@ -61,8 +45,8 @@ class Arrange(Modal[str | None]):
     def __init__(self, body, paragraphs=False):
         super().__init__()
         self.separator = '\n\n' if paragraphs else '\n'
-        # Accept CRLF documents; the editor restores its own newline style.
-        self.parts = re.split(r'(?:\r?\n){2}' if paragraphs else r'\r?\n', body)
+        # The editor restores its own newline style when the result is applied.
+        self.parts = split_parts(body, paragraphs)
 
     def compose(self) -> ComposeResult:
         with Vertical(id='arrange-panel'):
@@ -89,17 +73,14 @@ class Arrange(Modal[str | None]):
     def action_duplicate(self):
         index = self.query_one(OptionList).highlighted
         if index is not None:
-            if len(self.parts) >= 5000:
-                self.notify('Arrange supports up to 5,000 items', severity='warning')
+            if len(self.parts) >= MAX_ARRANGE_ITEMS:
+                self.notify(f'Arrange supports up to {MAX_ARRANGE_ITEMS:,} items', severity='warning')
                 return
             self.parts.insert(index + 1, self.parts[index])
             self.refresh_items(index + 1)
 
     def action_apply(self):
         self.dismiss(self.separator.join(self.parts))
-
-    def action_cancel(self):
-        self.dismiss(None)
 
 
 class SelectNotes(Modal[list[str] | None]):
@@ -131,15 +112,13 @@ class SelectNotes(Modal[list[str] | None]):
         ids = self.query_one(SelectionList).selected
         if ids:
             self.dismiss(ids)
-
-    def action_cancel(self):
-        self.dismiss(None)
+        else:
+            self.notify('Select at least one note first')
 
 
 class WorkflowMixin:
     def workflow_commands(self, Command):
         return [Command(key, label, handler) for key, label, handler in [
-            ('headings', 'Jump to heading', self.jump_heading),
             ('recent', 'Recent notes', self.show_recent),
             ('previous', 'Previous note', self.previous_note),
             ('insert-template', 'Insert template at cursor', self.insert_template),
@@ -157,44 +136,49 @@ class WorkflowMixin:
         ]]
 
     def insert_editor_text(self, body) -> bool:
+        """Replace the selection, or insert at the cursor, as one undo step within the size limit."""
         editor = self.query_one('#editor', TextArea)
+        text = editor.text
         start, end = sorted((editor.selection.start, editor.selection.end))
-        if len((editor.text[:self.editor_offset(start, editor.text)] + body + editor.text[self.editor_offset(end, editor.text):]).encode('utf-8')) > MAX_NOTE_BYTES - 4096:
+        begin, finish = self.editor_offset(start, text), self.editor_offset(end, text)
+        # Size the pieces rather than building the whole resulting text only to measure it.
+        result_bytes = (len(text[:begin].encode('utf-8')) + len(body.encode('utf-8'))
+                        + len(text[finish:].encode('utf-8')))
+        if result_bytes > EDIT_LIMIT_BYTES:
             self.notify('Result exceeds the note size limit', severity='error')
             return False
         editor.history.checkpoint()
-        offset = self.editor_offset(start, editor.text)
         editor.replace(body, start, end)
-        editor.move_cursor(self.editor_location(offset + len(body), editor.text))
+        editor.move_cursor(self.editor_location(begin + len(body), editor.text))
         editor.history.checkpoint()
         self.capture_current_buffer()
         return True
 
-    def replace_editor_text(self, body) -> bool:
-        if body is None:
-            return False
-        if len(body.encode('utf-8')) > MAX_NOTE_BYTES - 4096:
-            self.notify('Result exceeds the note size limit', severity='error')
-            return False
+    def replace_whole_text(self, body) -> None:
+        """Replace the whole note text as one undo step, keeping the cursor where it was."""
         editor = self.query_one('#editor', TextArea)
         position = editor.cursor_location
         editor.history.checkpoint()
         editor.replace(body, (0, 0), self.editor_location(len(editor.text), editor.text))
         editor.history.checkpoint()
         editor.move_cursor(position)
+
+    def replace_editor_text(self, body) -> bool:
+        if body is None:
+            return False
+        if len(body.encode('utf-8')) > EDIT_LIMIT_BYTES:
+            self.notify('Result exceeds the note size limit', severity='error')
+            return False
+        self.replace_whole_text(body)
         self.capture_current_buffer()
         return True
 
-    def jump_heading(self):
-        from .app import Palette
-        choices = [(str(row), f'{title} · line {row + 1}') for row, title in headings(self.query_one('#editor', TextArea).text)]
-        self.push_screen(Palette(choices, 'Jump to heading'), self.go_heading)
-
-    def go_heading(self, row):
-        if row is not None:
-            editor = self.query_one('#editor', TextArea)
-            editor.move_cursor((int(row), 0), center=True)
-            editor.focus()
+    def read_in_workspace(self, note_id):
+        """Read a note the user picked; it must still belong to this workspace."""
+        note = self.vault.read(note_id)
+        if note.workspace != self.workspace:
+            raise ValueError('Note moved to another workspace')
+        return note
 
     def recent_notes(self):
         notes = {n.id: n for n in self.vault.search(workspace=self.workspace)}
@@ -220,7 +204,7 @@ class WorkflowMixin:
             return
         offset = self.editor_offset(editor.cursor_location, editor.text)
         trigger = editor.text[max(0, offset - 2):offset]
-        if trigger not in {'[[', ';;'} or offset < 2:
+        if trigger not in {'[[', ';;'}:
             return
         original = editor.text
         try:
@@ -237,9 +221,7 @@ class WorkflowMixin:
                 return
             try:
                 if trigger == '[[':
-                    note = self.vault.read(key)
-                    if note.workspace != self.workspace:
-                        raise ValueError('Note moved to another workspace')
+                    note = self.read_in_workspace(key)
                     title = note.title.replace('|', ' ').replace('[', '').replace(']', '')
                     body = f'[[{note.id}|{title}]]'
                 else:
@@ -280,35 +262,28 @@ class WorkflowMixin:
     def insert_note_id(self, key):
         if key:
             try:
-                note = self.vault.read(key)
-                if note.workspace != self.workspace:
-                    raise ValueError('Note moved to another workspace')
-                self.insert_editor_text(note.body)
+                self.insert_editor_text(self.read_in_workspace(key).body)
                 self.query_one('#editor', TextArea).focus()
             except (ValueError, OSError) as error:
                 self.notify(str(error), severity='error')
 
     def arrange(self, paragraphs):
         body = self.query_one('#editor', TextArea).text
-        if len(body.encode('utf-8')) > 256 * 1024 or len(re.split(r'(?:\r?\n){2}' if paragraphs else r'\r?\n', body)) > 5000:
-            self.notify('Arrange supports up to 256 KiB and 5,000 items', severity='warning')
+        if len(body.encode('utf-8')) > MAX_ARRANGE_BYTES or len(split_parts(body, paragraphs)) > MAX_ARRANGE_ITEMS:
+            self.notify(f'Arrange supports up to {MAX_ARRANGE_BYTES // 1024} KiB and {MAX_ARRANGE_ITEMS:,} items',
+                        severity='warning')
             return
         self.push_screen(Arrange(body, paragraphs), self.replace_editor_text)
 
-    def save_view_prompt(self):
-        from .app import TextPrompt
-        self.push_screen(TextPrompt('Save current query, collection, sort and theme', 'Unique name, e.g. weekly-review'), self.save_view)
-
     def save_view(self, name):
+        """Save the current filters under ``name`` without opening the view form."""
         if not name:
             return
         try:
             validate_workspace(name)
             if name in self.settings.saved_views:
                 raise ValueError('View already exists; delete it first or choose another name')
-            views = {**self.settings.saved_views, name: dict(workspace=self.workspace,
-                     query=self.query_one('#search', Input).value, collection=self.collection,
-                     sort=self.view_sort or self.settings.sort_order, theme=self.theme)}
+            views = {**self.settings.saved_views, name: self.current_view()}
             settings = replace(self.settings, saved_views=views)
             settings.save(self.settings_path)
             self.settings = settings
@@ -364,9 +339,10 @@ class WorkflowMixin:
                                  lambda tags: self.run_bulk(ids, 'tag', tags) if tags else None)
             elif operation:
                 self.run_bulk(ids, operation)
-        self.push_screen(Palette([(key, label) for key, label in [
+        self.push_screen(Palette([
             ('archive', 'Archive selected'), ('trash', 'Move selected to trash'), ('star', 'Star selected'),
-            ('tag', 'Add tags to selected'), ('merge', 'Merge into a new note; keep originals')]], 'Operation for selected notes'), chosen)
+            ('tag', 'Add tags to selected'), ('merge', 'Merge into a new note; keep originals')],
+            'Operation for selected notes'), chosen)
 
     def run_bulk(self, ids, operation, tags=''):
         if not self.save_current():
@@ -374,11 +350,9 @@ class WorkflowMixin:
         success, failures, merge = 0, [], []
         for key in dict.fromkeys(ids):
             try:
-                note = self.vault.read(key)
-                if note.workspace != self.workspace:
-                    raise ValueError('Note moved to another workspace')
+                note = self.read_in_workspace(key)
                 if operation == 'merge':
-                    if sum(len(body.encode('utf-8')) + 7 for body in merge) + len(note.body.encode('utf-8')) > MAX_NOTE_BYTES - 4096:
+                    if sum(len(body.encode('utf-8')) + 7 for body in merge) + len(note.body.encode('utf-8')) > EDIT_LIMIT_BYTES:
                         raise ValueError('Merged note exceeds the note size limit')
                     merge.append(note.body)
                 else:
@@ -476,11 +450,7 @@ class WorkflowMixin:
         # Do not run the more conservative insertion guard after that commit.
         editor = self.query_one('#editor', TextArea)
         if editor.text != note.body:
-            position = editor.cursor_location
-            editor.history.checkpoint()
-            editor.replace(note.body, (0, 0), self.editor_location(len(editor.text), editor.text))
-            editor.history.checkpoint()
-            editor.move_cursor(position)
+            self.replace_whole_text(note.body)
         self._editor_baseline = editor.text
         self.current, self.dirty, self.last_error = note, False, ''
         self.refresh_notes()

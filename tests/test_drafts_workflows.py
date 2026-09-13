@@ -1,4 +1,3 @@
-from dataclasses import replace
 from datetime import date
 import json
 import subprocess
@@ -6,7 +5,7 @@ import sys
 
 import pytest
 from textual.widgets import Input, TextArea, SelectionList
-from jotline.app import Jotline, FindInNote
+from jotline.app import Jotline
 from jotline.workflows import Arrange, SelectNotes, headings
 from jotline.settings import Settings
 from jotline.store import Vault
@@ -87,7 +86,7 @@ async def test_navigation_insert_template_and_arrange_undo(tmp_path):
         app.load_id(two.id)
         app.previous_note()
         assert app.current.id == one.id and editor.cursor_location == (1, 2)
-        app.go_heading('2')
+        app.jump_to_row('2')
         assert editor.cursor_location == (2, 0)
         app.insert_template_named('snippet')
         assert 'hello One' in editor.text
@@ -108,7 +107,7 @@ async def test_navigation_insert_template_and_arrange_undo(tmp_path):
 
 async def test_saved_view_restart_and_workspace_scope(tmp_path):
     app = Jotline(Vault(tmp_path))
-    async with app.run_test() as pilot:
+    async with app.run_test():
         app.collection = 'archive'
         app.query_one('#search', Input).value = '#work -blocked'
         app.theme = 'rose-pine-dawn'
@@ -266,6 +265,6 @@ async def test_replace_all_rejects_oversized_output_before_editing(tmp_path, mon
         await pilot.pause()
         app.screen.query_one('#find-query', Input).value = 'a'
         app.screen.query_one('#replace-value', Input).value = 'long'
-        monkeypatch.setattr(module, 'MAX_NOTE_BYTES', 4100)
+        monkeypatch.setattr(module, 'EDIT_LIMIT_BYTES', 4)
         app.screen.replace_matches(all_matches=True)
         assert editor.text == 'aaaa'

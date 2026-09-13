@@ -5,7 +5,8 @@ from pathlib import Path
 
 from .actions import validate_actions
 from .filesystem import fs as os
-from .store import MAX_SETTINGS_BYTES, create_private_temp, pin_ancestors, publish_new, read_regular_file
+from .store import (MAX_SETTINGS_BYTES, create_private_temp, pin_ancestors, publish_new, read_regular_file,
+                    unlink_quietly)
 
 
 def encode_recipes(actions):
@@ -51,9 +52,6 @@ def write_recipes(path, actions):
             publish_new(directory, temporary, absolute.name)
             os.fsync(directory)
         finally:
-            try:
-                os.unlink(temporary, dir_fd=directory)
-            except FileNotFoundError:
-                pass
+            unlink_quietly(directory, temporary)
     finally:
         os.close(directory)

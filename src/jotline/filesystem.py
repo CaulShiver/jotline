@@ -8,17 +8,19 @@ import errno
 import os
 
 if os.name == "nt":
+    import msvcrt
+
     from ._windows_fs import WindowsFS
 
     fs = WindowsFS()
 else:
+    import fcntl
+
     fs = os
 
 
 def lock_file(fd: int, *, unlock: bool = False) -> None:
     if os.name == "nt":
-        import msvcrt
-
         os.lseek(fd, 0, os.SEEK_SET)
         try:
             # Windows permits locking a byte beyond EOF, including an empty file.
@@ -28,6 +30,4 @@ def lock_file(fd: int, *, unlock: bool = False) -> None:
                 raise BlockingIOError(errno.EAGAIN, "Vault lock is held") from error
             raise
     else:
-        import fcntl
-
         fcntl.flock(fd, fcntl.LOCK_UN if unlock else fcntl.LOCK_EX | fcntl.LOCK_NB)

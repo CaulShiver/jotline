@@ -140,7 +140,6 @@ def test_copy_and_create_starters_preserve_source(tmp_path):
 
 @pytest.mark.asyncio
 async def test_builder_picks_target_by_title_and_previews_without_writes(tmp_path):
-    from textual.widgets import OptionList
     from jotline.app import Palette
     vault = Vault(tmp_path)
     note, target = saved(vault, 'source'), saved(vault, '# My project')
