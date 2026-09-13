@@ -330,8 +330,34 @@ def has_terminal_controls(body: str) -> bool:
     return any(is_terminal_control(character) for character in body)
 
 
+def windows_console_input() -> bool:
+    """Whether stdin is a real Windows console.
+
+    isatty() is also true for the NUL device, so a script run with stdin from
+    NUL would otherwise be treated as a person at a terminal and getpass would
+    wait on the console forever.
+    """
+    try:
+        import ctypes
+        import msvcrt
+
+        handle = msvcrt.get_osfhandle(sys.stdin.fileno())
+        mode = ctypes.c_uint32()
+        return bool(ctypes.windll.kernel32.GetConsoleMode(handle, ctypes.byref(mode)))
+    except (AttributeError, ImportError, OSError, ValueError):
+        return False
+
+
 def stdin_is_interactive() -> bool:
-    return sys.stdin is None or sys.stdin.isatty()
+    if sys.stdin is None:
+        return True
+    try:
+        interactive = sys.stdin.isatty()
+    except ValueError:
+        return False
+    if interactive and sys.platform == "win32":
+        return windows_console_input()
+    return interactive
 
 
 def encoding_name(value: str) -> str:

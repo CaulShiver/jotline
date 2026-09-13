@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- PDF export no longer hangs or crashes on common setups. On Ubuntu 23.10 and
+  later, where Chromium's sandbox cannot start, export retries without it (the
+  page loads nothing and runs no script). Chrome on macOS no longer waits on the
+  keychain or lingers after printing, and a stuck browser gives up after 60
+  seconds instead of 180 and falls back to the next converter.
+- On Windows, a command run with input from `NUL` (a scheduled task or script)
+  is no longer mistaken for a terminal: a missing passphrase fails with the
+  `JOTLINE_PASSPHRASE` hint instead of waiting forever, and `capture` reads the
+  empty input instead of opening the editor.
 - Full Markdown editing in the app. The editor highlights Markdown syntax in the
   current theme's colours, with no new dependency. Enter continues bullet,
   numbered, task and quote lines, and Enter on an empty item ends the list.

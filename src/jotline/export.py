@@ -12,7 +12,9 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
 from uuid import uuid4
 
 from .tasks import FENCE, TASK
@@ -24,6 +26,9 @@ SUFFIXES = {".md": "markdown", ".markdown": "markdown", ".txt": "markdown", ".ht
 EXTENSIONS = {"markdown": ".md", "html": ".html", "docx": ".docx", "pdf": ".pdf"}
 BINARY = frozenset({"docx", "pdf"})
 TIMEOUT_SECONDS = 180
+# A browser prints a note in a few seconds; a longer wait means it is stuck, so
+# move on to the next converter rather than hold the user for three minutes.
+BROWSER_TIMEOUT_SECONDS = 60
 WIKI_LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|([^\[\]]*))?\]\]")
 BROWSERS = ("chromium", "chromium-browser", "google-chrome-stable", "google-chrome", "chrome",
             "microsoft-edge-stable", "microsoft-edge", "msedge", "brave-browser", "brave")
@@ -129,44 +134,94 @@ def find_office() -> str | None:
                               *(str(Path(root, "LibreOffice/program/soffice.exe")) for root in programs if root))
 
 
-def _run(command: list[str], output: Path) -> str | None:
-    """Run a converter; return why it failed, or None when it wrote the output."""
+def _pdf_complete(output: Path) -> bool:
+    """A PDF is finished once its trailer (%%EOF) has been written."""
     try:
-        result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True,
-                                timeout=TIMEOUT_SECONDS, check=False)
+        with open(output, "rb") as stream:
+            stream.seek(0, os.SEEK_END)
+            size = stream.tell()
+            if size < 8:
+                return False
+            stream.seek(max(0, size - 64))
+            return b"%%EOF" in stream.read()
+    except OSError:
+        return False
+
+
+def _stop(process: subprocess.Popen) -> None:
+    if process.poll() is None:
+        process.kill()
+    try:
+        process.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        return f"timed out after {TIMEOUT_SECONDS} seconds"
-    except OSError as error:
-        return error.strerror or str(error)
-    if result.returncode == 0 and output.is_file() and output.stat().st_size:
-        return None
-    detail = result.stderr.decode("utf-8", "replace").strip().splitlines()
-    return detail[-1][:200] if detail else f"exit status {result.returncode}"
+        pass
+
+
+def _run(command: list[str], output: Path, timeout: float = TIMEOUT_SECONDS) -> str | None:
+    """Run a converter; return why it failed, or None when it wrote the output.
+
+    Browsers can keep running after the PDF is written (Chrome on macOS waits on
+    helper processes), so a complete PDF ends the wait. Errors go to a file
+    because a pipe nobody reads can fill and stall a chatty browser.
+    """
+    wants_pdf = output.suffix == ".pdf"
+    with tempfile.TemporaryFile() as errors:
+        try:
+            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=errors)
+        except OSError as error:
+            return error.strerror or str(error)
+        deadline = time.monotonic() + timeout
+        try:
+            while process.poll() is None:
+                if wants_pdf and _pdf_complete(output):
+                    return None
+                if time.monotonic() >= deadline:
+                    _stop(process)
+                    return None if wants_pdf and _pdf_complete(output) else f"timed out after {timeout:g} seconds"
+                time.sleep(0.1)
+        finally:
+            _stop(process)
+        if process.returncode == 0 and output.is_file() and output.stat().st_size:
+            return None
+        errors.seek(0)
+        detail = errors.read()[-64 * 1024:].decode("utf-8", "replace").strip().splitlines()
+    return detail[-1][:200] if detail else f"exit status {process.returncode}"
 
 
 def converters(fmt: str, page: Path, work: Path):
-    """(tool name, output path, command) for each installed converter, best first."""
+    """(tool name, output path, command, timeout) for each installed converter, best first."""
     target = work / ("out" + EXTENSIONS[fmt])
     browser, office, pandoc = find_browser(), find_office(), shutil.which("pandoc")
     if fmt == "pdf" and browser:
-        yield Path(browser).stem, target, [
+        name = Path(browser).stem
+        # The mock keychain keeps macOS Chrome from waiting on a keychain prompt
+        # that a headless run can never answer. Scripts stay off: the page needs none.
+        command = [
             browser, "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
-            "--disable-extensions", f"--user-data-dir={work / 'browser'}", "--no-pdf-header-footer",
-            "--print-to-pdf-no-header", f"--print-to-pdf={target}", page.as_uri()]
+            "--disable-extensions", "--use-mock-keychain", "--password-store=basic",
+            "--blink-settings=scriptEnabled=false", f"--user-data-dir={work / 'browser'}",
+            "--no-pdf-header-footer", "--print-to-pdf-no-header", f"--print-to-pdf={target}", page.as_uri()]
+        yield name, target, command, BROWSER_TIMEOUT_SECONDS
+        if sys.platform.startswith("linux"):
+            # Ubuntu 23.10 and later restrict the unprivileged user namespaces
+            # the browser sandbox needs, and the browser crashes at start. The
+            # page is generated here, loads nothing (its CSP forbids it) and runs
+            # no script, so a retry without the sandbox is a contained fallback.
+            yield f"{name} without sandbox", target, [browser, "--no-sandbox", *command[1:]], BROWSER_TIMEOUT_SECONDS
     if pandoc and fmt == "docx":
-        yield "pandoc", target, [pandoc, "--from=html", "--to=docx", f"--output={target}", str(page)]
+        yield "pandoc", target, [pandoc, "--from=html", "--to=docx", f"--output={target}", str(page)], TIMEOUT_SECONDS
     if pandoc and fmt == "pdf":
         for engine in PDF_ENGINES:
             if shutil.which(engine):
                 yield f"pandoc ({engine})", target, [pandoc, "--from=html", f"--pdf-engine={engine}",
-                                                     f"--output={target}", str(page)]
+                                                     f"--output={target}", str(page)], TIMEOUT_SECONDS
                 break
     if office:
         # A private profile keeps a running LibreOffice from swallowing the job.
         filters = {"docx": "docx:MS Word 2007 XML", "pdf": "pdf:writer_web_pdf_Export"}
         yield "LibreOffice", work / "office" / (page.stem + EXTENSIONS[fmt]), [
             office, "--headless", "--norestore", f"-env:UserInstallation={(work / 'office-profile').as_uri()}",
-            "--convert-to", filters[fmt], "--outdir", str(work / "office"), str(page)]
+            "--convert-to", filters[fmt], "--outdir", str(work / "office"), str(page)], TIMEOUT_SECONDS
 
 
 def export_bytes(title: str, body: str, fmt: str, titles: dict[str, str] | None = None) -> bytes:
@@ -180,8 +235,10 @@ def export_bytes(title: str, body: str, fmt: str, titles: dict[str, str] | None 
         page = work / "note.html"
         page.write_text(page_text, encoding="utf-8")
         failures = []
-        for tool, output, command in converters(fmt, page, work):
-            problem = _run(command, output)
+        for tool, output, command, timeout in converters(fmt, page, work):
+            # A failed attempt must not leave a partial file for the next converter to accept.
+            output.unlink(missing_ok=True)
+            problem = _run(command, output, timeout)
             if problem is None:
                 return output.read_bytes()
             failures.append(f"{tool}: {problem}")

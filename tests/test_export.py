@@ -132,6 +132,44 @@ def test_real_word_export(tmp_path):
     assert export_bytes("Plan", "# Plan\n\n- [ ] call Sam", "docx").startswith(b"PK")
 
 
+PRINT_TARGET = 'for a; do case "$a" in --print-to-pdf=*) out="${a#--print-to-pdf=}";; esac; done\n'
+
+
+@posix_only
+def test_a_browser_that_lingers_after_printing_is_not_waited_on(tmp_path, monkeypatch):
+    import time
+
+    from jotline import export
+
+    # Chrome on macOS can keep running after the PDF is written.
+    stand_in(tmp_path, "chromium", PRINT_TARGET + "printf '%%PDF-1.4\\n%%%%EOF\\n' > \"$out\"\nexec /bin/sleep 30\n")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr(export, "BROWSER_TIMEOUT_SECONDS", 25)
+    started = time.monotonic()
+    assert export_bytes("Plan", "body", "pdf") == b"%PDF-1.4\n%%EOF\n"
+    assert time.monotonic() - started < 10
+
+
+@posix_only
+def test_a_hung_browser_times_out_and_is_reported(tmp_path, monkeypatch):
+    from jotline import export
+
+    stand_in(tmp_path, "chromium", "exec /bin/sleep 30\n")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr(export, "BROWSER_TIMEOUT_SECONDS", 0.5)
+    with pytest.raises(ExportError, match="chromium: timed out after 0.5 seconds"):
+        export_bytes("Plan", "body", "pdf")
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="the sandbox retry is Linux-only")
+def test_a_browser_without_a_usable_sandbox_is_retried_without_it(tmp_path, monkeypatch):
+    # Ubuntu 23.10+ blocks the namespaces Chromium's sandbox needs.
+    stand_in(tmp_path, "chromium", 'case " $* " in *" --no-sandbox "*) ;; *) echo "No usable sandbox!" >&2; exit 133;; esac\n'
+             + PRINT_TARGET + "printf '%%PDF-1.4\\n%%%%EOF\\n' > \"$out\"\n")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert export_bytes("Plan", "body", "pdf").startswith(b"%PDF")
+
+
 async def test_app_suggests_a_file_name_and_exports_in_the_background(tmp_path):
     vault = Vault(tmp_path / "vault")
     note = saved(vault, "# Weekly plan: Sam/Alex\n\nhello", "abcdef0123456789")
