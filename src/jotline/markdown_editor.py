@@ -434,20 +434,25 @@ def format_table(lines: list[str]) -> list[str]:
 TABLE_TEMPLATE = ["| Column | Column |", "| ------ | ------ |", "|        |        |"]
 
 
-def _muted(theme) -> str:
-    """The foreground blended most of the way into the background, for markers and syntax."""
+def _rich_color(value: str | None, fallback: str):
+    """Translate Textual's ANSI aliases into colors Rich can render."""
+    return Color.parse(value or fallback).rich_color
+
+
+def _muted(theme, factor: float = 0.45):
+    """The foreground blended into the background, for markers and syntax."""
     foreground = Color.parse(theme.foreground or JOTLINE_THEME.foreground)
     background = Color.parse(theme.background or JOTLINE_THEME.background)
-    return foreground.blend(background, 0.45).hex
+    return foreground.blend(background, factor).rich_color
 
 
 def syntax_styles(theme) -> dict[str, Style]:
     """Markdown colours derived from the active app theme."""
-    accent = theme.accent or theme.primary
-    primary = theme.primary
-    secondary = theme.secondary or accent
-    warning = theme.warning or secondary
-    success = theme.success or primary
+    accent = _rich_color(theme.accent or theme.primary, "#a8d5a2")
+    primary = _rich_color(theme.primary, "#a8d5a2")
+    secondary = _rich_color(theme.secondary, theme.accent or theme.primary or "#a8d5a2")
+    warning = _rich_color(theme.warning, theme.secondary or theme.accent or theme.primary or "#a8d5a2")
+    success = _rich_color(theme.success, theme.primary or "#a8d5a2")
     muted = _muted(theme)
     return {
         "heading": Style(color=accent, bold=True),

@@ -91,8 +91,9 @@ plain `.md` files.
 Enter continues a bullet (`- `), numbered (`1. ` becomes `2. `), task (`- [ ] `)
 or quote (`> `) line. Press Enter on an empty item to end the list.
 
-Formatting lives in **Ctrl+P → Format …**. Each command toggles, so running it
-again removes the formatting:
+Select text (or place the cursor on a line), then open **Format** in the
+sidebar for a dedicated Markdown menu. Formatting also lives in **Ctrl+P →
+Format …**. Each command toggles, so running it again removes the formatting:
 
 | Command | Result |
 | --- | --- |
@@ -134,10 +135,11 @@ Open **Ctrl+P → Settings**. Change preferences with Tab, arrows, and Space; ch
 **Save** (or Ctrl+S) to apply them. Escape cancels. **Use defaults** fills the form
 with the original settings; nothing changes until you save.
 
-- **Seventeen themes:** Jotline, Nord, Gruvbox, Dracula, Tokyo Night, Monokai,
+- **Twenty-two themes:** Jotline, Nord, Gruvbox, Dracula, Tokyo Night, Monokai,
   Flexoki, Catppuccin Mocha/Latte/Frappé/Macchiato, Rosé Pine/Moon/Dawn,
-  Solarized dark/light, and Textual light. For a light background, try
-  Catppuccin Latte, Rosé Pine Dawn, Solarized light, or Textual light.
+  Solarized dark/light, Textual dark/light, Atom One dark/light, and ANSI
+  dark/light. For a light background, try Catppuccin Latte, Rosé Pine Dawn,
+  Solarized light, Textual light, Atom One light, or ANSI light.
 - **Editor:** line numbers, wrapping, current-line highlighting, Markdown
   highlighting, and list continuation on Enter.
 - **Layout:** sidebar width, writing hints, and starting in focus mode.

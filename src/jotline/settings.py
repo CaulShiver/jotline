@@ -12,7 +12,8 @@ from .store import (COLLECTIONS, MAX_SETTINGS_BYTES, create_private_temp, read_r
 THEMES = ('jotline', 'nord', 'gruvbox', 'catppuccin-mocha', 'dracula', 'tokyo-night',
           'solarized-dark', 'solarized-light', 'textual-light',
           'monokai', 'flexoki', 'catppuccin-latte', 'catppuccin-frappe',
-          'catppuccin-macchiato', 'rose-pine', 'rose-pine-moon', 'rose-pine-dawn')
+          'catppuccin-macchiato', 'rose-pine', 'rose-pine-moon', 'rose-pine-dawn',
+          'ansi-dark', 'ansi-light', 'atom-one-dark', 'atom-one-light', 'textual-dark')
 SORT_ORDERS = ('updated', 'created', 'title')
 # What a view or the sidebar can show; new thoughts can only land somewhere not archived.
 VIEW_COLLECTIONS = ('all', 'starred', *COLLECTIONS)

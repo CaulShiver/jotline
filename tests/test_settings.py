@@ -3,7 +3,7 @@ import pytest
 from textual.widgets import Input, Select, Switch, TextArea
 from jotline.app import Jotline
 from jotline.preferences import Preferences
-from jotline.settings import Settings
+from jotline.settings import Settings, THEMES
 from jotline.store import Vault
 
 
@@ -18,6 +18,10 @@ def test_validation_and_malformed_settings(tmp_path):
         with pytest.raises(ValueError):
             bad.save(path)
     assert path.read_text() == '{broken'
+
+
+def test_all_bundled_themes_are_available_preferences():
+    assert {'ansi-dark', 'ansi-light', 'atom-one-dark', 'atom-one-light', 'textual-dark'} <= set(THEMES)
 
 
 async def test_settings_apply_persist_and_keep_editor(tmp_path):
@@ -55,6 +59,17 @@ async def test_settings_apply_persist_and_keep_editor(tmp_path):
         assert second.current.body.startswith(f'# {date.today()}\n\n## Priorities')
         assert second.query_one('#editor', TextArea).show_line_numbers
     assert vault.notes()[0].body == 'Keep this unfinished thought'
+
+
+async def test_added_bundled_themes_can_be_applied(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    added = {'ansi-dark', 'ansi-light', 'atom-one-dark', 'atom-one-light', 'textual-dark'}
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert added <= set(app.available_themes)
+        for theme in added:
+            app.save_settings(Settings(theme=theme))
+            assert app.theme == theme
 
 
 async def test_cancel_and_validation_do_not_change_settings(tmp_path):

@@ -38,6 +38,18 @@ class NoteList(OptionList):
                 self.post_message(self.ContextRequested(option.id, self.region.x + 2, self.region.y))
 
 
+class NoteMenuOptions(OptionList):
+    """Keep the menu's selected row aligned with the mouse pointer."""
+
+    def _on_mouse_move(self, event: events.MouseMove) -> None:
+        super()._on_mouse_move(event)
+        index = event.style.meta.get('option')
+        if isinstance(index, int) and 0 <= index < self.option_count:
+            option = self.get_option_at_index(index)
+            if not option.disabled:
+                self.highlighted = index
+
+
 class NoteMenu(Modal[str | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel')]
     CSS = '''
@@ -55,7 +67,7 @@ class NoteMenu(Modal[str | None]):
     def compose(self):
         with Vertical(id='note-menu'):
             yield Label(Text(self.title_text), id='note-menu-title')
-            yield OptionList(*(Option(Text(label), id=key) for key, label in self.choices), id='note-menu-options')
+            yield NoteMenuOptions(*(Option(Text(label), id=key) for key, label in self.choices), id='note-menu-options')
 
     def on_mount(self):
         panel = self.query_one('#note-menu')

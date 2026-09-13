@@ -44,6 +44,23 @@ async def test_visible_actions_and_import_are_keyboard_reachable(tmp_path):
         assert app.current.id == original_id
 
 
+async def test_format_menu_applies_markdown_without_searching_commands(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(80, 24)) as pilot:
+        editor = app.query_one('#editor', TextArea)
+        editor.insert('important')
+        editor.move_cursor((0, 0))
+        editor.move_cursor((0, len('important')), select=True)
+        await pilot.press('ctrl+f')
+        await pilot.click('#nav-format')
+        assert isinstance(app.screen, Palette)
+        assert app.screen.heading == 'Format Markdown'
+        assert ('format:bold', 'bold') in app.screen.choices
+        await pilot.press('enter')
+        assert editor.text == '**important**'
+        assert editor.has_focus
+
+
 async def test_autosave_conflict_opens_comparison_once_and_cancel_keeps_draft(tmp_path):
     vault = Vault(tmp_path)
     note = vault.new('original')

@@ -428,7 +428,9 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
                     yield Button("Filters", id="nav-filters")
                     yield Button("Quick start", id="nav-help")
                 with Horizontal(classes="navigation-row"):
+                    yield Button("Format", id="nav-format")
                     yield Button("Actions", id="nav-actions")
+                with Horizontal(classes="navigation-row"):
                     yield Button("Import", id="nav-import")
                 yield Static("INBOX", id="collection", markup=False)
                 yield Input(placeholder="Search words or #tags", id="search")
@@ -623,6 +625,13 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             ('action-builder', 'Build an action'), ('manage-actions', 'Edit or share an action'),
             ('import-actions', 'Import recipes'), ('action-history', 'Action history'),
         ], 'Actions'), self.command)
+
+    @on(Button.Pressed, "#nav-format")
+    def navigation_format(self):
+        choices = [(command.key, command.label.removeprefix("Format "))
+                   for command in self.command_registry.values()
+                   if command.key.startswith("format:")]
+        self.push_screen(Palette(choices, "Format Markdown"), self.command)
 
     @on(Button.Pressed, "#nav-import")
     def navigation_import(self):

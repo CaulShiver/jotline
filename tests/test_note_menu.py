@@ -1,6 +1,6 @@
 from textual.widgets import TextArea, OptionList
 from jotline.app import Jotline
-from jotline.note_menu import NoteMenu
+from jotline.note_menu import NoteMenu, NoteMenuOptions
 from jotline.settings import Settings
 from jotline.store import Vault
 
@@ -79,6 +79,20 @@ async def test_delete_and_restore_from_context_menu(tmp_path):
         assert ('restore', 'Restore to Inbox') in app.screen.choices
         await pilot.press('end', 'enter')
         assert vault.read(note.id).collection == 'inbox'
+
+
+async def test_context_menu_highlight_follows_mouse_over_delete(tmp_path):
+    vault = Vault(tmp_path)
+    save(vault, 'Delete me')
+    app = Jotline(vault)
+    async with app.run_test(size=(80, 24)) as pilot:
+        app.show_navigation()
+        await pilot.pause()
+        await pilot.click('#notes', offset=(2, 0), button=3)
+        options = app.screen.query_one(NoteMenuOptions)
+        assert options.highlighted == 0
+        await pilot.hover('#note-menu-options', offset=(2, 1))
+        assert options.highlighted == 1
 
 
 async def test_context_workspace_move_and_keyboard_menu(tmp_path):
