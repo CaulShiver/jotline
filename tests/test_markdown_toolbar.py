@@ -40,6 +40,8 @@ async def test_toolbar_more_and_preview_preserve_selection(tmp_path):
         assert editor.selection == selection
         await pilot.click('#md-preview')
         assert isinstance(app.screen, MarkdownPreview)
+        # The click opens a new screen; wait for its Markdown mount/render too.
+        await pilot.pause()
         assert len(app.screen.query('MarkdownH1')) == 1
         await pilot.press('escape')
         assert editor.selection == selection

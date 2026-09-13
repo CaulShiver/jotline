@@ -67,8 +67,11 @@ def test_theme_directory_symlink_swap(palette, tmp_path):
     assert load_omarchy_theme().primary == '#112233'
 
 
+# Pytest exports the case ID as PYTEST_CURRENT_TEST. Embedding the oversized
+# input in that ID exceeds Windows' 32,767-character environment value limit.
 @pytest.mark.parametrize('data', [b'invalid toml', b'\xff', b'x' * (MAX_PALETTE_BYTES + 1),
-                                  b'background = 42', PALETTE.replace('#ad2222', 'red').encode()])
+                                  b'background = 42', PALETTE.replace('#ad2222', 'red').encode()],
+                         ids=['invalid-toml', 'invalid-utf8', 'oversized', 'wrong-type', 'invalid-color'])
 def test_invalid_palettes_are_ignored(palette, data):
     palette.write_bytes(data)
     assert load_omarchy_theme() is None
