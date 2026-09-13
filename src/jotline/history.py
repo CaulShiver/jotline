@@ -102,6 +102,13 @@ def _revision_directory(vault, note_id: str, *, create: bool, vault_directory: i
                 yield history, note
 
 
+def _stat_entry(entry: os.DirEntry) -> os.stat_result | None:
+    try:
+        return entry.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return None  # Removed by another writer between listing and stat.
+
+
 def _revisions_at(vault, note_id: str, folder: int) -> list[Revision]:
     result = []
     with os.scandir(folder) as entries:
@@ -113,11 +120,8 @@ def _revisions_at(vault, note_id: str, folder: int) -> list[Revision]:
             stem = entry.name[:-3] if entry.name.endswith(".md") else ""
             if not REVISION_ID.fullmatch(stem):
                 continue
-            try:
-                info = entry.stat(follow_symlinks=False)
-            except OSError:
-                continue  # Pruned by another writer between listing and stat.
-            if not stat.S_ISREG(info.st_mode):
+            info = _stat_entry(entry)
+            if info is None or not stat.S_ISREG(info.st_mode):
                 continue
             try:
                 when = datetime.strptime(stem.split("-")[0], "%Y%m%dT%H%M%S%f")
@@ -346,8 +350,8 @@ def _prune_backups(vault, folder: int, keep_name: str) -> None:
             if index >= MAX_BACKUP_ENTRIES:
                 vault.warnings.append(f"Backup retention stopped after {MAX_BACKUP_ENTRIES} entries")
                 break
-            info = entry.stat(follow_symlinks=False)
-            if BACKUP_NAME.fullmatch(entry.name) and stat.S_ISREG(info.st_mode):
+            info = _stat_entry(entry)
+            if info is not None and BACKUP_NAME.fullmatch(entry.name) and stat.S_ISREG(info.st_mode):
                 archives.append((info.st_mtime_ns, entry.name))
     archives.sort(reverse=True)
     today = f"daily-{date.today().isoformat()}.zip"
