@@ -81,6 +81,41 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 
 The palette also offers star, move, restore from trash, task toggle, link insertion/navigation, backlinks, recovery copies, and a writing guide. Type words to narrow commands, use arrows to choose, then Enter. Standard text selection, undo, and redo are provided by the editor. Clipboard copy uses OSC 52 and depends on your terminal's permissions and support.
 
+## Markdown editing
+
+The editor colours Markdown as you type: headings, bold, italic, strikethrough,
+inline and fenced code, links, `[[note links]]`, tags, lists, tasks, quotes,
+rules and tables. Code inside a fence is shown as code, not formatted. Notes stay
+plain `.md` files.
+
+Enter continues a bullet (`- `), numbered (`1. ` becomes `2. `), task (`- [ ] `)
+or quote (`> `) line. Press Enter on an empty item to end the list.
+
+Formatting lives in **Ctrl+P → Format …**. Each command toggles, so running it
+again removes the formatting:
+
+| Command | Result |
+| --- | --- |
+| Format bold / italic / strikethrough / inline code | `**text**`, `*text*`, `~~text~~`, `` `text` `` around the selection, or a selected placeholder |
+| Format heading, heading level 1–6 | `#` to `######` on the current or selected lines; a different level replaces the old one |
+| Format bullet / numbered / task list, blockquote | `- `, `1. 2. 3.`, `- [ ] `, `> ` on each selected line |
+| Format indent lines / outdent lines | Two spaces in or out, for nested lists |
+| Format code block | Wraps the selected lines in a fence long enough for any backticks inside |
+| Format link / image | `[text](url)` or `![alt text](path)`; a selected URL becomes the target |
+| Format table · insert or tidy | Inserts a table, or lines up the columns of the table under the cursor (alignment colons kept) |
+| Format horizontal rule | `---` on its own line |
+
+**Preview rendered Markdown** opens a full-screen preview. **Toggle side-by-side
+Markdown preview** keeps a live preview beside the editor that follows your
+typing and cursor; it needs a terminal wider than 80 columns, and below that the
+full preview opens instead. Both previews show checkboxes as ☐/☒ and note links
+as note titles, and neither opens links or loads images. **Jump to heading**
+lists the note's headings for quick navigation.
+
+Every formatting command, both previews and the heading outline can have its own
+key in **F1 → Keyboard shortcuts**; they start unassigned. **F1 → Editor** turns
+Markdown highlighting or list continuation off.
+
 ## Move or delete with the mouse
 
 Right-click a note in the sidebar to open its action menu. Choose **Move to
@@ -103,7 +138,8 @@ with the original settings; nothing changes until you save.
   Flexoki, Catppuccin Mocha/Latte/Frappé/Macchiato, Rosé Pine/Moon/Dawn,
   Solarized dark/light, and Textual light. For a light background, try
   Catppuccin Latte, Rosé Pine Dawn, Solarized light, or Textual light.
-- **Editor:** line numbers, wrapping, and current-line highlighting.
+- **Editor:** line numbers, wrapping, current-line highlighting, Markdown
+  highlighting, and list continuation on Enter.
 - **Layout:** sidebar width, writing hints, and starting in focus mode.
 - **Workflow:** open a blank thought or today's log, choose the collection for new
   thoughts, and sort notes by last edit, creation date, or title (stars stay first).

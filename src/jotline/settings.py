@@ -33,6 +33,18 @@ HOTKEY_ACTIONS = {
     "format_heading": ("", "Format heading (optional)"),
     "format_list": ("", "Format bullet list (optional)"),
     "format_quote": ("", "Format quote (optional)"),
+    "live_preview": ("", "Side-by-side preview (optional)"),
+    "outline": ("", "Jump to heading (optional)"),
+    "format_strike": ("", "Format strikethrough (optional)"),
+    "format_numbered": ("", "Format numbered list (optional)"),
+    "format_task": ("", "Format task list (optional)"),
+    "format_codeblock": ("", "Format code block (optional)"),
+    "format_link": ("", "Insert link (optional)"),
+    "format_image": ("", "Insert image (optional)"),
+    "format_table": ("", "Insert or tidy table (optional)"),
+    "format_rule": ("", "Insert horizontal rule (optional)"),
+    "format_indent": ("", "Indent lines (optional)"),
+    "format_outdent": ("", "Outdent lines (optional)"),
 }
 # Preserve editing controls and terminal aliases for Tab, Enter and Backspace.
 RESERVED_HOTKEYS = {"ctrl+" + letter for letter in "acehijkmuvxyz"}
@@ -91,6 +103,8 @@ class Settings:
     line_numbers: bool = False
     soft_wrap: bool = True
     highlight_line: bool = True
+    markdown_highlighting: bool = True
+    smart_lists: bool = True
     focus_on_start: bool = False
     show_hints: bool = True
     sidebar_width: int = 32
@@ -154,7 +168,8 @@ class Settings:
             raise ValueError("At most 256 workspace names may be saved")
         for name in self.workspace_names:
             validate_workspace(name)
-        for name in ('line_numbers', 'soft_wrap', 'highlight_line', 'focus_on_start', 'show_hints'):
+        for name in ('line_numbers', 'soft_wrap', 'highlight_line', 'markdown_highlighting', 'smart_lists',
+                     'focus_on_start', 'show_hints'):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f'{name} must be true or false')
         if self.theme not in THEMES:

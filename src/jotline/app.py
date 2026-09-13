@@ -27,6 +27,9 @@ from .import_ui import RecoveryImportMixin
 from .note_menu import NoteList, NoteMenu
 from .review_ui import ReviewMixin
 from .encryption_ui import EncryptionMixin
+from .export import printable_markdown
+from .markdown_editor import (TABLE_TEMPLATE, FENCE, MarkdownEditor, fence_for, format_table, headings,
+                              indent_lines, table_bounds, toggle_lines)
 
 
 @dataclass(frozen=True)
@@ -367,6 +370,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
     #writing { width: 1fr; padding: 0 2; }
     #note-heading { height: 2; color: $accent; }
     #editor { height: 1fr; border: none; background: $background; }
+    #live-preview { width: 1fr; border-left: solid $primary-muted; padding: 0 2; }
     #status { height: 2; padding-top: 1; color: $text-muted; }
     #connections { height: auto; max-height: 5; padding-top: 1; color: $text-muted; }
     #hint { height: 2; padding: 0 2; color: $text-muted; }
@@ -409,6 +413,9 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self._editor_baseline = ""
         self.view_sort = None
         self.active_view = None
+        self.live_preview = False
+        self._live_preview_timer = None
+        self._live_preview_text: str | None = None
         self.command_registry = self.build_command_registry()
 
     def compose(self) -> ComposeResult:
@@ -430,9 +437,11 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
                 yield NoteList(id="notes")
             with Vertical(id="writing"):
                 yield Static(self.current.title + " / " + self.current.collection, id="note-heading")
-                yield TextArea("", soft_wrap=True, tab_behavior="focus", show_line_numbers=False, id="editor")
+                yield MarkdownEditor("", soft_wrap=True, tab_behavior="focus", show_line_numbers=False, id="editor")
                 yield Static("", id="connections", markup=False)
                 yield Static("Ready · local Markdown", id="status", markup=False)
+            with VerticalScroll(id="live-preview", classes="hidden"):
+                yield Markdown("", open_links=False, id="live-markdown")
         yield Static("Capture first. Make sense of it later.   ctrl+p commands · ctrl+d daily log", id="hint")
         yield Footer()
 
@@ -467,6 +476,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         sidebar.set_class(self.focused_writing or (self.compact_layout and not self.compact_navigation), "hidden")
         hint.set_class(self.focused_writing or self.compact_layout or not self.settings.show_hints, "hidden")
         connections.set_class(very_short, "hidden")
+        self.query_one("#live-preview").set_class(not self.live_preview or self.compact_layout, "hidden")
         self.query_one(Footer).set_class(very_short, "compact-footer")
 
     def storage_warnings(self) -> list[str]:
@@ -507,6 +517,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         editor.soft_wrap = settings.soft_wrap
         editor.show_line_numbers = settings.line_numbers
         editor.highlight_cursor_line = settings.highlight_line
+        editor.set_markdown_options(highlighting=settings.markdown_highlighting, smart_lists=settings.smart_lists)
         self.query_one('#sidebar').styles.width = settings.sidebar_width
         self.set_focus_mode(settings.focus_on_start if startup else self.focused_writing)
 
@@ -688,6 +699,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         if self.is_running:
             if self.capture_current_buffer():
                 self.offer_completion()
+            self.schedule_live_preview()
 
     def capture_current_buffer(self) -> bool:
         """Copy the editor into the note while preserving its unsaved state."""
@@ -1067,52 +1079,276 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
     PREVIEW_MAX_BLOCKS = 600
     PREVIEW_MAX_CELLS = 400
 
-    def action_preview(self) -> None:
-        self.capture_current_buffer()
-        body = self.current.body
+    PREVIEW_MAX_BYTES = 256 * 1024
+
+    def preview_fits(self, body: str) -> bool:
         # Render cost follows the number of Markdown blocks (one widget each)
         # and table cells, not bytes: a 4 KiB list of 1,000 items stalls the UI.
         lines = body.splitlines()
         blocks = sum(1 for line in lines if line.strip())
         cells = max((line.count("|") for line in lines), default=0)
-        if (len(body.encode("utf-8")) > 256 * 1024 or blocks > self.PREVIEW_MAX_BLOCKS
-                or cells > self.PREVIEW_MAX_CELLS):
+        return (len(body.encode("utf-8")) <= self.PREVIEW_MAX_BYTES and blocks <= self.PREVIEW_MAX_BLOCKS
+                and cells <= self.PREVIEW_MAX_CELLS)
+
+    def preview_markdown(self, body: str) -> str:
+        """Checkboxes as ☐/☒ and [[links]] as note titles, as in exports."""
+        titles = {}
+        if "[[" in body:
+            try:
+                titles = {note.id: note.title for note in self.vault.search(workspace=self.workspace)}
+            except (OSError, ValueError):
+                pass
+        return printable_markdown(body, titles)
+
+    def action_preview(self) -> None:
+        self.capture_current_buffer()
+        body = self.current.body
+        if not self.preview_fits(body):
             self.notify(f"Preview supports notes up to 256 KiB and {self.PREVIEW_MAX_BLOCKS} lines of content. "
                         "You can still edit and save this note.", severity="warning")
             return
-        self.push_screen(MarkdownPreview(body))
+        self.push_screen(MarkdownPreview(self.preview_markdown(body)))
+
+    def action_live_preview(self) -> None:
+        if not self.live_preview and self.compact_layout:
+            self.notify("Side-by-side preview needs a terminal wider than 80 columns and taller than 24 rows; "
+                        "showing the full preview instead.")
+            self.action_preview()
+            return
+        self.live_preview = not self.live_preview
+        self._live_preview_text = None
+        self.update_responsive_layout()
+        if self.live_preview:
+            self.refresh_live_preview()
+        self.query_one("#editor", TextArea).focus()
+
+    def schedule_live_preview(self) -> None:
+        if not self.live_preview:
+            return
+        if self._live_preview_timer is not None:
+            self._live_preview_timer.stop()
+        # Debounce so fast typing renders once per pause rather than per key.
+        self._live_preview_timer = self.set_timer(0.3, self.refresh_live_preview)
+
+    def refresh_live_preview(self) -> None:
+        self._live_preview_timer = None
+        if not self.live_preview or not self.is_running:
+            return
+        editor = self.query_one("#editor", TextArea)
+        body = editor.text
+        text = (self.preview_markdown(body) if self.preview_fits(body) else
+                f"*Preview paused: this note is longer than {self.PREVIEW_MAX_BLOCKS} lines of content "
+                "or 256 KiB. Editing and saving still work.*")
+        if text != self._live_preview_text:
+            self._live_preview_text = text
+            self.query_one("#live-markdown", Markdown).update(text)
+        # Keep the preview roughly level with the cursor in long notes.
+        pane = self.query_one("#live-preview", VerticalScroll)
+        ratio = editor.cursor_location[0] / max(1, editor.document.line_count - 1)
+        self.call_after_refresh(lambda: pane.scroll_to(y=pane.max_scroll_y * ratio, animate=False))
+
+    def action_outline(self) -> None:
+        editor = self.query_one("#editor", TextArea)
+        found = headings(editor.document.lines)
+        if not found:
+            self.notify("No headings yet. Start a line with # to add one.")
+            return
+        self.push_screen(Palette([(str(row), "  " * (level - 1) + title + f" · line {row + 1}")
+                                  for row, level, title in found], "Jump to heading"), self.jump_to_row)
+
+    def jump_to_row(self, key: str | None) -> None:
+        editor = self.query_one("#editor", TextArea)
+        if key and key.isdigit() and int(key) < editor.document.line_count:
+            editor.move_cursor((int(key), 0), center=True)
+        editor.focus()
+
+    LINE_STYLES = {"heading": "h2", "list": "bullet", "numbered": "numbered", "task": "task", "quote": "quote",
+                   **{f"h{level}": f"h{level}" for level in range(1, 7)}}
+    WRAP_MARKERS = {"bold": "**", "italic": "*", "strike": "~~", "code": "`"}
 
     def action_format_markdown(self, style: str) -> None:
         editor = self.query_one("#editor", TextArea)
         start, end = sorted((editor.selection.start, editor.selection.end))
         editor.history.checkpoint()
-        if style in {"heading", "list", "quote"}:
-            first, last = start[0], end[0]
-            if end[1] == 0 and last > first:
-                last -= 1
+        if style in self.LINE_STYLES or style in ("indent", "outdent"):
+            first, last = self.selected_rows(start, end)
             # Use the editor's own line model; splitting the text on "\n" would
             # disagree with it for CR and CRLF documents and index past the end.
-            lines = editor.document.lines
-            prefix = {"heading": "## ", "list": "- ", "quote": "> "}[style]
-            body = "\n".join(prefix + line for line in lines[first:last + 1])
-            editor.replace(body, (first, 0), (last, len(lines[last])))
-            shift = len(prefix)
-            editor.move_cursor((start[0], start[1] + shift))
-            editor.move_cursor((end[0], end[1] + (shift if end[0] <= last else 0)), select=True)
-        else:
-            body = editor.selected_text or "text"
-            marker = {"bold": "**", "italic": "*", "code": "`"}[style]
-            if style == "code":
-                marker = "`" * (max((len(m[0]) for m in re.finditer(r"`+", body)), default=0) + 1)
-            padding = " " if style == "code" and (body.startswith("`") or body.endswith("`")) else ""
-            replacement = marker + padding + body + padding + marker
-            offset = self.editor_offset(start, editor.text) + len(marker + padding)
-            editor.replace(replacement, start, end)
-            editor.move_cursor(self.editor_location(offset, editor.text))
-            editor.move_cursor(self.editor_location(offset + len(body), editor.text), select=True)
+            lines = editor.document.lines[first:last + 1]
+            updated = (indent_lines(lines, outdent=style == "outdent") if style in ("indent", "outdent")
+                       else toggle_lines(lines, self.LINE_STYLES[style]))
+            self.replace_rows(first, lines, updated, start, end)
+        elif style in self.WRAP_MARKERS:
+            self.wrap_selection(style, start, end)
+        elif style in ("link", "image"):
+            self.insert_link(style == "image", start, end)
+        elif style == "codeblock":
+            self.format_code_block(start, end)
+        elif style == "rule":
+            row = end[0]
+            line = editor.document.get_line(row)
+            if line.strip():
+                result = editor.insert("\n\n---\n\n", (row, len(line)))
+            else:
+                result = editor.replace("---\n\n", (row, 0), (row, len(line)))
+            editor.move_cursor(result.end_location)
+        elif style == "table":
+            self.format_table_at_cursor()
         editor.history.checkpoint()
         self.capture_current_buffer()
         editor.focus()
+
+    def selected_rows(self, start: tuple[int, int], end: tuple[int, int]) -> tuple[int, int]:
+        first, last = start[0], end[0]
+        if end[1] == 0 and last > first:
+            last -= 1
+        return first, last
+
+    def replace_rows(self, first: int, lines: list[str], updated: list[str],
+                     start: tuple[int, int], end: tuple[int, int]) -> None:
+        """Replace whole rows, keeping the cursor or selection on the same text."""
+        editor = self.query_one("#editor", TextArea)
+        last = first + len(lines) - 1
+        editor.replace("\n".join(updated), (first, 0), (last, len(lines[-1])))
+
+        def shifted(location: tuple[int, int]) -> tuple[int, int]:
+            row, column = location
+            if first <= row <= last:
+                index = row - first
+                column = min(max(0, column + len(updated[index]) - len(lines[index])), len(updated[index]))
+            return row, column
+
+        editor.move_cursor(shifted(start))
+        if start != end:
+            editor.move_cursor(shifted(end), select=True)
+
+    def select_offsets(self, begin: int, finish: int) -> None:
+        editor = self.query_one("#editor", TextArea)
+        text = editor.text
+        editor.move_cursor(self.editor_location(begin, text))
+        editor.move_cursor(self.editor_location(finish, text), select=True)
+
+    def wrap_selection(self, style: str, start: tuple[int, int], end: tuple[int, int]) -> None:
+        editor = self.query_one("#editor", TextArea)
+        text = editor.text
+        begin, finish = self.editor_offset(start, text), self.editor_offset(end, text)
+        body = text[begin:finish]
+        marker = self.WRAP_MARKERS[style]
+        if body and (unwrapped := self.unwrap_span(style, text, begin, finish)):
+            outer_begin, outer_finish, inner = unwrapped
+            editor.replace(inner, self.editor_location(outer_begin, text), self.editor_location(outer_finish, text))
+            self.select_offsets(outer_begin, outer_begin + len(inner))
+            return
+        body = body or "text"
+        padding = ""
+        if style == "code":
+            marker = "`" * (max((len(m[0]) for m in re.finditer(r"`+", body)), default=0) + 1)
+            padding = " " if body.startswith("`") or body.endswith("`") else ""
+        editor.replace(marker + padding + body + padding + marker, start, end)
+        inner = begin + len(marker + padding)
+        self.select_offsets(inner, inner + len(body))
+
+    @staticmethod
+    def unwrap_span(style: str, text: str, begin: int, finish: int) -> tuple[int, int, str] | None:
+        """If the selection is already formatted with ``style``, the span to replace and its content.
+
+        Both a selection of the inner text and one that includes the markers
+        count. Emphasis checks the full run of asterisks or underscores so that
+        italic never strips half of a bold marker.
+        """
+        body = text[begin:finish]
+        if style == "code":
+            # A selection that includes backticks is literal text to quote, so
+            # only a selection inside an existing code span removes it.
+            before = len(text[:begin]) - len(text[:begin].rstrip("`"))
+            after = len(text[finish:]) - len(text[finish:].lstrip("`"))
+            if before and before == after:
+                inner = body[1:-1] if body.startswith(" ") and body.endswith(" ") and len(body) > 1 else body
+                if text[begin - before - 1:begin - before] != "`":
+                    return begin - before, finish + after, inner
+            return None
+        characters = "~" if style == "strike" else "*_"
+
+        def matches(run: str) -> bool:
+            if len(run) < 1 or len(set(run)) != 1 or run[0] not in characters:
+                return False
+            return {"bold": len(run) in (2, 3), "italic": len(run) in (1, 3), "strike": len(run) == 2}[style]
+
+        size = 1 if style == "italic" else 2
+        leading = re.match(r"[*_~]+", body)
+        trailing = re.search(r"[*_~]+$", body)
+        if leading and trailing and leading.end() < trailing.start() and leading[0] == trailing[0][::-1] \
+                and matches(leading[0]):
+            run = leading[0]
+            inner = body[len(run):len(body) - len(run)]
+            if run not in inner:
+                keep = run[:len(run) - size]
+                return begin, finish, keep + inner + keep
+        before = re.search(r"[*_~]+$", text[:begin])
+        after = re.match(r"[*_~]+", text[finish:])
+        if before and after and before[0] == after[0][::-1] and matches(before[0]):
+            return begin - size, finish + size, body
+        return None
+
+    def insert_link(self, image: bool, start: tuple[int, int], end: tuple[int, int]) -> None:
+        editor = self.query_one("#editor", TextArea)
+        text = editor.text
+        begin = self.editor_offset(start, text)
+        body = editor.selected_text
+        bang = "!" if image else ""
+        if re.fullmatch(r"(?:https?|mailto):\S+", body):
+            label = "alt text" if image else "text"
+            editor.replace(f"{bang}[{label}]({body})", start, end)
+            self.select_offsets(begin + len(bang) + 1, begin + len(bang) + 1 + len(label))
+            return
+        label = body.replace("\n", " ") or ("alt text" if image else "text")
+        target = "path" if image else "url"
+        editor.replace(f"{bang}[{label}]({target})", start, end)
+        target_start = begin + len(bang) + len(label) + 3
+        self.select_offsets(target_start, target_start + len(target))
+
+    def format_code_block(self, start: tuple[int, int], end: tuple[int, int]) -> None:
+        editor = self.query_one("#editor", TextArea)
+        first, last = self.selected_rows(start, end)
+        lines = editor.document.lines[first:last + 1]
+        if last > first and FENCE.fullmatch(lines[0]) and FENCE.fullmatch(lines[-1]):
+            inner = lines[1:-1]
+            editor.replace("\n".join(inner), (first, 0), (last, len(lines[-1])))
+            editor.move_cursor((first, 0))
+            if inner:
+                editor.move_cursor((first + len(inner) - 1, len(inner[-1])), select=True)
+            return
+        if start == end and not lines[0].strip():
+            editor.replace("```\n\n```", (first, 0), (first, len(lines[0])))
+            editor.move_cursor((first + 1, 0))
+            return
+        fence = fence_for("\n".join(lines))
+        editor.replace("\n".join([fence, *lines, fence]), (first, 0), (last, len(lines[-1])))
+        editor.move_cursor((first + 1, 0))
+        editor.move_cursor((last + 1, len(lines[-1])), select=True)
+
+    def format_table_at_cursor(self) -> None:
+        editor = self.query_one("#editor", TextArea)
+        row, column = editor.cursor_location
+        lines = editor.document.lines
+        if bounds := table_bounds(lines, row):
+            first, last = bounds
+            original = lines[first:last + 1]
+            tidy = format_table(original)
+            editor.replace("\n".join(tidy), (first, 0), (last, len(original[-1])))
+            editor.move_cursor((row, min(column, len(tidy[row - first]))))
+            self.notify("Table tidied.")
+            return
+        line = lines[row]
+        template = "\n".join(TABLE_TEMPLATE)
+        if line.strip():
+            editor.insert("\n\n" + template + "\n", (row, len(line)))
+            top = row + 2
+        else:
+            editor.replace(template, (row, 0), (row, len(line)))
+            top = row
+        editor.move_cursor((top, 2))
+        editor.move_cursor((top, 8), select=True)
 
     def editor_newline(self) -> str:
         return self.query_one("#editor", TextArea).document.newline
@@ -1200,6 +1436,8 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             Command("browse-history", "Browse saved note history", self.browse_history),
             Command("backup", "Back up vault now", self.action_backup),
             Command("preview", "Preview rendered Markdown", self.action_preview, "preview"),
+            Command("live-preview", "Toggle side-by-side Markdown preview", self.action_live_preview, "live_preview"),
+            Command("outline", "Jump to heading in this note", self.action_outline, "outline"),
             Command("tags", "Browse tags", self.action_tags, "tags"),
             Command("add-tags", "Add tags to this note", self.prompt_add_tags),
             Command("workspaces", "Switch workspace", self.action_workspaces, "workspaces"),
@@ -1224,8 +1462,16 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         ]
         commands.extend(Command("format:" + style, "Format " + label,
                                 lambda style=style: self.action_format_markdown(style), "format_" + style)
-                        for style, label in (("bold", "bold"), ("italic", "italic"), ("code", "inline code"),
-                                             ("heading", "heading"), ("list", "bullet list"), ("quote", "blockquote")))
+                        for style, label in (("bold", "bold"), ("italic", "italic"), ("strike", "strikethrough"),
+                                             ("code", "inline code"), ("heading", "heading"),
+                                             ("list", "bullet list"), ("numbered", "numbered list"),
+                                             ("task", "task list"), ("quote", "blockquote"),
+                                             ("codeblock", "code block"), ("link", "link"), ("image", "image"),
+                                             ("table", "table · insert or tidy"), ("rule", "horizontal rule"),
+                                             ("indent", "indent lines"), ("outdent", "outdent lines")))
+        commands.extend(Command(f"format:h{level}", f"Format heading level {level}",
+                                lambda level=level: self.action_format_markdown(f"h{level}"))
+                        for level in range(1, 7))
         commands.extend(Command("view:" + collection, "Show " + collection,
                                 lambda collection=collection: self.show_collection(collection))
                         for collection in ("all", "starred", *COLLECTIONS))
@@ -1367,11 +1613,18 @@ Hotkey changes apply on Save. F1 and Esc stay fixed; Reset hotkeys restores defa
 Preferences are saved for this vault.
 
 ## Writing
-Use Markdown: # headings, **emphasis**, - lists, and - [ ] tasks.
+Use Markdown: # headings, **bold**, *italic*, ~~strikethrough~~, `code`, - lists,
+1. numbered lists, - [ ] tasks, > quotes, tables, and fenced code. The editor
+colours Markdown as you type.
+Enter continues a bullet, numbered, task, or quote line. Enter on an empty item ends it.
+Select text, then Ctrl+P → Format bold, italic, strikethrough, inline code, or link.
+Without a selection, a selected placeholder is inserted. Run a format again to remove it.
+Headings (levels 1–6), bullet, numbered and task lists, blockquotes, code blocks,
+and indent or outdent apply to the current line or selected lines. Undo works normally.
+Ctrl+P → Format table inserts a table, or lines up the columns of the table under the cursor.
 Ctrl+P → Preview rendered Markdown displays your current text; Esc returns to editing.
-Select text, then Ctrl+P → Format bold, italic, or inline code. Without a selection,
-a selected placeholder is inserted. Format heading, bullet list, and blockquote
-apply to the current line or selected lines. Undo works normally.
+Ctrl+P → Toggle side-by-side Markdown preview keeps a live preview next to the editor.
+Ctrl+P → Jump to heading moves through a long note.
 Add #tags anywhere; search #tag to find exact tag matches.
 Ctrl+T browses workspace tags and counts. Ctrl+P → Add tags appends tags.
 Edit or remove inline tags directly in the note; no separate tag database is needed.
