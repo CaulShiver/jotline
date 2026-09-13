@@ -7,6 +7,7 @@ from textual.binding import Binding
 from textual.widgets import Static, TextArea
 
 from .markdown_editor import JOTLINE_THEME
+from .omarchy import OmarchySync
 
 HINT = "Ctrl+S save · Esc cancel"
 
@@ -30,6 +31,7 @@ class QuickCapture(App[str | None]):
         self.preferred_theme = theme
         self.discard_armed = False
         self.register_theme(JOTLINE_THEME)
+        self.omarchy_sync = OmarchySync(self)
 
     def compose(self) -> ComposeResult:
         yield Static("›_ jotline  ·  " + self.destination, id="capture-title", markup=False)
@@ -39,6 +41,7 @@ class QuickCapture(App[str | None]):
     def on_mount(self) -> None:
         if self.preferred_theme in self.available_themes:
             self.theme = self.preferred_theme
+        self.omarchy_sync.start()
         self.query_one(TextArea).focus()
 
     def action_save(self) -> None:

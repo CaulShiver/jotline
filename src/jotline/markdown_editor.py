@@ -513,9 +513,14 @@ class MarkdownEditor(TextArea):
         # ANSI palettes cannot blend RGB colours; retain terminal-native reversal.
         selection = (Style(reverse=True) if theme.ansi else
                      Style(bgcolor=background.blend(primary, 0.30).rich_color))
+        cursor = accent
+        if 'jotline-selection-background' in theme.variables:
+            selection = Style(bgcolor=Color.parse(theme.variables['jotline-selection-background']).rich_color)
+        if 'jotline-cursor-background' in theme.variables:
+            cursor = Color.parse(theme.variables['jotline-cursor-background'])
         self.register_theme(TextAreaTheme(
             self.THEME_NAME,
-            cursor_style=Style(color=background.rich_color, bgcolor=accent.rich_color),
+            cursor_style=Style(color=background.rich_color, bgcolor=cursor.rich_color),
             selection_style=selection,
             syntax_styles=syntax_styles(theme),
         ))

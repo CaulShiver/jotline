@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Optional Omarchy desktop theme synchronization, including live palette,
+  cursor and selection updates in the editor and quick-capture window.
+
 - Markdown has an editor toolbar for bold, italic, headings, lists, tasks, links,
   inline code, all other formats, and preview. Mouse selections retain their
   Markdown colours on a theme-tinted background, and the cursor uses the theme

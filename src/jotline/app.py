@@ -20,6 +20,7 @@ from rich.text import Text
 from .store import COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, tagged_body, validate_workspace
 from .settings import Settings, HOTKEY_ACTIONS, VIEW_COLLECTIONS
 from .preferences import Preferences
+from .omarchy import OmarchySync
 from .templates import Templates
 from .workflows import WorkflowMixin
 from .navigation import NavigationMixin
@@ -398,6 +399,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.settings, self.settings_warning = Settings.load(self.settings_path)
         self.workspace = validate_workspace(self.settings.active_workspace if workspace is None else workspace)
         self.register_theme(JOTLINE_THEME)
+        self.omarchy_sync = OmarchySync(self)
         self.current = self.new_note()
         self.collection = self.settings.default_collection
         self.dirty = False
@@ -467,6 +469,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
 
     def on_mount(self) -> None:
         self.apply_settings(startup=True)
+        self.omarchy_sync.start()
         self.update_responsive_layout()
         self.status("Ready")
         self.refresh_notes()

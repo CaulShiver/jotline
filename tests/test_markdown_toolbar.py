@@ -92,7 +92,11 @@ async def test_rendered_selection_keeps_markdown_colours_across_all_themes(tmp_p
                 background = Color.parse(app.get_css_variables()['background'])
                 primary = Color.parse(app.current_theme.primary)
                 expected = background.blend(primary, 0.30).rich_color
+                if 'jotline-selection-background' in app.current_theme.variables:
+                    expected = Color.parse(app.current_theme.variables['jotline-selection-background']).rich_color
                 assert heading.style.bgcolor == expected, name
                 assert expected != background.rich_color, name
             accent = Color.parse(app.current_theme.accent or app.current_theme.primary)
+            if 'jotline-cursor-background' in app.current_theme.variables:
+                accent = Color.parse(app.current_theme.variables['jotline-cursor-background'])
             assert editor._theme.cursor_style.bgcolor == accent.rich_color, name

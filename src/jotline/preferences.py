@@ -43,7 +43,8 @@ class Preferences(Modal[Settings | None]):
             with VerticalScroll(id='preferences-scroll'):
                 yield Label('Appearance', classes='pref-section')
                 yield Label('Theme', classes='pref-label')
-                yield Select([(t.replace('-', ' ').title(), t) for t in THEMES], value=s.theme, allow_blank=False, id='pref-theme')
+                yield Select([('Omarchy (follow desktop)' if t == 'omarchy' else t.replace('-', ' ').title(), t)
+                              for t in THEMES], value=s.theme, allow_blank=False, id='pref-theme')
                 for name, title, options in (
                     ('sort_order', 'Sort notes (stars stay first)', [('Last edited', 'updated'), ('Newest created', 'created'), ('Title A–Z', 'title')]),
                     ('startup', 'When Jotline opens', [('Blank thought', 'new'), ("Today’s daily log", 'daily')]),
