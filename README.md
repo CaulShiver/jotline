@@ -91,8 +91,22 @@ plain `.md` files.
 Enter continues a bullet (`- `), numbered (`1. ` becomes `2. `), task (`- [ ] `)
 or quote (`> `) line. Press Enter on an empty item to end the list.
 
-Select text (or place the cursor on a line), then open **Format** in the
-sidebar for a dedicated Markdown menu. Formatting also lives in **Ctrl+P →
+Select text with the mouse or Shift + arrow keys, then click **Bold**, **Italic**,
+**H**, **List**, **Task**, **Link**, or **Code** above the editor. **More** opens
+all formats, and **Preview** shows the rendered note. The toolbar scrolls in
+narrow windows and hides in focus mode. Selections keep Markdown's theme colours
+over a tinted background; the cursor also uses the active theme's accent.
+
+On Omarchy, select **F1 → Appearance → Omarchy (follow desktop)** to follow your
+desktop palette, including its cursor and selection background. Changes refresh
+within about a second, including in quick capture, without restarting or losing
+your selection. Markdown keeps its syntax foreground colors while selected.
+Jotline reads `omarchy/current/theme/colors.toml` under the XDG state directory
+(`~/.local/state` by default), with support for older config-directory layouts.
+Missing or invalid palettes keep the last good colors (Jotline colors on first
+launch). Choose any other theme to stop following Omarchy.
+
+You can also open **Format** in the sidebar for the Markdown menu, or **Ctrl+P →
 Format …**. Each command toggles, so running it again removes the formatting:
 
 | Command | Result |

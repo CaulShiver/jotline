@@ -10,7 +10,7 @@ from textual import events, on
 from textual.geometry import Size
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, HorizontalScroll, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from .modal import Modal
 from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, Static, Switch, TextArea
@@ -20,6 +20,7 @@ from rich.text import Text
 from .store import COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, tagged_body, validate_workspace
 from .settings import Settings, HOTKEY_ACTIONS, VIEW_COLLECTIONS
 from .preferences import Preferences
+from .omarchy import OmarchySync
 from .templates import Templates
 from .workflows import WorkflowMixin
 from .navigation import NavigationMixin
@@ -366,6 +367,12 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
     #notes > .option-list--option-highlighted { background: $primary-muted; color: $foreground; }
     #writing { width: 1fr; padding: 0 2; }
     #note-heading { height: 2; color: $accent; }
+    #markdown-toolbar { height: 2; scrollbar-size-horizontal: 1; background: $surface; }
+    #markdown-toolbar Button { height: 1; min-height: 1; min-width: 0; width: auto;
+                               padding: 0 1; border: none; background: $surface; color: $foreground; }
+    #markdown-toolbar Button:hover, #markdown-toolbar Button:focus {
+        background: $primary-muted; color: $accent; text-style: bold;
+    }
     #editor { height: 1fr; border: none; background: $background; }
     #live-preview { width: 1fr; border-left: solid $primary-muted; padding: 0 2; }
     #status { height: 2; padding-top: 1; color: $text-muted; }
@@ -392,6 +399,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.settings, self.settings_warning = Settings.load(self.settings_path)
         self.workspace = validate_workspace(self.settings.active_workspace if workspace is None else workspace)
         self.register_theme(JOTLINE_THEME)
+        self.omarchy_sync = OmarchySync(self)
         self.current = self.new_note()
         self.collection = self.settings.default_collection
         self.dirty = False
@@ -438,6 +446,19 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
                 yield NoteList(id="notes")
             with Vertical(id="writing"):
                 yield Static(self.current.title + " / " + self.current.collection, id="note-heading")
+                with HorizontalScroll(id="markdown-toolbar"):
+                    for style, label, hint in (
+                        ("bold", "Bold", "Toggle **bold** on selected text"),
+                        ("italic", "Italic", "Toggle *italic* on selected text"),
+                        ("heading", "H", "Toggle a heading on the current or selected lines"),
+                        ("list", "List", "Toggle a bullet list"),
+                        ("task", "Task", "Toggle a checkbox list"),
+                        ("link", "Link", "Insert a Markdown link"),
+                        ("code", "Code", "Toggle inline code"),
+                    ):
+                        yield Button(label, id="md-" + style, classes="markdown-format", tooltip=hint)
+                    yield Button("More", id="md-more", tooltip="All Markdown formats, including tables and code blocks")
+                    yield Button("Preview", id="md-preview", tooltip="Preview Markdown; Esc returns to writing")
                 yield MarkdownEditor("", soft_wrap=True, tab_behavior="focus", show_line_numbers=False, id="editor")
                 yield Static("", id="connections", markup=False)
                 yield Static("Ready · local Markdown", id="status", markup=False)
@@ -448,6 +469,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
 
     def on_mount(self) -> None:
         self.apply_settings(startup=True)
+        self.omarchy_sync.start()
         self.update_responsive_layout()
         self.status("Ready")
         self.refresh_notes()
@@ -477,6 +499,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         sidebar.set_class(self.focused_writing or (self.compact_layout and not self.compact_navigation), "hidden")
         hint.set_class(self.focused_writing or self.compact_layout or not self.settings.show_hints, "hidden")
         connections.set_class(very_short, "hidden")
+        self.query_one("#markdown-toolbar").set_class(self.focused_writing, "hidden")
         preview = self.query_one("#live-preview")
         was_visible = not preview.has_class("hidden")
         preview.set_class(not self.live_preview_visible, "hidden")
@@ -627,11 +650,20 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         ], 'Actions'), self.command)
 
     @on(Button.Pressed, "#nav-format")
+    @on(Button.Pressed, "#md-more")
     def navigation_format(self):
         choices = [(command.key, command.label.removeprefix("Format "))
                    for command in self.command_registry.values()
                    if command.key.startswith("format:")]
         self.push_screen(Palette(choices, "Format Markdown"), self.command)
+
+    @on(Button.Pressed, ".markdown-format")
+    def toolbar_format(self, event: Button.Pressed) -> None:
+        self.action_format_markdown(event.button.id.removeprefix("md-"))
+
+    @on(Button.Pressed, "#md-preview")
+    def toolbar_preview(self) -> None:
+        self.action_preview()
 
     @on(Button.Pressed, "#nav-import")
     def navigation_import(self):

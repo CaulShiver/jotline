@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Optional Omarchy desktop theme synchronization, including live palette,
+  cursor and selection updates in the editor and quick-capture window.
+
+- Markdown has an editor toolbar for bold, italic, headings, lists, tasks, links,
+  inline code, all other formats, and preview. Mouse selections retain their
+  Markdown colours on a theme-tinted background, and the cursor uses the theme
+  accent. Theme changes update both immediately.
 - PDF export no longer hangs or crashes on common setups. Every installed
   Chromium-based browser is tried in turn, each with its own profile. On Ubuntu
   23.10 and later, where Chromium's sandbox cannot start, a browser is retried

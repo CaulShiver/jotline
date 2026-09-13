@@ -441,8 +441,9 @@ def _rich_color(value: str | None, fallback: str):
 
 def _muted(theme, factor: float = 0.45):
     """The foreground blended into the background, for markers and syntax."""
-    foreground = Color.parse(theme.foreground or JOTLINE_THEME.foreground)
-    background = Color.parse(theme.background or JOTLINE_THEME.background)
+    colors = theme.to_color_system().generate()
+    foreground = Color.parse(colors["foreground"])
+    background = Color.parse(colors["background"])
     return foreground.blend(background, factor).rich_color
 
 
@@ -504,7 +505,25 @@ class MarkdownEditor(TextArea):
         self.theme = self.THEME_NAME
 
     def _register_markdown_theme(self) -> None:
-        self.register_theme(TextAreaTheme(self.THEME_NAME, syntax_styles=syntax_styles(self.app.current_theme)))
+        theme = self.app.current_theme
+        background = Color.parse(self.app.get_css_variables()["background"])
+        primary = Color.parse(theme.primary)
+        accent = Color.parse(theme.accent or theme.primary)
+        # Only tint the selection background so Markdown keeps its theme colours.
+        # ANSI palettes cannot blend RGB colours; retain terminal-native reversal.
+        selection = (Style(reverse=True) if theme.ansi else
+                     Style(bgcolor=background.blend(primary, 0.30).rich_color))
+        cursor = accent
+        if 'jotline-selection-background' in theme.variables:
+            selection = Style(bgcolor=Color.parse(theme.variables['jotline-selection-background']).rich_color)
+        if 'jotline-cursor-background' in theme.variables:
+            cursor = Color.parse(theme.variables['jotline-cursor-background'])
+        self.register_theme(TextAreaTheme(
+            self.THEME_NAME,
+            cursor_style=Style(color=background.rich_color, bgcolor=cursor.rich_color),
+            selection_style=selection,
+            syntax_styles=syntax_styles(theme),
+        ))
 
     def _app_theme_changed(self) -> None:
         self._register_markdown_theme()

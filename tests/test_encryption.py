@@ -182,7 +182,9 @@ def test_cli_sets_up_encrypts_and_reads_with_a_passphrase(tmp_path):
     note_id = run_cli(tmp_path, "capture", "Sam bench notes").stdout.decode().strip()
     encrypt = run_cli(tmp_path, "encrypt", note_id, passphrase=PASSPHRASE)
     assert encrypt.returncode == 0, encrypt.stderr
-    assert "Sam" not in (tmp_path / f"{note_id}.md").read_text()
+    raw = (tmp_path / f"{note_id}.md").read_text()
+    # Short words can occur by chance in valid base64 ciphertext.
+    assert "Sam bench notes" not in raw and "encrypted: true" in raw
 
     assert run_cli(tmp_path, "export", note_id, passphrase=PASSPHRASE).stdout == b"Sam bench notes"
     listing = run_cli(tmp_path, "list").stdout.decode()
@@ -218,7 +220,8 @@ async def test_app_encrypts_locks_and_unlocks(tmp_path):
         await pilot.press("enter")
         await pilot.pause()
         assert app.current.encrypted
-        assert "Sam" not in (tmp_path / f"{note.id}.md").read_text()
+        raw = (tmp_path / f"{note.id}.md").read_text()
+        assert "Sam secret" not in raw and "encrypted: true" in raw
 
         app.command("lock")
         await pilot.pause()
