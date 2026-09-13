@@ -20,6 +20,8 @@ MARKER = "jotline-encrypted: 1"
 SCRYPT_N = 2 ** 17
 SCRYPT_R = 8
 SCRYPT_P = 1
+MAX_SCRYPT_MEMORY = 256 * 1024 * 1024
+MAX_SCRYPT_WORK = 4 * SCRYPT_N * SCRYPT_R * SCRYPT_P
 MIN_PASSPHRASE = 8
 KEY_BYTES = 32  # AES-256 note key
 SALT_BYTES = 16
@@ -56,9 +58,18 @@ def check_passphrase(passphrase: str) -> str:
 
 
 def _derive(passphrase: str, salt: bytes, n: int, r: int, p: int) -> bytes:
-    # scrypt needs about 128 * n * r bytes; allow that plus headroom.
+    _check_scrypt(n, r, p)
     return hashlib.scrypt(passphrase.encode("utf-8"), salt=salt, n=n, r=r, p=p,
-                          maxmem=256 * n * r * p + 16 * 1024 * 1024, dklen=KEY_BYTES)
+                          maxmem=MAX_SCRYPT_MEMORY + 16 * 1024 * 1024, dklen=KEY_BYTES)
+
+
+def _check_scrypt(n: int, r: int, p: int) -> None:
+    # Both memory and CPU cost depend on the tuple, not individual fields.
+    # Validate before passing attacker-editable key-file settings to OpenSSL.
+    if (not all(type(value) is int for value in (n, r, p)) or not 2 ** 10 <= n <= 2 ** 20
+            or n & (n - 1) or not 1 <= r <= 16 or not 1 <= p <= 4
+            or 128 * r * (n + p + 2) > MAX_SCRYPT_MEMORY or n * r * p > MAX_SCRYPT_WORK):
+        raise EncryptionError("The encryption key file has unsupported settings")
 
 
 def _b64(data: bytes) -> str:
@@ -115,10 +126,7 @@ class KeyFile:
                 or data.get("cipher") != "aes-256-gcm"):
             raise EncryptionError("The encryption key file is damaged or from a newer Jotline")
         n, r, p = data.get("n"), data.get("r"), data.get("p")
-        # Bound the work factor so a tampered file cannot exhaust memory.
-        if (not all(type(value) is int for value in (n, r, p)) or not 2 ** 10 <= n <= 2 ** 20
-                or n & (n - 1) or not 1 <= r <= 16 or not 1 <= p <= 4):
-            raise EncryptionError("The encryption key file has unsupported settings")
+        _check_scrypt(n, r, p)
         return cls(_unb64(data.get("salt"), SALT_BYTES), n, r, p, _unb64(data.get("nonce"), NONCE_BYTES),
                    _unb64(data.get("wrapped"), KEY_BYTES + TAG_BYTES))
 

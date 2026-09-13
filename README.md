@@ -115,6 +115,9 @@ lists the note's headings for quick navigation.
 Every formatting command, both previews and the heading outline can have its own
 key in **F1 → Keyboard shortcuts**; they start unassigned. **F1 → Editor** turns
 Markdown highlighting or list continuation off.
+Lines longer than 4,096 characters stay plain in the editor to keep typing
+responsive. Preview pauses above 256 KiB, 600 nonblank lines, or 400 table
+separator characters across the note; editing and saving remain available.
 
 ## Move or delete with the mouse
 
@@ -271,6 +274,8 @@ Encrypted notes stay unlocked until you lock them or quit.
   key lives in `.jotline-key.json`, wrapped with your passphrase through scrypt;
   backups include that file, and changing the passphrase rewraps only it. The
   collection, workspace, star and dates stay readable in the file header.
+- Key files with excessive combined scrypt memory or CPU settings are refused
+  before deriving a key. Normal Jotline encryption settings are unchanged.
 - Encrypting a note deletes its unencrypted saved versions from note history.
   Backup ZIPs made before then (including today's automatic one) still contain
   the old text; delete those you no longer need from `.jotline-backups`.
@@ -309,7 +314,10 @@ In PowerShell, set an override with `$env:JOTLINE_VAULT = 'C:\Notes'`; in a
 macOS/Linux shell, use `export JOTLINE_VAULT="$HOME/Notes"`.
 
 Use a local filesystem with hard-link support (such as NTFS on Windows or APFS
-on macOS). Windows rejects symlinks, junctions, and other reparse points inside
+on macOS). When hard links are unavailable, Jotline tries an atomic exclusive
+rename. If neither method is supported, it refuses publication and reports
+where any displaced original was retained instead of risking another file.
+Windows rejects symlinks, junctions, and other reparse points inside
 storage; cloud placeholder files must be copied to a regular local vault.
 File contents are flushed before publication on every platform. Windows does
 not provide POSIX directory flushing, so metadata durability after a power loss

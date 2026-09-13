@@ -7,7 +7,39 @@ import re
 
 TASK = re.compile(r"(?P<lead>[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+\[)(?P<mark>[ xX])(?P<gap>\][ \t]+)(?P<text>\S.*)")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
-CODE_SPAN = re.compile(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)")
+
+
+def code_spans(text: str, pos: int = 0):
+    """Non-overlapping (start, end) inline-code ranges in linear time.
+
+    Index the next equal-length backtick run once, then skip consumed spans.
+    Unmatched runs never restart a scan of the remaining line. Newlines keep
+    the existing per-line semantics used by highlighting and printable text.
+    """
+    runs = [match.span() for match in re.finditer(r"`+|\n", text[pos:])]
+    following = [None] * len(runs)
+    nearest = {}
+    for index in range(len(runs) - 1, -1, -1):
+        start, end = runs[index]
+        if text[pos + start] == "\n":
+            nearest.clear()
+        else:
+            size = end - start
+            following[index] = nearest.get(size)
+            nearest[size] = index
+    index = 0
+    while index < len(runs):
+        close = following[index]
+        if close is None:
+            index += 1
+        else:
+            yield pos + runs[index][0], pos + runs[close][1]
+            index = close + 1
+
+
+def opens_fence(line: str) -> re.Match | None:
+    marker = FENCE.fullmatch(line)
+    return marker if marker and not (marker[1][0] == "`" and "`" in marker[2]) else None
 
 
 def closes_fence(line: str, opener: re.Match) -> bool:
@@ -28,12 +60,11 @@ def fenced_rows(lines: list[str]) -> set[int]:
     """
     rows, fence = set(), None
     for row, line in enumerate(lines):
-        marker = FENCE.fullmatch(line)
         if fence is not None:
             rows.add(row)
             if closes_fence(line, fence):
                 fence = None
-        elif marker and not (marker[1][0] == "`" and "`" in marker[2]):
+        elif marker := opens_fence(line):
             fence = marker
             rows.add(row)
     return rows
