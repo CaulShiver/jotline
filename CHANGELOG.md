@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+- Commands that take a note (`append`, `prepend`, `open`, `run`, `export`,
+  `tag`) accept a unique ID prefix of four or more characters, an exact title
+  (any letter case), or `last`. Ambiguous references are refused with the
+  matching IDs. The missing-note error now reads "No note with ID or title …".
+- `capture`, `append`, `prepend` and `import` accept `--encoding NAME` and
+  `--replace-invalid`. Decoding errors suggest both, and folder imports report
+  a bad file in plain language instead of a codec error. Undecodable bytes in
+  command-line text are reported the same way.
+- `tags`, `workspaces` and `actions` accept `--json`, joining `list` and `doctor`.
+- `jotline completion bash|zsh|fish` prints a completion script for commands,
+  options, note IDs, tags, workspaces and actions.
+- `jotline tasks` lists open `- [ ]` tasks across the workspace, with optional
+  due dates (`due:2026-09-20` or `📅 2026-09-20`), a search filter, `--due`,
+  `--done` and `--json`. `jotline done NOTE:LINE` checks one off (`--undo`
+  reopens it). In the app, Ctrl+P → Open tasks across notes jumps to a task.
+- `jotline capture` with no text in a terminal opens a small capture editor
+  (Ctrl+S saves, Esc cancels). [docs/quick-capture.md](docs/quick-capture.md)
+  binds it to a global key on Omarchy/Hyprland, GNOME and KDE.
+- `jotline export` saves HTML, Word (`.docx`) and PDF with `--format` or an
+  `--output` file extension; `--force` replaces an existing file. HTML is built
+  in; Word uses pandoc or LibreOffice and PDF a Chromium-based browser,
+  LibreOffice or pandoc. Ctrl+P → Export note as… does the same in the app.
+- Opt-in encryption for sensitive notes: `jotline encryption setup`, then
+  `jotline encrypt NOTE` or Ctrl+P → Encrypt this note. Note text is sealed with
+  AES-256-GCM under a passphrase-wrapped key; unencrypted saved versions of the
+  note are removed, and locked notes show as "Encrypted note (locked)". Needs
+  the `cryptography` package (`jotline[encryption]`). There is no passphrase
+  recovery. Versions before this release show encrypted notes as unreadable text.
+
 ## 0.9.3 — 2026-09-12
 
 - `jotline append` and `prepend` put the text on its own line. They add one

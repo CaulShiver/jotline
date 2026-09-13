@@ -1,0 +1,231 @@
+"""Standalone HTML, Word and PDF copies of a note.
+
+HTML is rendered here. Word and PDF are converted from that HTML by tools that
+are often already installed: a Chromium-based browser for PDF, pandoc for Word,
+and LibreOffice for either. Nothing is uploaded anywhere.
+"""
+from __future__ import annotations
+
+import html
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
+from uuid import uuid4
+
+from .tasks import FENCE, TASK
+
+FORMATS = ("markdown", "html", "docx", "pdf")
+FORMAT_NAMES = {"markdown": "Markdown", "html": "HTML", "docx": "Word", "pdf": "PDF"}
+SUFFIXES = {".md": "markdown", ".markdown": "markdown", ".txt": "markdown", ".html": "html", ".htm": "html",
+            ".docx": "docx", ".pdf": "pdf"}
+EXTENSIONS = {"markdown": ".md", "html": ".html", "docx": ".docx", "pdf": ".pdf"}
+BINARY = frozenset({"docx", "pdf"})
+TIMEOUT_SECONDS = 180
+WIKI_LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|([^\[\]]*))?\]\]")
+BROWSERS = ("chromium", "chromium-browser", "google-chrome-stable", "google-chrome", "chrome",
+            "microsoft-edge-stable", "microsoft-edge", "msedge", "brave-browser", "brave")
+PDF_ENGINES = ("weasyprint", "wkhtmltopdf", "typst", "tectonic", "xelatex", "lualatex", "pdflatex")
+MISSING_TOOLS = {
+    "docx": "Word export needs pandoc or LibreOffice; install one, or export HTML and open it in Word",
+    "pdf": ("PDF export needs Chromium, Google Chrome, Microsoft Edge, LibreOffice, or pandoc with a PDF "
+            "engine; install one, or export HTML and print it from a browser"),
+}
+
+STYLE = """
+@page { margin: 2cm; }
+body { font: 11pt/1.5 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #1d2327; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; }
+h1, h2, h3, h4 { line-height: 1.25; margin: 1.4em 0 .5em; }
+h1 { font-size: 1.8em; } h2 { font-size: 1.4em; } h3 { font-size: 1.15em; }
+p, ul, ol, pre, table, blockquote { margin: 0 0 1em; }
+a { color: #1a5d8f; }
+code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: .92em; }
+pre { background: #f3f5f6; padding: .75em 1em; overflow-x: auto; white-space: pre-wrap; }
+blockquote { border-left: 3px solid #c8d1d6; margin-left: 0; padding-left: 1em; color: #4a555c; }
+table { border-collapse: collapse; } th, td { border: 1px solid #c8d1d6; padding: .3em .6em; text-align: left; }
+hr { border: 0; border-top: 1px solid #c8d1d6; }
+"""
+
+
+class ExportError(ValueError):
+    """An export could not be produced or written."""
+
+
+def format_for(requested: str | None, output: Path | None) -> str:
+    if requested:
+        return requested
+    if output is not None:
+        return SUFFIXES.get(output.suffix.lower(), "markdown")
+    return "markdown"
+
+
+def printable_markdown(body: str, titles: dict[str, str] | None = None) -> str:
+    """Show checkboxes as ☐/☒ and wiki links as their labels, leaving fenced code alone."""
+    titles = titles or {}
+    result, fence = [], None
+    for line in body.splitlines(keepends=True):
+        content = line.splitlines()[0] if line.splitlines() else ""
+        ending = line[len(content):]
+        marker = FENCE.fullmatch(content)
+        if marker:
+            run, suffix = marker.groups()
+            if fence is None:
+                fence = run
+            elif run[0] == fence[0] and len(run) >= len(fence) and not suffix.strip():
+                fence = None
+        elif fence is None:
+            if task := TASK.fullmatch(content):
+                # ☒ has no emoji form, unlike ☑, so both boxes print in the text font.
+                content = task["lead"][:-1] + ("☐ " if task["mark"] == " " else "☒ ") + task["text"]
+            content = WIKI_LINK.sub(lambda link: link[2] or titles.get(link[1], link[1]), content)
+        result.append(content + ending)
+    return "".join(result)
+
+
+def render_html(title: str, body: str, titles: dict[str, str] | None = None) -> str:
+    """A self-contained page. Raw HTML in the note is shown as text and nothing is loaded from elsewhere."""
+    from markdown_it import MarkdownIt
+
+    renderer = MarkdownIt("commonmark", {"html": False}).enable(["table", "strikethrough"])
+
+    def image(self, tokens, index, options, env):
+        # Images become links: an export must not read local files or contact servers.
+        token = tokens[index]
+        source = token.attrGet("src") or ""
+        label = self.renderInlineAsText(token.children or [], options, env) or source
+        return f'<a href="{html.escape(source)}">{html.escape(label)}</a>'
+
+    renderer.add_render_rule("image", image)
+    content = renderer.render(printable_markdown(body, titles))
+    return ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+            "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'\">\n"
+            '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+            f"<title>{html.escape(title)}</title>\n<style>{STYLE}</style>\n</head>\n<body>\n{content}</body>\n</html>\n")
+
+
+def _existing(*candidates: str) -> str | None:
+    return next((candidate for candidate in candidates if candidate and Path(candidate).is_file()), None)
+
+
+def find_browser() -> str | None:
+    for name in BROWSERS:
+        if found := shutil.which(name):
+            return found
+    programs = [os.environ.get(name, "") for name in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
+    return _existing("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                     "/Applications/Chromium.app/Contents/MacOS/Chromium",
+                     "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                     *(str(Path(root, "Google/Chrome/Application/chrome.exe")) for root in programs if root),
+                     *(str(Path(root, "Microsoft/Edge/Application/msedge.exe")) for root in programs if root))
+
+
+def find_office() -> str | None:
+    found = shutil.which("soffice") or shutil.which("libreoffice")
+    programs = [os.environ.get(name, "") for name in ("PROGRAMFILES", "PROGRAMFILES(X86)")]
+    return found or _existing("/Applications/LibreOffice.app/Contents/MacOS/soffice",
+                              *(str(Path(root, "LibreOffice/program/soffice.exe")) for root in programs if root))
+
+
+def _run(command: list[str], output: Path) -> str | None:
+    """Run a converter; return why it failed, or None when it wrote the output."""
+    try:
+        result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True,
+                                timeout=TIMEOUT_SECONDS, check=False)
+    except subprocess.TimeoutExpired:
+        return f"timed out after {TIMEOUT_SECONDS} seconds"
+    except OSError as error:
+        return error.strerror or str(error)
+    if result.returncode == 0 and output.is_file() and output.stat().st_size:
+        return None
+    detail = result.stderr.decode("utf-8", "replace").strip().splitlines()
+    return detail[-1][:200] if detail else f"exit status {result.returncode}"
+
+
+def converters(fmt: str, page: Path, work: Path):
+    """(tool name, output path, command) for each installed converter, best first."""
+    target = work / ("out" + EXTENSIONS[fmt])
+    browser, office, pandoc = find_browser(), find_office(), shutil.which("pandoc")
+    if fmt == "pdf" and browser:
+        yield Path(browser).stem, target, [
+            browser, "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
+            "--disable-extensions", f"--user-data-dir={work / 'browser'}", "--no-pdf-header-footer",
+            "--print-to-pdf-no-header", f"--print-to-pdf={target}", page.as_uri()]
+    if pandoc and fmt == "docx":
+        yield "pandoc", target, [pandoc, "--from=html", "--to=docx", f"--output={target}", str(page)]
+    if pandoc and fmt == "pdf":
+        for engine in PDF_ENGINES:
+            if shutil.which(engine):
+                yield f"pandoc ({engine})", target, [pandoc, "--from=html", f"--pdf-engine={engine}",
+                                                     f"--output={target}", str(page)]
+                break
+    if office:
+        # A private profile keeps a running LibreOffice from swallowing the job.
+        filters = {"docx": "docx:MS Word 2007 XML", "pdf": "pdf:writer_web_pdf_Export"}
+        yield "LibreOffice", work / "office" / (page.stem + EXTENSIONS[fmt]), [
+            office, "--headless", "--norestore", f"-env:UserInstallation={(work / 'office-profile').as_uri()}",
+            "--convert-to", filters[fmt], "--outdir", str(work / "office"), str(page)]
+
+
+def export_bytes(title: str, body: str, fmt: str, titles: dict[str, str] | None = None) -> bytes:
+    if fmt == "markdown":
+        return body.encode("utf-8")
+    page_text = render_html(title, body, titles)
+    if fmt == "html":
+        return page_text.encode("utf-8")
+    with tempfile.TemporaryDirectory(prefix="jotline-export-", ignore_cleanup_errors=True) as folder:
+        work = Path(folder)
+        page = work / "note.html"
+        page.write_text(page_text, encoding="utf-8")
+        failures = []
+        for tool, output, command in converters(fmt, page, work):
+            problem = _run(command, output)
+            if problem is None:
+                return output.read_bytes()
+            failures.append(f"{tool}: {problem}")
+        if not failures:
+            raise ExportError(MISSING_TOOLS[fmt])
+        raise ExportError(f"{FORMAT_NAMES[fmt]} export failed ({'; '.join(failures)})")
+
+
+def write_export(target: Path, data: bytes, *, force: bool = False) -> Path:
+    """Write the whole file under a temporary name first; replace an existing file only with force."""
+    target = target.expanduser()
+    if target.is_dir():
+        raise ExportError(f"{target} is a folder; name the file to write")
+    if not target.parent.is_dir():
+        raise ExportError(f"Folder does not exist: {target.parent}")
+    exists = f"{target} already exists; pass --force to replace it"
+    if not force and os.path.lexists(target):
+        raise ExportError(exists)
+    temporary = target.with_name(f".{target.name}.jotline-{uuid4().hex}")
+    try:
+        with open(temporary, "xb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if force:
+            os.replace(temporary, target)
+        else:
+            try:
+                # A hard link publishes the file only if the name is still free.
+                os.link(temporary, target)
+            except FileExistsError:
+                raise ExportError(exists) from None
+            except OSError:
+                if os.path.lexists(target):
+                    raise ExportError(exists) from None
+                os.replace(temporary, target)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+    return target
+
+
+def suggested_name(title: str, fmt: str) -> str:
+    stem = re.sub(r"[^\w\- ]+", "", title).strip()[:60].strip() or "note"
+    return stem + EXTENSIONS[fmt]

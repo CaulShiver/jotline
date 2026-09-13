@@ -25,6 +25,8 @@ from .navigation import NavigationMixin
 from .action_ui import ActionWorkflowMixin
 from .import_ui import RecoveryImportMixin
 from .note_menu import NoteList, NoteMenu
+from .review_ui import ReviewMixin
+from .encryption_ui import EncryptionMixin
 
 
 @dataclass(frozen=True)
@@ -124,14 +126,14 @@ class TextPrompt(Modal[str | None]):
         border: round $accent; padding: 1 2; background: $surface; }
     """
 
-    def __init__(self, title: str, placeholder: str):
+    def __init__(self, title: str, placeholder: str, value: str = "", *, password: bool = False):
         super().__init__()
-        self.heading, self.placeholder = title, placeholder
+        self.heading, self.placeholder, self.value, self.password = title, placeholder, value, password
 
     def compose(self) -> ComposeResult:
         with Vertical(id="text-prompt"):
             yield Label(self.heading)
-            yield Input(placeholder=self.placeholder, id="prompt-value")
+            yield Input(self.value, placeholder=self.placeholder, password=self.password, id="prompt-value")
             yield Static("Enter to apply · Esc to cancel")
 
     def on_mount(self) -> None:
@@ -139,7 +141,8 @@ class TextPrompt(Modal[str | None]):
 
     @on(Input.Submitted)
     def submitted(self, event: Input.Submitted) -> None:
-        self.dismiss(event.value.strip() or None)
+        # Spaces are part of a passphrase; trimming them would lock the user out.
+        self.dismiss((event.value if self.password else event.value.strip()) or None)
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -345,7 +348,8 @@ class FindInNote(Modal[None]):
         self.app.query_one("#editor", TextArea).focus()
 
 
-class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, WorkflowMixin, App):
+class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin,
+              WorkflowMixin, App):
     TITLE = "jotline"
     ENABLE_COMMAND_PALETTE = False
     CSS = """
@@ -547,7 +551,7 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
             notes.sort(key=lambda n: (n.starred, n.created, n.id), reverse=True)
         listing = self.query_one("#notes", OptionList)
         listing.clear_options()
-        listing.add_options([Option(Text(("★ " if n.starred else "") + n.title + "\n" +
+        listing.add_options([Option(Text(("★ " if n.starred else "") + ("🔒 " if n.encrypted else "") + n.title + "\n" +
                                             "  " + (n.updated[:10] or "imported") + " · " + n.collection), id=n.id)
                              for n in notes])
         for index, note in enumerate(notes):
@@ -701,6 +705,7 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
         details = f"{message}  ·  {len(self.current.body.split())} words"
         if not self.compact_layout:
             details += f"  ·  {self.current.collection}  ·  {self.workspace}"
+            details += "  ·  encrypted" if self.current.encrypted else ""
             details += "  ·  " + " ".join("#" + tag for tag in tags) if tags else ""
         self.query_one("#status", Static).update(details)
         self.query_one("#note-heading", Static).update(Text(self.current.title + " / " + self.current.collection))
@@ -768,7 +773,11 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
             self.query_one("#editor", TextArea).focus()
             return
         try:
-            self.load(self.vault.read(note_id))
+            note = self.vault.read(note_id)
+            if note.locked:
+                self.prompt_unlock(then=lambda: self.load_id(note_id))
+                return
+            self.load(note)
         except (OSError, ValueError) as error:
             self.notify(str(error), severity="error")
 
@@ -1032,6 +1041,8 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
             return
         try:
             note = self.vault.read_revision(note_id, revision_id)
+            if note.locked:
+                raise ValueError("This version is encrypted; unlock encrypted notes to view it")
             if note.workspace != self.workspace:
                 raise ValueError("This version belongs to another workspace; switch workspaces to view it")
         except (OSError, ValueError) as error:
@@ -1224,6 +1235,8 @@ class Jotline(RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin, Workflo
         commands.extend(self.workflow_commands(Command))
         commands.extend(self.navigation_commands(Command))
         commands.extend(Command(key, label, handler) for key, label, handler in self.action_workflow_commands())
+        commands.extend(self.review_commands(Command))
+        commands.extend(self.encryption_commands(Command))
         commands.extend([
             Command('resolve-conflict', 'Review external change and recover draft', self.show_recovery_dialog),
             Command('import-library', 'Import notes from file, folder or Drafts export', self.import_library),

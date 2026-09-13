@@ -143,8 +143,119 @@ jotline doctor
 jotline doctor --json
 jotline import ~/Downloads/meeting.md
 jotline export NOTE_ID > note.md
+jotline export last > note.md
+jotline export last --output plan.docx
+jotline tasks
 jotline path
 jotline --vault ~/Notes/Jotline
+```
+
+Wherever a command takes a note, you can type less than the full 32-character
+ID: a unique prefix of at least four characters (`jotline append 3f9a 'Next step'`),
+the note's exact title in any letter case (`jotline export 'Weekly review'`), or
+`last` for the most recently updated note in the workspace. A reference that
+matches several notes is refused and lists their IDs, and titles never match
+notes in the trash or in another workspace. A note whose full ID is literally
+`last` still wins.
+
+Captures, append/prepend and imports read UTF-8. For text in another encoding,
+pass `--encoding NAME` (for example `latin-1` or `cp1252`), or `--replace-invalid`
+to keep going and substitute the undecodable bytes.
+
+`list`, `tags`, `workspaces`, `actions`, `tasks` and `doctor` accept `--json` for
+scripts. Warnings still go to stderr, so stdout stays valid JSON.
+
+### Tasks across notes
+
+Every Markdown checkbox line (`- [ ] Call Sam`) in any note is a task. Give it a
+due date with `due:2026-09-20`, or the `📅 2026-09-20` form some other apps use.
+
+```sh
+jotline tasks                      # open tasks in this workspace, dated ones first
+jotline tasks '#coaching' --due today
+jotline tasks --done --json
+jotline done 3f9a8c21:4            # check off the task on line 4 of that note
+jotline done 3f9a8c21:4 --undo
+```
+
+Each line shows `NOTE:LINE`, the checkbox, the due date (or `-`), the task and
+the note's title. Line numbers move when a note is edited, so list tasks again
+before `done`; it refuses a line that is no longer a task. Tasks in the trash and
+inside fenced code blocks are ignored. In the app, **Ctrl+P → Open tasks across
+notes** lists open tasks and jumps to the one you pick.
+
+### Export to HTML, Word or PDF
+
+```sh
+jotline export last --output plan.html
+jotline export 'Weekly plan' --output ~/Documents/plan.docx
+jotline export 3f9a --format pdf --output plan.pdf --force
+```
+
+The format comes from `--format` or the output file's extension. Without
+`--output`, `export` writes Markdown (or `--format html`) to stdout as before, and
+it never replaces an existing file without `--force`. Jotline builds the HTML
+itself. Word files use pandoc or LibreOffice, and PDFs use Chromium, Google
+Chrome, Microsoft Edge, LibreOffice or pandoc with a PDF engine, whichever is
+installed. Checkboxes print as ☐/☒ and `[[links]]` as their titles. Raw HTML in a
+note is shown as text and images become links, so an export never reads other
+files or contacts a server. In the app, use **Ctrl+P → Export note as…**.
+
+### Quick capture from a hotkey
+
+`jotline capture` with no text opens a small editor: Ctrl+S saves and Esc
+cancels. Bind it to a global key to capture from anywhere;
+[docs/quick-capture.md](docs/quick-capture.md) has recipes for Omarchy/Hyprland,
+GNOME and KDE.
+
+### Encrypted notes
+
+Note files are readable only by your user account. For sensitive notes, such as
+client or athlete records, you can also encrypt a note's text on disk:
+
+```sh
+uv tool install 'jotline[encryption]'  # adds the cryptography library
+jotline encryption setup               # choose a passphrase
+jotline encrypt 'Athlete intake'
+jotline export 'Athlete intake'        # asks for the passphrase
+jotline --unlock tasks                 # include tasks from encrypted notes
+jotline encryption passphrase          # change the passphrase
+jotline decrypt 'Athlete intake'       # store it as plain text again
+```
+
+In the app, **Ctrl+P → Encrypt this note** sets encryption up the first time, and
+**Lock encrypted notes** / **Unlock encrypted notes** hide and show them. A locked
+note is listed as "Encrypted note (locked)"; it cannot be searched, edited or
+exported until you unlock, but it can still be moved to another collection.
+Encrypted notes stay unlocked until you lock them or quit.
+
+- **There is no recovery.** Without the passphrase, encrypted notes cannot be
+  opened. Keep it in a password manager.
+- The note text, including its title and tags, is sealed with AES-256-GCM. The
+  key lives in `.jotline-key.json`, wrapped with your passphrase through scrypt;
+  backups include that file, and changing the passphrase rewraps only it. The
+  collection, workspace, star and dates stay readable in the file header.
+- Encrypting a note deletes its unencrypted saved versions from note history.
+  Backup ZIPs made before then (including today's automatic one) still contain
+  the old text; delete those you no longer need from `.jotline-backups`.
+- Scripts can set `JOTLINE_PASSPHRASE`, but anything that can read your
+  environment can read it too. Otherwise commands ask on the terminal, and never
+  read the passphrase from piped input.
+- Older Jotline versions show encrypted notes as unreadable text; do not edit
+  them there.
+
+### Shell completion
+
+Completion covers commands, options, note IDs, tags, workspaces and action names,
+and follows any `--vault` or `--workspace` already on the line.
+
+```sh
+# bash: add to ~/.bashrc
+eval "$(jotline completion bash)"
+# zsh: add to ~/.zshrc after compinit
+eval "$(jotline completion zsh)"
+# fish: add to ~/.config/fish/config.fish
+jotline completion fish | source
 ```
 
 Set `JOTLINE_VAULT` to use a different vault by default, or pass

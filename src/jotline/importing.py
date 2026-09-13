@@ -10,8 +10,8 @@ import stat
 from uuid import UUID
 
 from .filesystem import fs
-from .store import (COLLECTIONS, MAX_NOTE_BYTES, Note, Vault, pin_ancestors, read_regular_file, tagged_body,
-                    validate_workspace)
+from .store import (COLLECTIONS, MAX_NOTE_BYTES, Note, Vault, decode_problem, pin_ancestors, read_regular_file,
+                    tagged_body, validate_workspace)
 
 MAX_IMPORT_BYTES = 32 * 1024 * 1024
 MAX_IMPORT_ENTRIES = 1000
@@ -126,6 +126,9 @@ def _open_directory(path):
 def _jotline_note(vault, raw, workspace, default_collection):
     """Carry a Jotline-format file's own metadata instead of treating it as body."""
     parsed = Vault.parse_note(vault.new().id, raw)
+    if parsed.encrypted:
+        # The text is bound to its own vault's key and note ID; importing it would copy unreadable text.
+        raise ValueError('Encrypted Jotline note skipped; it only opens in the vault that encrypted it')
     note = vault.new(parsed.body, workspace=workspace)
     note.collection = parsed.collection if parsed.collection != 'trash' else default_collection
     note.starred = parsed.starred
@@ -135,7 +138,7 @@ def _jotline_note(vault, raw, workspace, default_collection):
 
 
 def preview_import(vault: Vault, path: Path, workspace='default', default_collection='inbox',
-                   duplicates='skip', recursive=False) -> ImportPlan:
+                   duplicates='skip', recursive=False, encoding='utf-8', errors='strict') -> ImportPlan:
     validate_workspace(workspace)
     if duplicates not in ('skip', 'copy') or default_collection not in COLLECTIONS:
         raise ValueError('Invalid import options')
@@ -182,7 +185,8 @@ def preview_import(vault: Vault, path: Path, workspace='default', default_collec
             break
         try:
             raw = read_regular_file(source, min(MAX_IMPORT_BYTES - total_bytes, MAX_IMPORT_BYTES
-                                    if source.suffix.lower() == '.draftsexport' else MAX_NOTE_BYTES), ancestor_safe=True)
+                                    if source.suffix.lower() == '.draftsexport' else MAX_NOTE_BYTES), ancestor_safe=True,
+                                    encoding=encoding, errors=errors)
             total_bytes += len(raw.encode('utf-8'))
             is_drafts = source.suffix.lower() == '.draftsexport'
             if is_drafts:
@@ -217,6 +221,8 @@ def preview_import(vault: Vault, path: Path, workspace='default', default_collec
                     ids.add(note.id)
                 except (TypeError, AttributeError, ValueError) as error:
                     plan.warnings.append(f'{label}: {error}')
+        except UnicodeDecodeError as error:
+            plan.warnings.append(f'{source.name}: {decode_problem(error, encoding)}')
         except (OSError, ValueError, UnicodeError) as error:
             plan.warnings.append(f'{source.name}: {error}')
     return plan

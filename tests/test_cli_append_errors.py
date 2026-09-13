@@ -74,7 +74,7 @@ def test_missing_note_is_named_plainly(tmp_path, command):
     saved(Vault(tmp_path), "keep")
     result = run_cli(tmp_path, *command)
     assert result.returncode == 1
-    assert result.stderr.decode() == "jotline: No note with ID missing-note; run jotline list to find IDs\n"
+    assert result.stderr.decode() == "jotline: No note with ID or title missing-note; run jotline list to find IDs\n"
 
 
 def test_missing_import_file_has_no_errno(tmp_path):
@@ -89,7 +89,8 @@ def test_invalid_utf8_input_is_explained(tmp_path):
     result = run_cli(tmp_path, "capture", input=b"\xff\xfe\x00bin")
     assert result.returncode == 1
     assert result.stderr.decode() == (
-        "jotline: Piped input is not valid UTF-8 text (bad byte at position 0); convert it to UTF-8 and retry\n")
+        "jotline: Piped input is not valid UTF-8 text (bad byte at position 0); pass --encoding NAME "
+        "if it uses another encoding, or --replace-invalid to substitute bad bytes\n")
     assert not list(tmp_path.glob("*.md"))
 
 

@@ -206,6 +206,25 @@ def remove_revision(vault, note_id: str, revision_id: str, *, vault_directory: i
         pass
 
 
+def remove_unencrypted_revisions(vault, note_id: str, is_encrypted, *, vault_directory: int | None = None) -> int:
+    """Delete saved versions of a note that could hold its text unencrypted."""
+    removed = 0
+    try:
+        with _revision_directory(vault, note_id, create=False, vault_directory=vault_directory) as (_, folder):
+            for entry in _revisions_at(vault, note_id, folder):
+                try:
+                    keep = is_encrypted(read_regular_at(folder, f"{entry.id}.md"))
+                except (OSError, ValueError, UnicodeError):
+                    keep = False
+                if not keep:
+                    os.unlink(f"{entry.id}.md", dir_fd=folder)
+                    removed += 1
+            sync_directory(folder)
+    except FileNotFoundError:
+        pass
+    return removed
+
+
 def read_revision_raw(vault, note_id: str, revision_id: str, *, vault_directory: int | None = None) -> str:
     if not REVISION_ID.fullmatch(revision_id):
         raise ValueError("Invalid revision ID")
@@ -371,6 +390,12 @@ def backup(vault, *, automatic: bool = False, vault_directory: int | None = None
             try:
                 os.stat(".jotline-settings.json", dir_fd=root, follow_symlinks=False)
                 add_source(root, ".jotline-settings.json", ".jotline-settings.json", MAX_SETTINGS_BYTES)
+            except FileNotFoundError:
+                pass
+            try:
+                # Encrypted notes are unreadable without it; it holds only the passphrase-wrapped key.
+                os.stat(".jotline-key.json", dir_fd=root, follow_symlinks=False)
+                add_source(root, ".jotline-key.json", ".jotline-key.json", MAX_SETTINGS_BYTES)
             except FileNotFoundError:
                 pass
 
