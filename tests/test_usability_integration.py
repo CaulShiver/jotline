@@ -114,3 +114,106 @@ async def test_saved_action_output_uses_storage_limit_not_insertion_reserve(tmp_
         assert app.query_one('#editor', TextArea).text == 'SOURCE'
         assert app.current.body == vault.read(note.id).body == 'SOURCE'
         assert not app.dirty
+
+
+async def test_live_preview_serializes_content_and_cursor_updates(tmp_path, monkeypatch):
+    import asyncio
+    from textual.containers import VerticalScroll
+    from textual.widgets import Markdown
+
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.autosave_timer.stop()
+        editor = app.query_one('#editor', TextArea)
+        editor.load_text('\n\n'.join(f'Block {i}' for i in range(150)))
+        editor.move_cursor((0, 0))
+        app.command('live-preview')
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        started = asyncio.Event()
+        update = Markdown.update
+
+        async def slow_update(widget, text):
+            if widget.id == 'live-markdown':
+                started.set()
+                await asyncio.sleep(0.5)
+            await update(widget, text)
+
+        monkeypatch.setattr(Markdown, 'update', slow_update)
+        await pilot.press('x')
+        await asyncio.wait_for(started.wait(), timeout=5)
+        # Dispatch a cursor-only update while the older content worker is asleep.
+        app.query_one('#editor', TextArea).move_cursor(app.query_one('#editor', TextArea).document.end)
+        await pilot.pause(0.35)
+        assert app._live_preview_ratio == 1.0
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        pane = app.query_one('#live-preview', VerticalScroll)
+        assert pane.max_scroll_y > 0
+        assert pane.scroll_y == pane.max_scroll_y
+        assert 'xBlock 0' in app._live_preview_text
+
+
+async def test_live_preview_resize_and_disable_while_compact(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.command('live-preview')
+        await pilot.pause()
+        pane = app.query_one('#live-preview')
+        await pilot.resize_terminal(70, 20)
+        await pilot.pause()
+        assert app.compact_layout and pane.has_class('hidden')
+        await pilot.resize_terminal(120, 40)
+        await pilot.pause()
+        assert not app.compact_layout and not pane.has_class('hidden')
+        await pilot.resize_terminal(80, 24)
+        await pilot.pause()
+        app.command('live-preview')
+        await pilot.pause()
+        assert not app.live_preview
+        await pilot.resize_terminal(120, 40)
+        await pilot.pause()
+        assert pane.has_class('hidden')
+
+
+async def test_live_preview_refreshes_externally_renamed_link(tmp_path):
+    vault = Vault(tmp_path)
+    target = vault.new('# Old title')
+    vault.save(target)
+    source = vault.new(f'See [[{target.id}]]\n\nLast line')
+    vault.save(source)
+    app = Jotline(vault, initial_note=source)
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.autosave_timer.stop()
+        app.command('live-preview')
+        await app.workers.wait_for_complete()
+        assert 'See Old title' in app._live_preview_text
+        external = Vault(tmp_path)
+        renamed = external.read(target.id)
+        renamed.body = '# New title'
+        external.save(renamed)
+        await pilot.pause(1.05)
+        await pilot.press('down')
+        assert app.query_one('#editor', TextArea).cursor_location[0] == 1
+        await pilot.pause(0.4)
+        await app.workers.wait_for_complete()
+        assert 'See New title' in app._live_preview_text
+        assert 'Old title' not in app._live_preview_text
+
+
+async def test_empty_note_selection_explains_why_apply_stays_open(tmp_path, monkeypatch):
+    from jotline.workflows import SelectNotes
+
+    vault = Vault(tmp_path)
+    vault.save(vault.new('A note'))
+    app = Jotline(vault)
+    async with app.run_test() as pilot:
+        app.select_bulk()
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, SelectNotes)
+        messages = []
+        monkeypatch.setattr(screen, 'notify', lambda message, **kwargs: messages.append(message))
+        await pilot.press('ctrl+s')
+        assert app.screen is screen
+        assert messages == ['Select at least one note first']

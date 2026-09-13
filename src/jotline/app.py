@@ -1,11 +1,13 @@
 """Keyboard-first writing UI. No shell commands are executed by the palette."""
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, replace
 import re
 from typing import Callable
 
-from textual import on
+from textual import events, on
+from textual.geometry import Size
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -411,7 +413,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self._live_preview_timer = None
         self._live_preview_text: str | None = None
         self._live_preview_ratio: float | None = None
-        self._note_titles: dict[str, str] | None = None
+        self._live_preview_lock = asyncio.Lock()
         self.command_registry = self.build_command_registry()
 
     def compose(self) -> ComposeResult:
@@ -458,12 +460,12 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.query_one("#editor", TextArea).focus()
         self.notify_storage_warnings()
 
-    def on_resize(self, event) -> None:
-        self.update_responsive_layout()
+    def on_resize(self, event: events.Resize) -> None:
+        self.update_responsive_layout(event.size)
 
-    def update_responsive_layout(self) -> None:
+    def update_responsive_layout(self, size: Size | None = None) -> None:
         """Keep writing usable before a terminal has room for the full chrome."""
-        size = self.size
+        size = size or self.size
         self.compact_layout = size.width <= 80 or size.height <= 24
         very_short = size.height <= 24
         sidebar = self.query_one("#sidebar")
@@ -556,7 +558,6 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.notify('Settings saved. Startup choices apply next launch.')
 
     def refresh_notes(self) -> None:
-        self._note_titles = None
         try:
             notes = self.vault.search(self.query_one("#search", Input).value, self.collection, self.workspace)
         except ValueError as error:
@@ -1090,13 +1091,11 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
                 and cells <= self.PREVIEW_MAX_CELLS)
 
     def note_titles(self) -> dict[str, str]:
-        """Note id to title for this workspace, rebuilt whenever the note list refreshes."""
-        if self._note_titles is None:
-            try:
-                self._note_titles = {note.id: note.title for note in self.vault.search(workspace=self.workspace)}
-            except (OSError, ValueError):
-                return {}
-        return self._note_titles
+        """Note id to title for this workspace, using the vault's external-edit cache."""
+        try:
+            return {note.id: note.title for note in self.vault.search(workspace=self.workspace)}
+        except (OSError, ValueError):
+            return {}
 
     def preview_markdown(self, body: str) -> str:
         """Checkboxes as ☐/☒ and [[links]] as note titles, as in exports."""
@@ -1113,7 +1112,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.push_screen(MarkdownPreview(self.preview_markdown(body)))
 
     def action_live_preview(self) -> None:
-        if self.compact_layout:
+        if not self.live_preview and self.compact_layout:
             self.notify("Side-by-side preview needs a terminal wider than 80 columns and taller than 24 rows; "
                         "showing the full preview instead.")
             self.action_preview()
@@ -1145,16 +1144,16 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         if not changed and ratio == self._live_preview_ratio:
             return
         self._live_preview_text, self._live_preview_ratio = text, ratio
-        self.run_worker(self.render_live_preview(text if changed else None, ratio), group="live-preview")
+        self.run_worker(self.render_live_preview(text if changed else None), group="live-preview")
 
-    async def render_live_preview(self, text: str | None, ratio: float) -> None:
-        if text is not None:
-            # Markdown.update mounts its blocks asynchronously; the scroll must
-            # wait for them or it measures the previous content.
-            await self.query_one("#live-markdown", Markdown).update(text)
-        # Keep the preview roughly level with the cursor in long notes.
-        pane = self.query_one("#live-preview", VerticalScroll)
-        self.call_after_refresh(lambda: pane.scroll_to(y=pane.max_scroll_y * ratio, animate=False))
+    async def render_live_preview(self, text: str | None) -> None:
+        # Do not cancel an in-flight update: later workers may only need to scroll.
+        async with self._live_preview_lock:
+            if text is not None:
+                await self.query_one("#live-markdown", Markdown).update(text)
+            pane = self.query_one("#live-preview", VerticalScroll)
+            self.call_after_refresh(lambda: pane.scroll_to(
+                y=pane.max_scroll_y * (self._live_preview_ratio or 0.0), animate=False))
 
     def action_outline(self) -> None:
         editor = self.query_one("#editor", TextArea)
