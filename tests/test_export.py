@@ -71,13 +71,21 @@ def stand_in(folder: Path, name: str, script: str) -> None:
     path.chmod(0o755)
 
 
-@posix_only
-def test_missing_converters_say_what_to_install(tmp_path, monkeypatch):
+def only_stand_ins(folder: Path, monkeypatch) -> None:
+    """Make the stand-ins in ``folder`` the only converters export can find.
+
+    Emptying PATH is not enough: browsers are also found by install location,
+    and CI's macOS image has Google Chrome in /Applications.
+    """
     from jotline import export
 
-    monkeypatch.setenv("PATH", str(tmp_path))
-    # CI's macOS image has Chrome in /Applications, found without PATH.
+    monkeypatch.setenv("PATH", str(folder))
     monkeypatch.setattr(export, "_existing", lambda *candidates: None)
+
+
+@posix_only
+def test_missing_converters_say_what_to_install(tmp_path, monkeypatch):
+    only_stand_ins(tmp_path, monkeypatch)
     with pytest.raises(ExportError, match="Word export needs pandoc or LibreOffice"):
         export_bytes("Plan", "body", "docx")
     with pytest.raises(ExportError, match="PDF export needs Chromium"):
@@ -89,7 +97,7 @@ def test_a_failing_converter_falls_back_to_the_next(tmp_path, monkeypatch):
     stand_in(tmp_path, "chromium", "echo 'no display' >&2\nexit 3\n")
     stand_in(tmp_path, "soffice", 'while [ $# -gt 0 ]; do [ "$1" = --outdir ] && out=$2; shift; done\n'
                                   '/bin/mkdir -p "$out"\nprintf "%%PDF-stand-in" > "$out/note.pdf"\n')
-    monkeypatch.setenv("PATH", str(tmp_path))
+    only_stand_ins(tmp_path, monkeypatch)
     assert export_bytes("Plan", "body", "pdf") == b"%PDF-stand-in"
 
     stand_in(tmp_path, "soffice", "echo 'profile locked' >&2\nexit 1\n")
@@ -147,7 +155,7 @@ def test_a_browser_that_lingers_after_printing_is_not_waited_on(tmp_path, monkey
 
     # Chrome on macOS can keep running after the PDF is written.
     stand_in(tmp_path, "chromium", PRINT_TARGET + "printf '%%PDF-1.4\\n%%%%EOF\\n' > \"$out\"\nexec /bin/sleep 30\n")
-    monkeypatch.setenv("PATH", str(tmp_path))
+    only_stand_ins(tmp_path, monkeypatch)
     monkeypatch.setattr(export, "BROWSER_TIMEOUT_SECONDS", 25)
     started = time.monotonic()
     assert export_bytes("Plan", "body", "pdf") == b"%PDF-1.4\n%%EOF\n"
@@ -158,7 +166,7 @@ def test_a_browser_that_lingers_after_printing_is_not_waited_on(tmp_path, monkey
 def test_a_launcher_that_exits_before_its_child_prints_is_waited_for(tmp_path, monkeypatch):
     # chrome.exe on Windows exits with status 0 while a child writes the PDF.
     stand_in(tmp_path, "chromium", PRINT_TARGET + "( /bin/sleep 1; printf '%%PDF-1.4\\n%%%%EOF\\n' > \"$out\" ) &\nexit 0\n")
-    monkeypatch.setenv("PATH", str(tmp_path))
+    only_stand_ins(tmp_path, monkeypatch)
     assert export_bytes("Plan", "body", "pdf") == b"%PDF-1.4\n%%EOF\n"
 
 
@@ -167,7 +175,7 @@ def test_a_broken_browser_falls_back_to_another_installed_browser(tmp_path, monk
     # CI's Ubuntu image has a Chromium build that crashes next to a working Google Chrome.
     stand_in(tmp_path, "chromium", "echo '[end of stack trace]' >&2\nexit 133\n")
     stand_in(tmp_path, "google-chrome", PRINT_TARGET + "printf '%%PDF-1.4\\n%%%%EOF\\n' > \"$out\"\n")
-    monkeypatch.setenv("PATH", str(tmp_path))
+    only_stand_ins(tmp_path, monkeypatch)
     assert export_bytes("Plan", "body", "pdf") == b"%PDF-1.4\n%%EOF\n"
 
 
@@ -176,7 +184,7 @@ def test_a_hung_browser_times_out_and_is_reported(tmp_path, monkeypatch):
     from jotline import export
 
     stand_in(tmp_path, "chromium", "exec /bin/sleep 30\n")
-    monkeypatch.setenv("PATH", str(tmp_path))
+    only_stand_ins(tmp_path, monkeypatch)
     monkeypatch.setattr(export, "BROWSER_TIMEOUT_SECONDS", 0.5)
     with pytest.raises(ExportError, match="chromium: timed out after 0.5 seconds"):
         export_bytes("Plan", "body", "pdf")
@@ -187,7 +195,7 @@ def test_a_browser_without_a_usable_sandbox_is_retried_without_it(tmp_path, monk
     # Ubuntu 23.10+ blocks the namespaces Chromium's sandbox needs.
     stand_in(tmp_path, "chromium", 'case " $* " in *" --no-sandbox "*) ;; *) echo "No usable sandbox!" >&2; exit 133;; esac\n'
              + PRINT_TARGET + "printf '%%PDF-1.4\\n%%%%EOF\\n' > \"$out\"\n")
-    monkeypatch.setenv("PATH", str(tmp_path))
+    only_stand_ins(tmp_path, monkeypatch)
     assert export_bytes("Plan", "body", "pdf").startswith(b"%PDF")
 
 
