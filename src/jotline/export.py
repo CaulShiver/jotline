@@ -17,7 +17,8 @@ import tempfile
 import time
 from uuid import uuid4
 
-from .tasks import CODE_SPAN, TASK, fenced_rows, split_lines
+from .store import LINK
+from .tasks import CODE_SPAN, TASK, fenced_pairs
 
 FORMATS = ("markdown", "html", "docx", "pdf")
 FORMAT_NAMES = {"markdown": "Markdown", "html": "HTML", "docx": "Word", "pdf": "PDF"}
@@ -31,7 +32,6 @@ TIMEOUT_SECONDS = 180
 BROWSER_TIMEOUT_SECONDS = 30
 # How long to keep watching for the PDF after a browser launcher exits cleanly.
 EXIT_GRACE_SECONDS = 20
-WIKI_LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|([^\[\]]*))?\]\]")
 BROWSERS = ("chromium", "chromium-browser", "google-chrome-stable", "google-chrome", "chrome",
             "microsoft-edge-stable", "microsoft-edge", "msedge", "brave-browser", "brave")
 PDF_ENGINES = ("weasyprint", "wkhtmltopdf", "typst", "tectonic", "xelatex", "lualatex", "pdflatex")
@@ -74,9 +74,11 @@ def printable_markdown(body: str, titles: dict[str, str] | None = None) -> str:
     titles = titles or {}
 
     def link_titles(text: str) -> str:
-        return WIKI_LINK.sub(lambda link: link[2] or titles.get(link[1], link[1]), text)
+        return LINK.sub(lambda link: link[2] or titles.get(link[1], link[1]), text)
 
     def outside_code_spans(text: str) -> str:
+        if "[[" not in text:
+            return text
         # `[[x]]` inside backticks is documentation of the syntax, not a link.
         pieces, last = [], 0
         for span in CODE_SPAN.finditer(text):
@@ -85,8 +87,7 @@ def printable_markdown(body: str, titles: dict[str, str] | None = None) -> str:
         pieces.append(link_titles(text[last:]))
         return "".join(pieces)
 
-    pairs = split_lines(body)
-    fenced = fenced_rows([content for content, _ in pairs])
+    pairs, fenced = fenced_pairs(body)
     result = []
     for row, (content, ending) in enumerate(pairs):
         if row not in fenced:

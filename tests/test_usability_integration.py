@@ -147,8 +147,12 @@ async def test_live_preview_serializes_content_and_cursor_updates(tmp_path, monk
         await pilot.pause(0.35)
         assert app._live_preview_ratio == 1.0
         await app.workers.wait_for_complete()
-        await pilot.pause()
         pane = app.query_one('#live-preview', VerticalScroll)
+        # Scrolling is posted after layout refresh, outside the render workers.
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if pane.max_scroll_y > 0 and pane.scroll_y == pane.max_scroll_y:
+                break
         assert pane.max_scroll_y > 0
         assert pane.scroll_y == pane.max_scroll_y
         assert 'xBlock 0' in app._live_preview_text
@@ -193,8 +197,8 @@ async def test_live_preview_refreshes_externally_renamed_link(tmp_path):
         renamed.body = '# New title'
         external.save(renamed)
         await pilot.pause(1.05)
-        await pilot.press('down')
-        assert app.query_one('#editor', TextArea).cursor_location[0] == 1
+        await pilot.press(*['down'] * 10)
+        assert app.query_one('#editor', TextArea).cursor_location[0] == 2
         await pilot.pause(0.4)
         await app.workers.wait_for_complete()
         assert 'See New title' in app._live_preview_text

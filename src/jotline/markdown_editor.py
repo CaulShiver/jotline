@@ -104,16 +104,17 @@ def highlight_line(line: str) -> list[Highlight]:
                 add((match.start(), match.end(), "md.table"))
 
     code = [(match.start(), match.end()) for match in CODE_SPAN.finditer(line, body_start)]
-    code_starts = [start for start, _ in code]
+    protected = code
+    protected_starts = [start for start, _ in protected]
     for start, end in code:
         add((start, end, "inline_code"))
 
     def free(start: int, end: int) -> bool:
-        # Code spans are sorted and disjoint, so only the neighbours can overlap.
-        index = bisect_right(code_starts, start)
-        if index and code[index - 1][1] > start:
+        # Protected ranges are sorted and disjoint; only neighbours can overlap.
+        index = bisect_right(protected_starts, start)
+        if index and protected[index - 1][1] > start:
             return False
-        return index == len(code) or code[index][0] >= end
+        return index == len(protected) or protected[index][0] >= end
 
     for name, pattern in INLINE:
         for match in pattern.finditer(line, body_start):
@@ -130,11 +131,18 @@ def highlight_line(line: str) -> list[Highlight]:
         # A URL already inside (…) of a Markdown link is highlighted there.
         if free(match.start(), match.end()) and line[max(match.start() - 1, 0):match.start()] != "(":
             add((match.start(), match.end(), "link.uri"))
+    # Tags and wiki links also leave URL destinations alone. Merge overlaps so
+    # checking many tags on a long line stays logarithmic per match.
+    protected = []
+    for start, end in sorted([*code, *((start, end) for start, end, name in spans if name == "link.uri")]):
+        if protected and start <= protected[-1][1]:
+            protected[-1] = (protected[-1][0], max(end, protected[-1][1]))
+        else:
+            protected.append((start, end))
+    protected_starts = [start for start, _ in protected]
     for pattern, name in ((WIKI, "md.wikilink"), (FOOTNOTE, "link.label"), (TAG, "md.tag")):
         for match in pattern.finditer(line, body_start):
-            if free(match.start(), match.end()) and not any(
-                    kind == "link.uri" and start < match.end() and end > match.start()
-                    for start, end, kind in spans):
+            if free(match.start(), match.end()):
                 add((match.start(), match.end(), name))
     spans = [span for span in spans if span[1] > span[0]]
     if line.isascii():
@@ -546,8 +554,10 @@ class MarkdownEditor(TextArea):
             moved = shift(highlights)
             highlights.clear()
             highlights.update(moved)
-            self._fenced = set(shift(dict.fromkeys(self._fenced)))
-            self._fence_markers = set(shift(dict.fromkeys(self._fence_markers)))
+            self._fenced = {row + delta if row > bottom else row for row in self._fenced
+                            if row < top or row > bottom}
+            self._fence_markers = {row + delta if row > bottom else row for row in self._fence_markers
+                                   if row < top or row > bottom}
         for row in range(top, end + 1):
             line = lines[row]
             if inside:

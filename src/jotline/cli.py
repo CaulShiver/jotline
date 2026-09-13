@@ -645,10 +645,7 @@ def save_new_note(run: Invocation, body: str):
 
 def read_note_here(run: Invocation, note_id: str):
     """Read a note a command acts on; it must belong to the active workspace."""
-    note = run.vault.read(note_id)
-    if note.workspace != run.workspace:
-        raise ValueError(OTHER_WORKSPACE)
-    return note
+    return run.vault.read(note_id, workspace=run.workspace)
 
 
 def run_capture(run: Invocation) -> None:
@@ -781,14 +778,14 @@ def run_export(run: Invocation) -> None:
     fmt = format_for(args.format, args.output)
     if fmt in BINARY and args.output is None:
         raise ValueError(f"{FORMAT_NAMES[fmt]} export needs --output FILE")
-    titles = {} if fmt == "markdown" else {other.id: other.title for other in run.vault.search(workspace=run.workspace)}
+    titles = {} if fmt == "markdown" else run.vault.titles(run.workspace)
     if args.output is not None:
         written = write_export(args.output, export_bytes(note.title, note.body, fmt, titles), force=args.force)
         print(terminal_text(written))
         return
     body = note.body if fmt == "markdown" else export_bytes(note.title, note.body, fmt, titles).decode("utf-8")
     if sys.stdout.isatty() and has_terminal_controls(body) and not args.raw:
-        raise ValueError("Refusing to print terminal controls interactively; redirect stdout or pass --raw")
+        raise ValueError(REFUSED_CONTROLS)
     sys.stdout.write(body)
 
 

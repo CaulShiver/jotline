@@ -18,7 +18,7 @@ from textual.widgets.option_list import Option
 from rich.text import Text
 
 from .store import COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, tagged_body, validate_workspace
-from .settings import Settings, HOTKEY_ACTIONS
+from .settings import Settings, HOTKEY_ACTIONS, VIEW_COLLECTIONS
 from .preferences import Preferences
 from .templates import Templates
 from .workflows import WorkflowMixin
@@ -414,6 +414,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self._live_preview_text: str | None = None
         self._live_preview_ratio: float | None = None
         self._live_preview_lock = asyncio.Lock()
+        self._live_preview_cursor_row: int | None = None
         self.command_registry = self.build_command_registry()
 
     def compose(self) -> ComposeResult:
@@ -709,9 +710,12 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             self.schedule_live_preview()
 
     @on(TextArea.SelectionChanged, "#editor")
-    def cursor_moved(self) -> None:
-        # The live preview follows the cursor, not only edits.
-        self.schedule_live_preview()
+    def cursor_moved(self, event: TextArea.SelectionChanged) -> None:
+        # Horizontal cursor movement does not change the preview's scroll ratio.
+        row = event.selection.end[0]
+        if row != self._live_preview_cursor_row:
+            self._live_preview_cursor_row = row
+            self.schedule_live_preview()
 
     def capture_current_buffer(self) -> bool:
         """Copy the editor into the note while preserving its unsaved state."""
@@ -1093,7 +1097,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
     def note_titles(self) -> dict[str, str]:
         """Note id to title for this workspace, using the vault's external-edit cache."""
         try:
-            return {note.id: note.title for note in self.vault.search(workspace=self.workspace)}
+            return self.vault.titles(self.workspace)
         except (OSError, ValueError):
             return {}
 
@@ -1171,8 +1175,8 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         editor.focus()
 
     # Palette names that differ from the toggle_lines style they apply.
-    LINE_STYLES = {"heading": "h2", "list": "bullet"}
-    BLOCK_STYLES = {"numbered", "task", "quote", *LINE_STYLES, *(f"h{level}" for level in range(1, 7))}
+    BLOCK_STYLES = {"heading": "h2", "list": "bullet", "numbered": "numbered", "task": "task", "quote": "quote",
+                    **{f"h{level}": f"h{level}" for level in range(1, 7)}}
     WRAP_MARKERS = {"bold": "**", "italic": "*", "strike": "~~", "code": "`"}
 
     def action_format_markdown(self, style: str) -> None:
@@ -1180,7 +1184,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         start, end = sorted((editor.selection.start, editor.selection.end))
         editor.history.checkpoint()
         if style in self.BLOCK_STYLES:
-            self.transform_rows(start, end, lambda lines: toggle_lines(lines, self.LINE_STYLES.get(style, style)))
+            self.transform_rows(start, end, lambda lines: toggle_lines(lines, self.BLOCK_STYLES[style]))
         elif style in ("indent", "outdent"):
             self.transform_rows(start, end, lambda lines: indent_lines(lines, outdent=style == "outdent"))
         elif style in self.WRAP_MARKERS:
@@ -1460,7 +1464,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
                         for level in range(1, 7))
         commands.extend(Command("view:" + collection, "Show " + collection,
                                 lambda collection=collection: self.show_collection(collection))
-                        for collection in ("all", "starred", *COLLECTIONS))
+                        for collection in VIEW_COLLECTIONS)
         commands.extend(Command("move:" + collection, "Move note to " + collection,
                                 lambda collection=collection: self.move_to_collection(collection))
                         for collection in COLLECTIONS)

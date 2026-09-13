@@ -43,7 +43,7 @@ def split_lines(body: str) -> list[tuple[str, str]]:
     """(content, line ending) pairs following str.splitlines, the editor's line model."""
     pairs = []
     for line in body.splitlines(keepends=True):
-        content = line.splitlines()[0] if line.splitlines() else ""
+        content = line.splitlines()[0]
         pairs.append((content, line[len(content):]))
     return pairs
 
@@ -78,14 +78,19 @@ def due_date(text: str) -> str | None:
     return None
 
 
+def fenced_pairs(body: str) -> tuple[list[tuple[str, str]], set[int]]:
+    """Line contents/endings together with their fenced-code rows."""
+    pairs = split_lines(body)
+    return pairs, fenced_rows([content for content, _ in pairs])
+
+
 def task_lines(body: str):
     """(line number, line without its ending, ending, match) for each task outside fenced code.
 
     Lines follow str.splitlines, the same model as the editor, so line numbers
     match the rows shown in the app.
     """
-    pairs = split_lines(body)
-    fenced = fenced_rows([content for content, _ in pairs])
+    pairs, fenced = fenced_pairs(body)
     for row, (content, ending) in enumerate(pairs):
         if row not in fenced and (match := TASK.fullmatch(content)):
             yield row + 1, content, ending, match

@@ -100,3 +100,21 @@ def test_link_grammar_and_multiple_search_terms(tmp_path):
     assert not vault.search("blue #missing")
     assert not vault.search("blue absent")
     assert [n.id for n in vault.search(note.id)] == [note.id]
+
+
+def test_read_workspace_guard_and_shared_titles(tmp_path):
+    from jotline.store import OTHER_WORKSPACE
+
+    vault = Vault(tmp_path)
+    note = vault.new('# Work title', workspace='work')
+    vault.save(note)
+    assert vault.read(note.id, workspace='work').body == '# Work title'
+    assert vault.titles('work') == {note.id: 'Work title'}
+    assert vault.titles('default') == {}
+    with pytest.raises(ValueError, match=OTHER_WORKSPACE):
+        vault.read(note.id, workspace='default')
+    with vault.locked() as directory:
+        assert vault.read(note.id, workspace='work', directory=directory).id == note.id
+        with pytest.raises(ValueError, match=OTHER_WORKSPACE):
+            vault.read(note.id, workspace='default', directory=directory)
+    assert vault.read(note.id).workspace == 'work'

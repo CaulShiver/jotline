@@ -168,10 +168,7 @@ class WorkflowMixin:
 
     def read_in_workspace(self, note_id):
         """Read a note the user picked; it must still belong to this workspace."""
-        note = self.vault.read(note_id)
-        if note.workspace != self.workspace:
-            raise ValueError('Note moved to another workspace')
-        return note
+        return self.vault.read(note_id, workspace=self.workspace)
 
     def recent_notes(self):
         notes = {n.id: n for n in self.vault.search(workspace=self.workspace)}

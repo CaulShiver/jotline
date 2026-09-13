@@ -38,6 +38,8 @@
   now counts. Tags inside URL destinations and fragments are not highlighted.
 - Moving a note now reports `Moved to X`, prefixes failures with `Note was not
   moved:`, refreshes connections, and shows any backup warning.
+- Workspace mismatch errors now consistently name the `--workspace NAME` option.
+  CLI export uses the same terminal-control refusal message as other commands.
 - Applying an empty note selection now shows `Select at least one note first`.
 - Internal cleanup with no behaviour change: the CLI dispatches commands
   through one handler per command, repeated messages and limits are named

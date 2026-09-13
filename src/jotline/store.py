@@ -48,7 +48,7 @@ class FileSignature(NamedTuple):
     ctime_ns: int
 
 
-LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|[^\[\]]*)?\]\]")
+LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|([^\[\]]*))?\]\]")
 TAG = re.compile(r"(?<![\w#])#([\w][\w/-]*)", re.UNICODE)
 
 
@@ -358,7 +358,7 @@ class Vault:
         stamp = now()
         return Note(uuid4().hex, body, created=stamp, updated=stamp, workspace=validate_workspace(workspace))
 
-    def read(self, note_id: str, *, directory: int | None = None) -> Note:
+    def read(self, note_id: str, *, workspace: str | None = None, directory: int | None = None) -> Note:
         filename = self.file(note_id).name
         own_directory = directory is None
         if own_directory:
@@ -372,7 +372,14 @@ class Vault:
         finally:
             if own_directory:
                 os.close(directory)
-        return self.parse_note(note_id, raw, self.cipher)
+        note = self.parse_note(note_id, raw, self.cipher)
+        if workspace is not None and note.workspace != workspace:
+            raise ValueError(OTHER_WORKSPACE)
+        return note
+
+    def titles(self, workspace: str) -> dict[str, str]:
+        """Current titles for exports and previews, including external edits."""
+        return {note.id: note.title for note in self.search(workspace=workspace)}
 
     @staticmethod
     def parse_note(note_id: str, raw: str, cipher=None) -> Note:
@@ -698,9 +705,7 @@ class Vault:
         on a new line in the note's own newline style.
         """
         with self.locked() as directory:
-            note = self.read(note_id, directory=directory)
-            if note.workspace != workspace:
-                raise ValueError(OTHER_WORKSPACE)
+            note = self.read(note_id, workspace=workspace, directory=directory)
             if line_break and note.body and body:
                 newline = "\r\n" if "\r\n" in note.body else ("\r" if "\r" in note.body else "\n")
                 if prepend and not body.endswith(("\n", "\r")):
@@ -829,9 +834,7 @@ class Vault:
     def set_encrypted(self, note_id: str, workspace: str, encrypted: bool) -> tuple[Note, bool]:
         """Encrypt or decrypt one note; returns the note and whether anything changed."""
         with self.locked() as directory:
-            note = self.read(note_id, directory=directory)
-            if note.workspace != workspace:
-                raise ValueError(OTHER_WORKSPACE)
+            note = self.read(note_id, workspace=workspace, directory=directory)
             if note.locked or (encrypted and self.cipher is None):
                 raise ValueError(LOCKED)
             if note.encrypted == encrypted:
@@ -843,9 +846,7 @@ class Vault:
     def update_body(self, note_id: str, workspace: str, change) -> Note:
         """Replace a note's text with change(text) under one lock."""
         with self.locked() as directory:
-            note = self.read(note_id, directory=directory)
-            if note.workspace != workspace:
-                raise ValueError(OTHER_WORKSPACE)
+            note = self.read(note_id, workspace=workspace, directory=directory)
             if note.locked:
                 raise ValueError(LOCKED)
             note.body = change(note.body)

@@ -61,7 +61,7 @@ class ReviewMixin:
             return
         # Snapshot the text now; the worker must not see edits typed while it runs.
         title, body = self.current.title, self.current.body
-        titles = {other.id: other.title for other in self.vault.search(workspace=self.workspace)}
+        titles = self.vault.titles(self.workspace)
         target = Path(path).expanduser()
         self.notify(f"Exporting {FORMAT_NAMES[fmt]}…")
 
