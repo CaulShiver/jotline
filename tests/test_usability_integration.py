@@ -131,21 +131,29 @@ async def test_live_preview_serializes_content_and_cursor_updates(tmp_path, monk
         await app.workers.wait_for_complete()
         await pilot.pause()
         started = asyncio.Event()
+        release = asyncio.Event()
         update = Markdown.update
 
         async def slow_update(widget, text):
             if widget.id == 'live-markdown':
                 started.set()
-                await asyncio.sleep(0.5)
+                await asyncio.wait_for(release.wait(), timeout=5)
             await update(widget, text)
 
         monkeypatch.setattr(Markdown, 'update', slow_update)
         await pilot.press('x')
         await asyncio.wait_for(started.wait(), timeout=5)
-        # Dispatch a cursor-only update while the older content worker is asleep.
-        app.query_one('#editor', TextArea).move_cursor(app.query_one('#editor', TextArea).document.end)
-        await pilot.pause(0.35)
-        assert app._live_preview_ratio == 1.0
+        # Hold the older content render until the cursor-only update is
+        # dispatched; timer scheduling on slow runners need not fit 350 ms.
+        try:
+            editor.move_cursor(editor.document.end)
+            for _ in range(60):
+                await pilot.pause(0.05)
+                if app._live_preview_ratio == 1.0:
+                    break
+            assert app._live_preview_ratio == 1.0
+        finally:
+            release.set()
         await app.workers.wait_for_complete()
         pane = app.query_one('#live-preview', VerticalScroll)
         # Scrolling is posted after layout refresh, outside the render workers.
