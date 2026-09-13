@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Full Markdown editing in the app. The editor highlights Markdown syntax in the
+  current theme's colours, with no new dependency. Enter continues bullet,
+  numbered, task and quote lines, and Enter on an empty item ends the list.
+  Formatting commands now toggle off. New commands: strikethrough, heading
+  levels 1–6, numbered and task lists, code blocks, links, images, horizontal
+  rules, indent and outdent, and insert or tidy table. Ctrl+P → Toggle
+  side-by-side Markdown preview renders while you type, and Jump to heading
+  lists a note's headings. Previews show checkboxes and note-link titles as
+  exports do. Every new command can take an optional shortcut, and F1 → Editor
+  turns highlighting or list continuation off.
 - Commands that take a note (`append`, `prepend`, `open`, `run`, `export`,
   `tag`) accept a unique ID prefix of four or more characters, an exact title
   (any letter case), or `last`. Ambiguous references are refused with the

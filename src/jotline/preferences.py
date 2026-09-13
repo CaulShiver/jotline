@@ -53,7 +53,10 @@ class Preferences(Modal[Settings | None]):
                     yield Select(options, value=getattr(s, name), allow_blank=False, id='pref-' + name)
                 yield Label('Editor and layout', id='section-editor', classes='pref-section')
                 for name, title in (('line_numbers', 'Line numbers'), ('soft_wrap', 'Wrap long lines'),
-                                    ('highlight_line', 'Highlight current line'), ('focus_on_start', 'Start in focus mode'),
+                                    ('highlight_line', 'Highlight current line'),
+                                    ('markdown_highlighting', 'Highlight Markdown syntax'),
+                                    ('smart_lists', 'Continue lists and quotes on Enter'),
+                                    ('focus_on_start', 'Start in focus mode'),
                                     ('show_hints', 'Show writing hints')):
                     with Horizontal(classes='pref-toggle'):
                         yield Label(title)
@@ -98,7 +101,8 @@ class Preferences(Modal[Settings | None]):
             data = asdict(self.settings)
             for name in ('theme', 'sort_order', 'startup', 'default_collection'):
                 data[name] = self.query_one('#pref-' + name, Select).value
-            for name in ('line_numbers', 'soft_wrap', 'highlight_line', 'focus_on_start', 'show_hints'):
+            for name in ('line_numbers', 'soft_wrap', 'highlight_line', 'markdown_highlighting', 'smart_lists',
+                         'focus_on_start', 'show_hints'):
                 data[name] = self.query_one('#pref-' + name, Switch).value
             sidebar_width = self.query_one('#pref-sidebar_width', Input).value.strip()
             autosave_seconds = self.query_one('#pref-autosave_seconds', Input).value.strip()
