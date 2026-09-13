@@ -41,6 +41,7 @@ jotline = "jotline.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.2", "pytest-asyncio>=0.24"]
+encryption = ["cryptography>=42"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

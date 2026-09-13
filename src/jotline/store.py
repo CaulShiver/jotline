@@ -1,6 +1,7 @@
 """Portable Markdown storage with atomic writes and optimistic concurrency."""
 from __future__ import annotations
 
+import codecs
 from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -16,6 +17,7 @@ import time
 from time import monotonic
 from uuid import uuid4
 
+from .crypto import KEY_FILE, LOCKED, EncryptionError, KeyFile, NoteCipher, is_sealed, new_note_key
 from .filesystem import fs as os, lock_file
 
 COLLECTIONS = ("inbox", "projects", "areas", "resources", "archive", "trash")
@@ -66,7 +68,13 @@ class ConflictError(OSError):
     """An external edit must be resolved before overwriting a note."""
 
 
-def _read_regular_fd(fd: int, name: str, max_bytes: int) -> str:
+def decode_problem(error: UnicodeDecodeError, encoding: str = "utf-8") -> str:
+    """Describe undecodable input without Python codec jargon."""
+    label = "UTF-8" if codecs.lookup(encoding).name == "utf-8" else encoding
+    return f"not valid {label} text (bad byte at position {error.start})"
+
+
+def _read_regular_fd(fd: int, name: str, max_bytes: int, encoding: str = "utf-8", errors: str = "strict") -> str:
     info = os.fstat(fd)
     if not stat.S_ISREG(info.st_mode):
         raise OSError(f"Not a regular file: {name}")
@@ -80,7 +88,7 @@ def _read_regular_fd(fd: int, name: str, max_bytes: int) -> str:
         raw.extend(chunk)
     if len(raw) > max_bytes:
         raise ValueError(f"{name} exceeds the {max_bytes}-byte file limit")
-    return bytes(raw).decode("utf-8")
+    return bytes(raw).decode(encoding, errors)
 
 
 def read_regular_at(directory: int, name: str, max_bytes: int = MAX_NOTE_BYTES) -> str:
@@ -161,8 +169,9 @@ def pin_ancestors(absolute: Path) -> int:
     return directory
 
 
-def read_regular_file(path: Path, max_bytes: int = MAX_NOTE_BYTES, *, ancestor_safe: bool = False) -> str:
-    """Read bounded UTF-8 text without following links or blocking on a pipe."""
+def read_regular_file(path: Path, max_bytes: int = MAX_NOTE_BYTES, *, ancestor_safe: bool = False,
+                      encoding: str = "utf-8", errors: str = "strict") -> str:
+    """Read bounded text (UTF-8 by default) without following links or blocking on a pipe."""
     if ancestor_safe:
         absolute = Path(path).absolute()
         directory = pin_ancestors(absolute)
@@ -173,7 +182,7 @@ def read_regular_file(path: Path, max_bytes: int = MAX_NOTE_BYTES, *, ancestor_s
     else:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
-        return _read_regular_fd(fd, path.name, max_bytes)
+        return _read_regular_fd(fd, path.name, max_bytes, encoding, errors)
     finally:
         os.close(fd)
 
@@ -247,6 +256,9 @@ class Note:
     starred: bool = False
     original: str | None = None
     workspace: str = "default"
+    encrypted: bool = False
+    # The encrypted text while encrypted notes are locked; the body is empty then.
+    sealed: str | None = field(default=None, repr=False)
     derived_warnings: list[str] = field(default_factory=list, repr=False, compare=False)
 
     def _derived(self, pattern: re.Pattern, label: str) -> set[str]:
@@ -256,8 +268,14 @@ class Note:
         return values
 
     @property
+    def locked(self) -> bool:
+        return self.sealed is not None
+
+    @property
     def heading(self) -> str:
         """The full first non-blank line; links by title match against this."""
+        if self.locked:
+            return "Encrypted note (locked)"
         for line in io.StringIO(self.body):
             if line.strip():
                 return line.lstrip("# ").strip() or "Untitled"
@@ -289,6 +307,8 @@ class Vault:
         self.sticky_warnings: list[str] = []
         self.backup_warning = ""
         self.lock_timeout = LOCK_TIMEOUT_SECONDS
+        # Set by unlock(); while None, encrypted notes read as locked and their text stays sealed.
+        self.cipher: NoteCipher | None = None
         self._cache: dict[str, tuple[FileSignature, Note, int, float]] = {}
         self.permission_warning = ("Vault is writable by other users; use chmod go-w to protect note replacement"
                                    if os.name != "nt" and self.path.stat().st_mode & 0o022 else "")
@@ -325,10 +345,11 @@ class Vault:
         finally:
             if own_directory:
                 os.close(directory)
-        return self.parse_note(note_id, raw)
+        return self.parse_note(note_id, raw, self.cipher)
 
     @staticmethod
-    def parse_note(note_id: str, raw: str) -> Note:
+    def parse_note(note_id: str, raw: str, cipher=None) -> Note:
+        """Parse a note file. Without a cipher, an encrypted note stays sealed and locked."""
         meta = {}
         # Some editors prepend a byte-order mark; it is not part of the note.
         body = raw.removeprefix("\ufeff")
@@ -339,7 +360,7 @@ class Vault:
             header = body[body.index("\n") + 1:boundary.start()]
             for line in header.splitlines():
                 key, sep, value = line.partition(": ")
-                if sep and key in {"collection", "created", "updated", "starred", "workspace"}:
+                if sep and key in {"collection", "created", "updated", "starred", "workspace", "encrypted"}:
                     try:
                         meta[key] = json.loads(value)
                     except RecursionError:
@@ -351,7 +372,15 @@ class Vault:
             raise ValueError("Invalid timestamps")
         if not isinstance(meta.get("starred", False), bool):
             raise ValueError("Invalid starred value")
+        if not isinstance(meta.get("encrypted", False), bool):
+            raise ValueError("Invalid encrypted value")
         validate_workspace(meta.get("workspace", "default"))
+        if meta.get("encrypted"):
+            if not is_sealed(body):
+                raise ValueError("Encrypted note is missing its encrypted text")
+            if cipher is None:
+                return Note(note_id, "", original=raw, sealed=body, **meta)
+            body = cipher.open(note_id, body)
         return Note(note_id, body, original=raw, **meta)
 
     def invalidate_cache(self) -> None:
@@ -412,6 +441,12 @@ class Vault:
             raise ValueError("Invalid note body or starred value")
         if not all(isinstance(value, str) for value in (note.created, note.updated)):
             raise ValueError("Invalid timestamps")
+        if not isinstance(note.encrypted, bool):
+            raise ValueError("Invalid encrypted value")
+        # A locked note's text is unknown here: only its metadata may change.
+        if (note.locked and (note.body or not note.encrypted)) or (
+                note.encrypted and not note.locked and self.cipher is None):
+            raise ValueError(LOCKED)
         path = self.file(note.id)
         try:
             actual = read_regular_at(directory, path.name)
@@ -419,11 +454,18 @@ class Vault:
             actual = None
         if actual != note.original:
             raise ConflictError("This note changed outside Jotline. Save a recovery copy to preserve your changes.")
+        previous = None
         if actual is not None:
-            previous = self.parse_note(note.id, actual)
+            previous = self.parse_note(note.id, actual, None if note.locked else self.cipher)
+            # Sealed text is bound to its note ID, so it can be kept but never moved elsewhere.
+            if note.locked and previous.sealed != note.sealed:
+                raise ValueError(LOCKED)
             if all(getattr(previous, key) == getattr(note, key)
-                   for key in ("body", "collection", "created", "starred", "workspace")):
+                   for key in ("body", "collection", "created", "starred", "workspace", "encrypted")):
                 return
+        elif note.locked:
+            raise ValueError(LOCKED)
+        newly_encrypted = note.encrypted and previous is not None and not previous.encrypted
         if preserve_updated:
             if actual is not None:
                 raise ValueError("Import timestamps can only be preserved for new notes")
@@ -438,7 +480,10 @@ class Vault:
         stamp = (note.updated if preserve_updated else "") or now()
         meta = {"collection": note.collection, "created": note.created or stamp,
                 "updated": stamp, "starred": note.starred, "workspace": note.workspace}
-        raw = "---\njotline: 1\n" + "\n".join(f"{k}: {json.dumps(v)}" for k, v in meta.items()) + "\n---\n" + note.body
+        if note.encrypted:
+            meta["encrypted"] = True
+        stored = note.sealed if note.locked else self.cipher.seal(note.id, note.body) if note.encrypted else note.body
+        raw = "---\njotline: 1\n" + "\n".join(f"{k}: {json.dumps(v)}" for k, v in meta.items()) + "\n---\n" + stored
         if len(raw.encode("utf-8")) > MAX_NOTE_BYTES:
             raise ValueError(f"Note exceeds the {MAX_NOTE_BYTES}-byte file limit")
         from . import history
@@ -459,7 +504,8 @@ class Vault:
                 self.backup_warning = "; ".join(filter(None, (self.backup_warning, message)))
                 if message not in self.warnings:
                     self.warnings.append(message)
-            if actual is not None:
+            if actual is not None and not newly_encrypted:
+                # A note being encrypted must not leave its plain text behind in history.
                 history.snapshot(self, note.id, actual, vault_directory=directory)
             candidate = history.snapshot(self, note.id, raw, vault_directory=directory)
             # Revalidate as late as possible. For a brand-new note, publish with
@@ -554,6 +600,12 @@ class Vault:
             history.prune_history(self, note.id, vault_directory=directory)
         except OSError as error:
             self.warnings.append(f"History retention cleanup failed: {error}")
+        if newly_encrypted:
+            try:
+                history.remove_unencrypted_revisions(
+                    self, note.id, lambda text: self.parse_note(note.id, text).encrypted, vault_directory=directory)
+            except OSError as error:
+                self.retain_warning(f"Unencrypted saved versions of {note.id} could not be removed: {error}")
 
     def history(self, note_id: str):
         from .history import revisions
@@ -562,7 +614,7 @@ class Vault:
     def read_revision(self, note_id: str, revision_id: str) -> Note:
         from .history import read_revision_raw
         raw = read_revision_raw(self, note_id, revision_id)
-        return self.parse_note(note_id, raw)
+        return self.parse_note(note_id, raw, self.cipher)
 
     def history_notes(self, workspace: str) -> list[Note]:
         from .history import history_note_ids, read_revision_raw, revisions
@@ -576,7 +628,7 @@ class Vault:
                         try:
                             raw = read_revision_raw(
                                 self, note_id, revision.id, vault_directory=directory)
-                            note = self.parse_note(note_id, raw)
+                            note = self.parse_note(note_id, raw, self.cipher)
                         except (ValueError, OSError, UnicodeError) as error:
                             self.warnings.append(f"History {note_id}/{revision.id}: {error}")
                             continue
@@ -690,7 +742,104 @@ class Vault:
     def workspaces(self) -> set[str]:
         return {"default", *(note.workspace for note in self.notes())}
 
+    def has_key(self) -> bool:
+        try:
+            (self.path / KEY_FILE).lstat()
+        except FileNotFoundError:
+            return False
+        return True
+
+    def _read_key(self, directory: int) -> KeyFile:
+        try:
+            return KeyFile.loads(read_regular_at(directory, KEY_FILE, MAX_SETTINGS_BYTES))
+        except FileNotFoundError:
+            raise EncryptionError("Encryption is not set up for this vault") from None
+
+    def _write_key(self, directory: int, key: KeyFile, *, replace_existing: bool) -> None:
+        fd, temp = create_private_temp(directory, ".jotline-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
+                stream.write(key.dumps())
+                stream.flush()
+                os.fsync(stream.fileno())
+            if replace_existing:
+                replace_at(directory, temp, KEY_FILE)
+            else:
+                publish_new(directory, temp, KEY_FILE)
+            os.fsync(directory)
+        finally:
+            try:
+                os.unlink(temp, dir_fd=directory)
+            except FileNotFoundError:
+                pass
+
+    def unlock(self, passphrase: str) -> None:
+        """Unwrap the note key so encrypted notes read and save as text."""
+        directory = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            key = self._read_key(directory)
+        finally:
+            os.close(directory)
+        self.cipher = NoteCipher(key.unwrap(passphrase))
+        self.invalidate_cache()
+
+    def lock(self) -> None:
+        self.cipher = None
+        self.invalidate_cache()
+
+    def setup_encryption(self, passphrase: str, *, n: int | None = None) -> None:
+        from .crypto import SCRYPT_N
+
+        already = "Encryption is already set up for this vault; change its passphrase instead"
+        if self.has_key():
+            raise ValueError(already)
+        note_key = new_note_key()
+        key = KeyFile.create(passphrase, note_key, n=n or SCRYPT_N)
+        with self.locked() as directory:
+            try:
+                # Never replace an existing key: notes sealed with it would become unreadable.
+                self._write_key(directory, key, replace_existing=False)
+            except FileExistsError:
+                raise ValueError(already) from None
+        self.cipher = NoteCipher(note_key)
+        self.invalidate_cache()
+
+    def change_passphrase(self, old: str, new: str) -> None:
+        """Rewrap the note key; encrypted notes themselves are not rewritten."""
+        with self.locked() as directory:
+            current = self._read_key(directory)
+            note_key = current.unwrap(old)
+            self._write_key(directory, KeyFile.create(new, note_key, n=current.n), replace_existing=True)
+
+    def set_encrypted(self, note_id: str, workspace: str, encrypted: bool) -> tuple[Note, bool]:
+        """Encrypt or decrypt one note; returns the note and whether anything changed."""
+        with self.locked() as directory:
+            note = self.read(note_id, directory=directory)
+            if note.workspace != workspace:
+                raise ValueError("Note is in another workspace; pass --workspace NAME")
+            if note.locked or (encrypted and self.cipher is None):
+                raise ValueError(LOCKED)
+            if note.encrypted == encrypted:
+                return note, False
+            note.encrypted = encrypted
+            self._save_locked(note, directory)
+            return note, True
+
+    def update_body(self, note_id: str, workspace: str, change) -> Note:
+        """Replace a note's text with change(text) under one lock."""
+        with self.locked() as directory:
+            note = self.read(note_id, directory=directory)
+            if note.workspace != workspace:
+                raise ValueError("Note is in another workspace; pass --workspace NAME")
+            if note.locked:
+                raise ValueError(LOCKED)
+            note.body = change(note.body)
+            self._save_locked(note, directory)
+            return note
+
     def recovery(self, note: Note) -> Note:
+        if note.locked:
+            raise ValueError(LOCKED)
         recovered = replace(note, id=uuid4().hex, original=None, created=now(), collection="inbox")
         self.save(recovered)
         return recovered
