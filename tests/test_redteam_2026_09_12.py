@@ -64,9 +64,7 @@ def test_displaced_note_warning_survives_sidebar_refresh(tmp_path, monkeypatch):
     def fail(*args, **kwargs):
         raise OSError(errno.EIO, "boom")
     monkeypatch.setattr(store, "publish_new", fail)
-    monkeypatch.setattr(store, "replace_at", lambda directory, source, target: (_ for _ in ()).throw(
-        OSError(errno.EIO, "boom")) if source.startswith(".jotline-displaced-") else
-        store.os.replace(source, target, src_dir_fd=directory, dst_dir_fd=directory))
+    monkeypatch.setattr(store, "rename_noreplace", fail)
     note.body = "edited"
     with pytest.raises(OSError):
         vault.save(note)

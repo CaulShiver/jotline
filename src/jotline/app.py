@@ -29,8 +29,8 @@ from .note_menu import NoteList, NoteMenu
 from .review_ui import ReviewMixin
 from .encryption_ui import EncryptionMixin
 from .export import printable_markdown
-from .tasks import closes_fence
-from .markdown_editor import (TABLE_TEMPLATE, FENCE, JOTLINE_THEME, MarkdownEditor, fence_for, format_table,
+from .tasks import closes_fence, opens_fence
+from .markdown_editor import (TABLE_TEMPLATE, JOTLINE_THEME, MarkdownEditor, fence_for, format_table,
                               headings, indent_lines, table_bounds, toggle_lines, unwrap_span)
 
 
@@ -1090,7 +1090,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         # and table cells, not bytes: a 4 KiB list of 1,000 items stalls the UI.
         lines = body.splitlines()
         blocks = sum(1 for line in lines if line.strip())
-        cells = max((line.count("|") for line in lines), default=0)
+        cells = sum(line.count("|") for line in lines)
         return (len(body.encode("utf-8")) <= self.PREVIEW_MAX_BYTES and blocks <= self.PREVIEW_MAX_BLOCKS
                 and cells <= self.PREVIEW_MAX_CELLS)
 
@@ -1110,7 +1110,8 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         body = self.current.body
         if not self.preview_fits(body):
             self.notify(f"Preview supports notes up to {self.PREVIEW_MAX_BYTES // 1024} KiB and "
-                        f"{self.PREVIEW_MAX_BLOCKS} lines of content. You can still edit and save this note.",
+                        f"{self.PREVIEW_MAX_BLOCKS} lines of content and {self.PREVIEW_MAX_CELLS} table separators. "
+                        "You can still edit and save this note.",
                         severity="warning")
             return
         self.push_screen(MarkdownPreview(self.preview_markdown(body)))
@@ -1142,7 +1143,8 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         body = editor.text
         text = (self.preview_markdown(body) if self.preview_fits(body) else
                 f"*Preview paused: this note is longer than {self.PREVIEW_MAX_BLOCKS} lines of content "
-                f"or {self.PREVIEW_MAX_BYTES // 1024} KiB. Editing and saving still work.*")
+                f"or {self.PREVIEW_MAX_BYTES // 1024} KiB, or has more than {self.PREVIEW_MAX_CELLS} table separators. "
+                "Editing and saving still work.*")
         ratio = editor.cursor_location[0] / max(1, editor.document.line_count - 1)
         changed = text != self._live_preview_text
         if not changed and ratio == self._live_preview_ratio:
@@ -1296,12 +1298,13 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         editor = self.query_one("#editor", TextArea)
         rows = editor.document.lines
         first, last = self.selected_rows(start, end)
-        opener = FENCE.fullmatch(rows[first])
+        opener = opens_fence(rows[first])
         if (end[1] == 0 and end[0] > first and opener and closes_fence(rows[end[0]], opener)
                 and not any(closes_fence(rows[row], opener) for row in range(first + 1, end[0]))):
             last = end[0]  # a selection ending at the start of the closing fence still means the block
         lines = rows[first:last + 1]
-        if last > first and opener and closes_fence(lines[-1], opener):
+        if (last > first and opener and closes_fence(lines[-1], opener)
+                and not any(closes_fence(line, opener) for line in lines[1:-1])):
             inner = lines[1:-1]
             editor.replace("\n".join(inner), (first, 0), (last, len(lines[-1])))
             editor.move_cursor((first, 0))

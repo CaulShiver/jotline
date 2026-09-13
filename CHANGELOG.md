@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Saves, key setup, recipe exports and note exports preserve competing files
+  even when hard links are unavailable. The fallback now uses an atomic
+  exclusive rename on Linux, macOS and Windows. Filesystems that support
+  neither method fail safely; recovery warnings identify retained originals.
+- Format code block no longer removes fences belonging to different blocks
+  when the selection covers several blocks, or treats an invalid opener as code.
+- Inline-code scanning is linear for unmatched backtick runs. Editor lines
+  longer than 4,096 characters remain plain to bound other inline parsing work;
+  Unicode highlight offsets are computed in one pass. Preview limits count
+  table separators across the whole note, avoiding oversized table renders.
+- Encryption validates combined scrypt memory and CPU costs before deriving a
+  key. The normal settings are unchanged; custom key files exceeding the work
+  budget are refused with the unsupported-settings error.
 - PDF export no longer hangs or crashes on common setups. Every installed
   Chromium-based browser is tried in turn, each with its own profile. On Ubuntu
   23.10 and later, where Chromium's sandbox cannot start, a browser is retried

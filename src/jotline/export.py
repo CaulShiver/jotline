@@ -17,8 +17,9 @@ import tempfile
 import time
 from uuid import uuid4
 
-from .store import LINK
-from .tasks import CODE_SPAN, TASK, fenced_pairs
+from .store import LINK, link_unsupported
+from .filesystem import rename_noreplace
+from .tasks import code_spans, TASK, fenced_pairs
 
 FORMATS = ("markdown", "html", "docx", "pdf")
 FORMAT_NAMES = {"markdown": "Markdown", "html": "HTML", "docx": "Word", "pdf": "PDF"}
@@ -81,9 +82,9 @@ def printable_markdown(body: str, titles: dict[str, str] | None = None) -> str:
             return text
         # `[[x]]` inside backticks is documentation of the syntax, not a link.
         pieces, last = [], 0
-        for span in CODE_SPAN.finditer(text):
-            pieces.append(link_titles(text[last:span.start()]) + span[0])
-            last = span.end()
+        for start, end in code_spans(text):
+            pieces.append(link_titles(text[last:start]) + text[start:end])
+            last = end
         pieces.append(link_titles(text[last:]))
         return "".join(pieces)
 
@@ -327,10 +328,13 @@ def write_export(target: Path, data: bytes, *, force: bool = False) -> Path:
                 os.link(temporary, target)
             except FileExistsError:
                 raise ExportError(exists) from None
-            except OSError:
-                if os.path.lexists(target):
+            except OSError as error:
+                if not link_unsupported(error):
+                    raise
+                try:
+                    rename_noreplace(temporary, target)
+                except FileExistsError:
                     raise ExportError(exists) from None
-                os.replace(temporary, target)
     finally:
         try:
             os.unlink(temporary)

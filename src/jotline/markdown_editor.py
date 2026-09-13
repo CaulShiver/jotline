@@ -21,10 +21,13 @@ from textual.widgets import TextArea
 from textual.widgets.text_area import Edit, TextAreaTheme
 
 from .store import LINK as WIKI, TAG
-from .tasks import CODE_SPAN, FENCE, fenced_rows
+from .tasks import code_spans, FENCE, fenced_rows
 
 # Above this size the editor stays plain so typing never waits on highlighting.
 HIGHLIGHT_MAX_CHARS = 512 * 1024
+# Bound all remaining inline regex work too, including unmatched emphasis and
+# links. Long lines remain editable as plain text; their contents are untouched.
+HIGHLIGHT_MAX_LINE_CHARS = 4096
 
 # The default palette, shared by the main app and the quick-capture window.
 JOTLINE_THEME = Theme(name="jotline", primary="#a8d5a2", accent="#a8d5a2", foreground="#d6ddd8",
@@ -59,10 +62,6 @@ UNWRAP_RUNS = {"bold": {"**", "__", "***", "___"}, "italic": {"*", "_", "***", "
 Highlight = tuple[int, int | None, str]
 
 
-def _bytes(text: str, index: int) -> int:
-    return len(text[:index].encode("utf-8"))
-
-
 def list_item(line: str, pos: int = 0) -> re.Match | None:
     """The list marker at ``pos``, unless the line is a thematic break like ``- - -``."""
     if RULE.match(line, pos):
@@ -76,6 +75,8 @@ def heading_title(text: str) -> str:
 
 def highlight_line(line: str) -> list[Highlight]:
     """Highlights for one line outside fenced code, as UTF-8 byte ranges."""
+    if len(line) > HIGHLIGHT_MAX_LINE_CHARS:
+        return []
     spans: list[tuple[int, int, str]] = []
     add = spans.append
     body_start = 0
@@ -103,7 +104,7 @@ def highlight_line(line: str) -> list[Highlight]:
             for match in re.finditer(r"(?<!\\)\||(?<=\|)[ \t]*:?-+:?[ \t]*(?=\|)", line):
                 add((match.start(), match.end(), "md.table"))
 
-    code = [(match.start(), match.end()) for match in CODE_SPAN.finditer(line, body_start)]
+    code = list(code_spans(line, body_start))
     protected = code
     protected_starts = [start for start, _ in protected]
     for start, end in code:
@@ -147,7 +148,10 @@ def highlight_line(line: str) -> list[Highlight]:
     spans = [span for span in spans if span[1] > span[0]]
     if line.isascii():
         return spans
-    return [(_bytes(line, start), _bytes(line, end), name) for start, end, name in spans]
+    offsets = [0]
+    for char in line:
+        offsets.append(offsets[-1] + len(char.encode("utf-8")))
+    return [(offsets[start], offsets[end], name) for start, end, name in spans]
 
 
 def highlight_fenced(line: str) -> list[Highlight]:

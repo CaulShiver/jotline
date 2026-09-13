@@ -18,7 +18,7 @@ from typing import NamedTuple
 from uuid import uuid4
 
 from .crypto import KEY_FILE, LOCKED, EncryptionError, KeyFile, NoteCipher, is_sealed, new_note_key
-from .filesystem import fs as os, lock_file
+from .filesystem import fs as os, lock_file, rename_noreplace
 
 COLLECTIONS = ("inbox", "projects", "areas", "resources", "archive", "trash")
 # Limits protect the interactive app from accidentally imported huge files.
@@ -158,19 +158,14 @@ def publish_new(directory: int, source: str, target: str) -> None:
     """Publish a complete file under a name that must not already exist.
 
     A hard link is atomic and exclusive. Where the filesystem refuses links,
-    fall back to an existence check plus rename so the note is never lost.
+    use a native exclusive rename, or fail without replacing another file.
     """
     try:
         os.link(source, target, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
     except OSError as error:
         if isinstance(error, FileExistsError) or not link_unsupported(error):
             raise
-        try:
-            os.stat(target, dir_fd=directory, follow_symlinks=False)
-        except FileNotFoundError:
-            os.replace(source, target, src_dir_fd=directory, dst_dir_fd=directory)
-        else:
-            raise FileExistsError(errno.EEXIST, "File exists", target) from None
+        rename_noreplace(source, target, src_dir_fd=directory, dst_dir_fd=directory)
 
 
 def pin_ancestors(absolute: Path) -> int:
@@ -585,9 +580,10 @@ class Vault:
                             collision = read_regular_at(directory, path.name)
                         except FileNotFoundError:
                             try:
-                                # Rename works on every filesystem; the displaced
-                                # inode is the only copy, so put it straight back.
-                                replace_at(directory, displaced, path.name)
+                                # Restore only into a free name. A creator after
+                                # the read above must not lose its own content.
+                                rename_noreplace(displaced, path.name,
+                                                 src_dir_fd=directory, dst_dir_fd=directory)
                             except BaseException as restore_error:
                                 self.retain_warning(
                                     f"Save failed; the original note was retained as {displaced}: {restore_error}")

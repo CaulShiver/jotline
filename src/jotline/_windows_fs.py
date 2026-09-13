@@ -209,6 +209,11 @@ class WindowsFS:
     def replace(self, source, target, *, src_dir_fd=None, dst_dir_fd=None):
         return os.replace(self._path(source, src_dir_fd), self._path(target, dst_dir_fd))
 
+    def rename(self, source, target, *, src_dir_fd=None, dst_dir_fd=None):
+        source, target = self._path(source, src_dir_fd), self._path(target, dst_dir_fd)
+        with self._parent(source, src_dir_fd), self._parent(target, dst_dir_fd):
+            return os.rename(source, target)
+
     def link(self, source, target, *, src_dir_fd=None, dst_dir_fd=None, follow_symlinks=True):
         return os.link(self._path(source, src_dir_fd), self._path(target, dst_dir_fd),
                        follow_symlinks=follow_symlinks)
