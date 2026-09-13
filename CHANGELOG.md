@@ -2,11 +2,13 @@
 
 ## Unreleased
 
-- PDF export no longer hangs or crashes on common setups. On Ubuntu 23.10 and
-  later, where Chromium's sandbox cannot start, export retries without it (the
-  page loads nothing and runs no script). Chrome on macOS no longer waits on the
-  keychain or lingers after printing, and a stuck browser gives up after 60
-  seconds instead of 180 and falls back to the next converter.
+- PDF export no longer hangs or crashes on common setups. Every installed
+  Chromium-based browser is tried in turn, each with its own profile. On Ubuntu
+  23.10 and later, where Chromium's sandbox cannot start, a browser is retried
+  without it (the page loads nothing and its CSP blocks scripts). Chrome on
+  macOS no longer waits on the keychain or on helper processes after printing,
+  Windows' `chrome.exe` launcher no longer counts as finished before the PDF is
+  written, and a stuck browser gives up after 30 seconds instead of 180.
 - On Windows, a command run with input from `NUL` (a scheduled task or script)
   is no longer mistaken for a terminal: a missing passphrase fails with the
   `JOTLINE_PASSPHRASE` hint instead of waiting forever, and `capture` reads the

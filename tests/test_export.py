@@ -73,7 +73,11 @@ def stand_in(folder: Path, name: str, script: str) -> None:
 
 @posix_only
 def test_missing_converters_say_what_to_install(tmp_path, monkeypatch):
+    from jotline import export
+
     monkeypatch.setenv("PATH", str(tmp_path))
+    # CI's macOS image has Chrome in /Applications, found without PATH.
+    monkeypatch.setattr(export, "_existing", lambda *candidates: None)
     with pytest.raises(ExportError, match="Word export needs pandoc or LibreOffice"):
         export_bytes("Plan", "body", "docx")
     with pytest.raises(ExportError, match="PDF export needs Chromium"):
@@ -148,6 +152,23 @@ def test_a_browser_that_lingers_after_printing_is_not_waited_on(tmp_path, monkey
     started = time.monotonic()
     assert export_bytes("Plan", "body", "pdf") == b"%PDF-1.4\n%%EOF\n"
     assert time.monotonic() - started < 10
+
+
+@posix_only
+def test_a_launcher_that_exits_before_its_child_prints_is_waited_for(tmp_path, monkeypatch):
+    # chrome.exe on Windows exits with status 0 while a child writes the PDF.
+    stand_in(tmp_path, "chromium", PRINT_TARGET + "( /bin/sleep 1; printf '%%PDF-1.4\\n%%%%EOF\\n' > \"$out\" ) &\nexit 0\n")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert export_bytes("Plan", "body", "pdf") == b"%PDF-1.4\n%%EOF\n"
+
+
+@posix_only
+def test_a_broken_browser_falls_back_to_another_installed_browser(tmp_path, monkeypatch):
+    # CI's Ubuntu image has a Chromium build that crashes next to a working Google Chrome.
+    stand_in(tmp_path, "chromium", "echo '[end of stack trace]' >&2\nexit 133\n")
+    stand_in(tmp_path, "google-chrome", PRINT_TARGET + "printf '%%PDF-1.4\\n%%%%EOF\\n' > \"$out\"\n")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert export_bytes("Plan", "body", "pdf") == b"%PDF-1.4\n%%EOF\n"
 
 
 @posix_only

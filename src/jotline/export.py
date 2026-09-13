@@ -28,7 +28,9 @@ BINARY = frozenset({"docx", "pdf"})
 TIMEOUT_SECONDS = 180
 # A browser prints a note in a few seconds; a longer wait means it is stuck, so
 # move on to the next converter rather than hold the user for three minutes.
-BROWSER_TIMEOUT_SECONDS = 60
+BROWSER_TIMEOUT_SECONDS = 30
+# How long to keep watching for the PDF after a browser launcher exits cleanly.
+EXIT_GRACE_SECONDS = 20
 WIKI_LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|([^\[\]]*))?\]\]")
 BROWSERS = ("chromium", "chromium-browser", "google-chrome-stable", "google-chrome", "chrome",
             "microsoft-edge-stable", "microsoft-edge", "msedge", "brave-browser", "brave")
@@ -115,16 +117,35 @@ def _existing(*candidates: str) -> str | None:
     return next((candidate for candidate in candidates if candidate and Path(candidate).is_file()), None)
 
 
-def find_browser() -> str | None:
+def find_browsers() -> list[str]:
+    """Every installed Chromium-based browser, best first, without duplicates.
+
+    More than one is tried because one can be broken where another works: a
+    Chromium build without a usable sandbox next to a packaged Google Chrome.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add(path: str | None) -> None:
+        if path and (key := os.path.realpath(path)) not in seen:
+            seen.add(key)
+            found.append(path)
+
     for name in BROWSERS:
-        if found := shutil.which(name):
-            return found
+        add(shutil.which(name))
     programs = [os.environ.get(name, "") for name in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
-    return _existing("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-                     "/Applications/Chromium.app/Contents/MacOS/Chromium",
-                     "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-                     *(str(Path(root, "Google/Chrome/Application/chrome.exe")) for root in programs if root),
-                     *(str(Path(root, "Microsoft/Edge/Application/msedge.exe")) for root in programs if root))
+    for candidate in ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+                      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                      *(str(Path(root, "Google/Chrome/Application/chrome.exe")) for root in programs if root),
+                      *(str(Path(root, "Microsoft/Edge/Application/msedge.exe")) for root in programs if root)):
+        add(_existing(candidate))
+    return found
+
+
+def find_browser() -> str | None:
+    browsers = find_browsers()
+    return browsers[0] if browsers else None
 
 
 def find_office() -> str | None:
@@ -160,9 +181,10 @@ def _stop(process: subprocess.Popen) -> None:
 def _run(command: list[str], output: Path, timeout: float = TIMEOUT_SECONDS) -> str | None:
     """Run a converter; return why it failed, or None when it wrote the output.
 
-    Browsers can keep running after the PDF is written (Chrome on macOS waits on
-    helper processes), so a complete PDF ends the wait. Errors go to a file
-    because a pipe nobody reads can fill and stall a chatty browser.
+    The PDF itself, not the process, decides when a browser is done. Chrome on
+    macOS keeps helper processes alive after printing, and chrome.exe on Windows
+    is a launcher that exits while its child is still writing. Errors go to a
+    file because a pipe nobody reads can fill and stall a chatty browser.
     """
     wants_pdf = output.suffix == ".pdf"
     with tempfile.TemporaryFile() as errors:
@@ -171,43 +193,70 @@ def _run(command: list[str], output: Path, timeout: float = TIMEOUT_SECONDS) -> 
         except OSError as error:
             return error.strerror or str(error)
         deadline = time.monotonic() + timeout
+        exited_at = None
+        settled = (-1, 0.0)  # (size, when first seen) of the output after a clean exit
         try:
-            while process.poll() is None:
+            while True:
                 if wants_pdf and _pdf_complete(output):
                     return None
-                if time.monotonic() >= deadline:
+                now = time.monotonic()
+                if process.poll() is not None:
+                    if not wants_pdf:
+                        break
+                    exited_at = exited_at or now
+                    if process.returncode == 0:
+                        # Some converters write a valid file without a trailing
+                        # %%EOF; accept it once it has stopped growing.
+                        size = output.stat().st_size if output.is_file() else 0
+                        if size != settled[0]:
+                            settled = (size, now)
+                        elif size and now - settled[1] >= 0.5:
+                            return None
+                    # A clean exit may leave a child still printing; a crash rarely does.
+                    if now - exited_at >= (EXIT_GRACE_SECONDS if process.returncode == 0 else 2):
+                        break
+                if now >= deadline:
                     _stop(process)
                     return None if wants_pdf and _pdf_complete(output) else f"timed out after {timeout:g} seconds"
                 time.sleep(0.1)
         finally:
             _stop(process)
-        if process.returncode == 0 and output.is_file() and output.stat().st_size:
+        if process.returncode == 0 and output.is_file() and output.stat().st_size and not wants_pdf:
             return None
         errors.seek(0)
         detail = errors.read()[-64 * 1024:].decode("utf-8", "replace").strip().splitlines()
-    return detail[-1][:200] if detail else f"exit status {process.returncode}"
+    if detail:
+        return detail[-1][:200]
+    return f"exit status {process.returncode}" + (", no PDF written" if process.returncode == 0 else "")
 
 
 def converters(fmt: str, page: Path, work: Path):
     """(tool name, output path, command, timeout) for each installed converter, best first."""
     target = work / ("out" + EXTENSIONS[fmt])
-    browser, office, pandoc = find_browser(), find_office(), shutil.which("pandoc")
-    if fmt == "pdf" and browser:
+    office, pandoc = find_office(), shutil.which("pandoc")
+    for index, browser in enumerate(find_browsers() if fmt == "pdf" else []):
         name = Path(browser).stem
-        # The mock keychain keeps macOS Chrome from waiting on a keychain prompt
-        # that a headless run can never answer. Scripts stay off: the page needs none.
-        command = [
-            browser, "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
-            "--disable-extensions", "--use-mock-keychain", "--password-store=basic",
-            "--blink-settings=scriptEnabled=false", f"--user-data-dir={work / 'browser'}",
-            "--no-pdf-header-footer", "--print-to-pdf-no-header", f"--print-to-pdf={target}", page.as_uri()]
-        yield name, target, command, BROWSER_TIMEOUT_SECONDS
+
+        def browser_command(profile: str, *extra: str) -> list[str]:
+            # The mock keychain keeps macOS Chrome from waiting on a keychain
+            # prompt a headless run can never answer. Each attempt gets its own
+            # profile, because a crashed browser can leave a profile lock that
+            # makes the next launch wait. Do not add --blink-settings=
+            # scriptEnabled=false: headless Chrome then exits 0 without printing.
+            # The page's CSP already blocks every script.
+            return [browser, *extra, "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
+                    "--disable-extensions", "--use-mock-keychain", "--password-store=basic",
+                    f"--user-data-dir={work / profile}",
+                    "--no-pdf-header-footer", "--print-to-pdf-no-header", f"--print-to-pdf={target}", page.as_uri()]
+
+        yield name, target, browser_command(f"browser-{index}"), BROWSER_TIMEOUT_SECONDS
         if sys.platform.startswith("linux"):
             # Ubuntu 23.10 and later restrict the unprivileged user namespaces
             # the browser sandbox needs, and the browser crashes at start. The
             # page is generated here, loads nothing (its CSP forbids it) and runs
             # no script, so a retry without the sandbox is a contained fallback.
-            yield f"{name} without sandbox", target, [browser, "--no-sandbox", *command[1:]], BROWSER_TIMEOUT_SECONDS
+            yield (f"{name} without sandbox", target, browser_command(f"browser-{index}-unsandboxed", "--no-sandbox"),
+                   BROWSER_TIMEOUT_SECONDS)
     if pandoc and fmt == "docx":
         yield "pandoc", target, [pandoc, "--from=html", "--to=docx", f"--output={target}", str(page)], TIMEOUT_SECONDS
     if pandoc and fmt == "pdf":
