@@ -19,6 +19,16 @@ def test_rejects_conflicts_unsafe_keys_and_bad_settings(hotkeys):
         Settings(hotkeys=hotkeys).validate()
 
 
+async def test_ctrl_comma_and_f1_open_settings(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test() as pilot:
+        await pilot.press('ctrl+comma')
+        assert isinstance(app.screen, Preferences)
+        await pilot.press('escape')
+        await pilot.press('f1')
+        assert isinstance(app.screen, Preferences)
+
+
 def test_hotkey_defaults_partial_overrides_and_swaps(tmp_path):
     settings = Settings(hotkeys={'new': ' CTRL+P ', 'commands': 'ctrl+n', 'tags': 'alt+t'})
     settings.save(tmp_path / '.jotline-settings.json')

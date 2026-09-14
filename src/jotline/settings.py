@@ -151,7 +151,7 @@ class Settings:
             if not key and not HOTKEY_ACTIONS[action][0]:
                 continue
             if not re.fullmatch(r"(?:ctrl|alt)\+[a-z]|f(?:[2-9]|1[0-2])", key):
-                raise ValueError(f"{label}: use ctrl+letter, alt+letter, or f2–f12; F1 and Esc stay fixed")
+                raise ValueError(f"{label}: use ctrl+letter, alt+letter, or f2–f12; Ctrl+, and Esc stay fixed")
             if key in RESERVED_HOTKEYS:
                 raise ValueError(f"{key} is reserved for editing or terminal navigation")
             if key in used:

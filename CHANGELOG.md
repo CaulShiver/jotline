@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Settings opens with Ctrl+, so it works on Mac keyboards that do not send
+  F-keys without Fn. F1 still opens Settings where function keys work.
 - On macOS, import and recipe files under `/tmp` or `$TMPDIR` (`/var/folders`)
   work. Those prefixes are OS compatibility links to `/private`; user-created
   aliases later in the path are still refused.

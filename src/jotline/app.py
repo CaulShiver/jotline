@@ -387,7 +387,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
                         "format_markdown(" + repr(action[7:]) + ")" if action.startswith("format_") else action,
                         label, priority=True, show=bool(key), id="jotline." + action)
                 for action, (key, label) in HOTKEY_ACTIONS.items()] + [
-        Binding("f1", "settings", "Settings", priority=True),
+        Binding("ctrl+comma,f1", "settings", "Settings", priority=True),
         Binding("escape", "editor_focus", "Write", show=False),
     ]
 
@@ -1474,7 +1474,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             Command("workspaces", "Switch workspace", self.action_workspaces, "workspaces"),
             Command("new-workspace", "Create workspace", self.prompt_new_workspace),
             Command("move-workspace", "Move note to workspace", self.prompt_move_workspace),
-            Command("settings", "Settings · appearance, editor, hotkeys · F1", self.action_settings),
+            Command("settings", "Settings · appearance, editor, hotkeys · Ctrl+,", self.action_settings),
             Command("new", "New thought", self.action_new, "new"),
             Command("daily", "Open today's daily log", self.action_daily, "daily"),
             Command("open", "Open a note", self.action_open_note, "open_note"),
@@ -1639,8 +1639,8 @@ The first line becomes the title. Your words save automatically.
 - Archive what is finished. Trash is reversible; move a note back to restore it.
 
 ## Make it yours
-F1 opens Settings for themes, editor, layout, keyboard shortcuts, and daily templates.
-Hotkey changes apply on Save. F1 and Esc stay fixed; Reset hotkeys restores defaults.
+Ctrl+, opens Settings for themes, editor, layout, keyboard shortcuts, and daily templates.
+Hotkey changes apply on Save. Ctrl+, and Esc stay fixed; Reset hotkeys restores defaults.
 Preferences are saved for this vault.
 
 ## Writing
@@ -1679,7 +1679,7 @@ Links inserted by Jotline use stable IDs, so changing titles is safe.
 Ctrl+P → New note from template starts a meeting, project, journal, or saved template.
 Save this note as a template keeps a reusable copy; use {{date}}, {{time}}, {{workspace}}.
 Copy template source to new note preserves placeholders for customization.
-F1 → Keyboard shortcuts includes optional Markdown formatting and preview keys.
+Ctrl+, → Keyboard shortcuts includes optional Markdown formatting and preview keys.
 Ctrl+P → History of this note lets you inspect and restore a saved version as a new note.
 Browse saved note history includes externally deleted notes in this workspace.
 Back up vault now saves a local ZIP of notes, settings, and templates.

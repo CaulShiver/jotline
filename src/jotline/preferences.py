@@ -69,7 +69,7 @@ class Preferences(Modal[Settings | None]):
                 yield Label('Keyboard shortcuts', classes='pref-section')
                 yield Static('Use ctrl+letter, alt+letter, or f2–f12. Editing keys are reserved. '
                              'Leave optional Markdown shortcuts blank to keep them unassigned. '
-                             'F1 always opens Settings; Esc closes dialogs. Ctrl+S saves this dialog. Changes apply when saved.')
+                             'Ctrl+, always opens Settings; Esc closes dialogs. Ctrl+S saves this dialog. Changes apply when saved.')
                 hotkeys = s.effective_hotkeys
                 for action, (default, label) in HOTKEY_ACTIONS.items():
                     yield Label(label, classes='pref-label')

@@ -65,7 +65,7 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 
 | Shortcut | Action |
 | --- | --- |
-| `F1` | Open Settings (always available) |
+| `Ctrl+,` | Open Settings (always available; F1 still works) |
 | `Ctrl+N` | New thought |
 | `Ctrl+T` | Browse workspace tags |
 | `Ctrl+W` | Switch or create workspace |
@@ -97,7 +97,7 @@ all formats, and **Preview** shows the rendered note. The toolbar scrolls in
 narrow windows and hides in focus mode. Selections keep Markdown's theme colours
 over a tinted background; the cursor also uses the active theme's accent.
 
-On Omarchy, select **F1 → Appearance → Omarchy (follow desktop)** to follow your
+On Omarchy, select **Ctrl+, → Appearance → Omarchy (follow desktop)** to follow your
 desktop palette, including its cursor and selection background. Changes refresh
 within about a second, including in quick capture, without restarting or losing
 your selection. Markdown keeps its syntax foreground colors while selected.
@@ -128,7 +128,7 @@ as note titles, and neither opens links or loads images. **Jump to heading**
 lists the note's headings for quick navigation.
 
 Every formatting command, both previews and the heading outline can have its own
-key in **F1 → Keyboard shortcuts**; they start unassigned. **F1 → Editor** turns
+key in **Ctrl+, → Keyboard shortcuts**; they start unassigned. **Ctrl+, → Editor** turns
 Markdown highlighting or list continuation off.
 
 ## Move or delete with the mouse
@@ -333,7 +333,7 @@ depends on the filesystem. Unix permission warnings apply only on Linux/macOS;
 Windows access is controlled by the folder's ACLs.
 
 Shortcuts use **Control** on macOS too. If a terminal intercepts a shortcut,
-use F1 to customize it in Settings.
+use Ctrl+, to customize it in Settings.
 
 `jotline doctor` checks the runtime, vault path, settings, lock, templates, history,
 backups, limits, and readable note counts. It prints diagnostics rather than note
@@ -368,7 +368,7 @@ escape terminal control characters.
 
 ## Customize hotkeys
 
-Open **F1 → Settings → Keyboard shortcuts**. Change shortcuts for new notes,
+Open **Ctrl+, → Keyboard shortcuts**. Change shortcuts for new notes,
 tags, workspaces, commands, opening notes, daily logs, search, save, focus, and quit.
 Optional fields also support Markdown preview and formatting actions.
 Use `ctrl+letter`, `alt+letter`, or `f2`–`f12` (for example `alt+n` or `f4`).
@@ -376,8 +376,8 @@ Duplicate assignments and reserved editing/navigation keys are rejected.
 
 Choose **Save** (or Ctrl+S inside Settings) to apply immediately; the footer and
 command hints update too. **Reset hotkeys** restores shortcut defaults without
-changing your other preferences; save to apply or Escape to cancel. **F1** always
-opens Settings, and **Escape** remains fixed for closing dialogs. Editor shortcuts
+changing your other preferences; save to apply or Escape to cancel. **Ctrl+,** always
+opens Settings (F1 still works), and **Escape** remains fixed for closing dialogs. Editor shortcuts
 and dialog navigation are unchanged. Your terminal may intercept some combinations;
 use another supported key if it does.
 
@@ -502,7 +502,7 @@ placeholder is inserted. **Format heading**, **Format bullet list**, and
 **Format blockquote** apply to the current line or selected lines. Use the editor's
 normal Undo shortcut (`Ctrl+Z`) to reverse a formatting change.
 
-Open `F1` → **Keyboard shortcuts** to assign keys for preview, bold, italic,
+Open `Ctrl+,` → **Keyboard shortcuts** to assign keys for preview, bold, italic,
 inline code, headings, bullet lists and quotes. These optional shortcuts start
 blank, preserving your existing key choices. Clear a field to unassign it;
 **Reset hotkeys** clears these additions and restores the original shortcuts.

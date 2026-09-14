@@ -211,5 +211,5 @@ class NavigationMixin:
 4. Reuse: save your search as a view. Manage views lets you edit, rename, duplicate, or update it. Ctrl+D opens today's log.
 5. Recover: note history restores a separate copy. Trash keeps removed notes until you move them back. Ctrl+Q saves before quitting.
 
-F1 customizes appearance and shortcuts. Esc closes this guide and returns to your text. This walkthrough never creates a note.
+Ctrl+, customizes appearance and shortcuts. Esc closes this guide and returns to your text. This walkthrough never creates a note.
 ''')))
