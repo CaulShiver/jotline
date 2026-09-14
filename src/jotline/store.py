@@ -173,11 +173,37 @@ def publish_new(directory: int, source: str, target: str) -> None:
             raise FileExistsError(errno.EEXIST, "File exists", target) from None
 
 
+def follow_root_prefix_symlinks(path: Path) -> Path:
+    """Follow only a root-level directory symlink such as macOS /tmp or /var.
+
+    Those prefixes are OS compatibility links to /private/*. User-created
+    aliases later in the path stay in place so pin_ancestors can refuse them.
+    """
+    path = Path(path)
+    if not path.is_absolute():
+        path = path.absolute()
+    parts = path.parts
+    if len(parts) < 2:
+        return path
+    prefix = Path(parts[0]) / parts[1]
+    try:
+        if not stat.S_ISLNK(prefix.lstat().st_mode):
+            return path
+        target = prefix.resolve()
+    except OSError:
+        return path
+    if not target.is_dir():
+        return path
+    return target.joinpath(*parts[2:])
+
+
 def pin_ancestors(absolute: Path) -> int:
     """Open every ancestor of an absolute path without following links.
 
     Returns a descriptor for the parent directory; the caller closes it.
+    macOS /tmp and /var are followed first; other aliases still fail.
     """
+    absolute = follow_root_prefix_symlinks(Path(absolute).absolute())
     directory = os.open(absolute.anchor, os.O_RDONLY | os.O_DIRECTORY)
     try:
         for component in absolute.parts[1:-1]:
@@ -201,7 +227,7 @@ def read_regular_file(path: Path, max_bytes: int = MAX_NOTE_BYTES, *, ancestor_s
                       encoding: str = "utf-8", errors: str = "strict") -> str:
     """Read bounded text (UTF-8 by default) without following links or blocking on a pipe."""
     if ancestor_safe:
-        absolute = Path(path).absolute()
+        absolute = follow_root_prefix_symlinks(Path(path).absolute())
         directory = pin_ancestors(absolute)
         try:
             fd = os.open(absolute.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)

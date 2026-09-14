@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- On macOS, import and recipe files under `/tmp` or `$TMPDIR` (`/var/folders`)
+  work. Those prefixes are OS compatibility links to `/private`; user-created
+  aliases later in the path are still refused.
 - Optional Omarchy desktop theme synchronization, including live palette,
   cursor and selection updates in the editor and quick-capture window.
 

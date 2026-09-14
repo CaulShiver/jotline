@@ -3,12 +3,14 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 import pytest
 
 from jotline import cli
 from jotline.filesystem import fs
-from jotline.store import Vault, read_regular_file
+from jotline.importing import preview_import
+from jotline.store import Vault, follow_root_prefix_symlinks, read_regular_file
 
 
 @pytest.fixture
@@ -45,6 +47,29 @@ def test_macos_preserves_existing_and_explicit_xdg_vault(home, monkeypatch):
     assert cli.default_vault() == legacy
     monkeypatch.setenv('XDG_DATA_HOME', str(home / 'xdg'))
     assert cli.default_vault() == home / 'xdg/jotline/notes'
+
+
+def test_os_tempdir_prefix_symlink_is_readable_and_importable(tmp_path):
+    """pytest resolves TMPDIR; a raw TemporaryDirectory on macOS still goes through /var."""
+    with tempfile.TemporaryDirectory() as folder:
+        source = Path(folder) / 'from-temp.md'
+        source.write_text('from os temp', encoding='utf-8')
+        assert read_regular_file(source, ancestor_safe=True) == 'from os temp'
+        plan = preview_import(Vault(tmp_path / 'vault'), source)
+        assert plan.ready == 1, plan.warnings
+        imported = subprocess.run(
+            [sys.executable, '-m', 'jotline', '--vault', str(tmp_path / 'cli-vault'),
+             'import', str(source)],
+            capture_output=True, text=True, timeout=15)
+        assert imported.returncode == 0, imported.stderr
+
+
+@pytest.mark.skipif(not Path('/tmp').is_symlink(), reason='no root /tmp compatibility symlink')
+def test_macos_tmp_prefix_symlink_is_followed_only_at_the_root():
+    followed = follow_root_prefix_symlinks(Path('/tmp/jotline-probe.md'))
+    assert followed == Path('/private/tmp/jotline-probe.md')
+    kept = follow_root_prefix_symlinks(Path('/private/tmp/jotline-probe.md'))
+    assert kept == Path('/private/tmp/jotline-probe.md')
 
 
 def test_unicode_and_mixed_newlines_survive_repeated_saves(tmp_path):

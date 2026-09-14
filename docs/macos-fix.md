@@ -21,7 +21,8 @@ reproduced the same exception before the fix and passes afterward. It also check
 that a live Find dialog does not block autosave. The originally failing Unicode
 search test passes locally too.
 
-The reproduction and validation were run on Linux with Textual 8.2.8. A native
-macOS run of this new commit is still needed; this workspace has no Mac runtime.
-The CI failure alone does not identify any separate installation, terminal-key,
-or launch problem on a user's Mac.
+The reproduction and validation were first run on Linux with Textual 8.2.8.
+A native run on macOS 26.6.2 (Darwin 25.6.0, arm64, Python 3.13.5, Textual 8.2.8)
+passed `tests/test_shutdown.py` and the full suite on 2026-09-14. Headless and
+PTY checks still cannot certify Terminal.app, iTerm2, Ghostty key interception,
+clipboard, VoiceOver, or input-method behavior.
