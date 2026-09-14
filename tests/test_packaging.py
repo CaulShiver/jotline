@@ -64,7 +64,7 @@ def test_install_docs_use_github_releases_not_pypi():
         assert PINNED_WHEEL.search(text) is None
 
     assert "not on PyPI" in readme
-    assert "not published on PyPI" in install
+    assert re.search(r"not published\s+on PyPI", install)
     assert "Do not run `pip install jotline`" in install
 
 
