@@ -25,6 +25,10 @@ def test_build_backend_and_runtime_dependency_bounds_are_explicit():
     assert data["project"]["dependencies"] == ["textual>=8.2.8,<9"]
     assert data["project"]["optional-dependencies"]["dev"] == ["pytest>=8.2", "pytest-asyncio>=0.24"]
     assert data["project"]["urls"]["Repository"] == "https://github.com/CaulShiver/jotline"
+    assert data["project"]["scripts"]["jotline"] == "jotline.launch:main"
+    assert "Operating System :: Microsoft :: Windows" not in data["project"]["classifiers"]
+    assert "Operating System :: POSIX :: Linux" in data["project"]["classifiers"]
+    assert "Operating System :: MacOS :: MacOS X" in data["project"]["classifiers"]
     assert data["tool"]["pytest"]["ini_options"]["asyncio_default_fixture_loop_scope"] == "function"
 
 
@@ -37,6 +41,9 @@ def test_ci_lower_bound_pair_matches_pytest_asyncio_floor():
     assert "/tmp/jotline-lower-bound/bin/python -m pytest -q tests/test_cli_redteam.py tests/test_packaging.py" in workflow
     assert "uv venv .lower-bound" not in workflow
     assert "tests/test_storage_redteam.py tests/test_cli_redteam.py" not in workflow
+    assert "windows-latest" not in workflow
+    assert "ubuntu-latest, macos-latest" in workflow
+    assert "RUNNER_OS" not in workflow
 
 
 def test_smoke_tui_success_path_allows_context_cleanup():
@@ -48,3 +55,43 @@ def test_smoke_tui_success_path_allows_context_cleanup():
     assert "os._exit(124)" in smoke
     assert "await interact('quit app', pilot.press('ctrl+q'))" in smoke
     assert "    progress('TUI workflow: complete')\n    if hard_exit:\n        os._exit(0)" in smoke
+
+
+WHEEL_PLACEHOLDER = "jotline-<version>-py3-none-any.whl"
+PINNED_WHEEL = re.compile(r"jotline-\d+\.\d+\.\d+-py3-none-any\.whl")
+
+
+def test_install_docs_use_github_releases_not_pypi():
+    readme = (ROOT / "README.md").read_text()
+    install = (ROOT / "docs/install.md").read_text()
+
+    for text in (readme, install):
+        assert "https://github.com/CaulShiver/jotline/releases/latest" in text
+        assert WHEEL_PLACEHOLDER in text
+        assert PINNED_WHEEL.search(text) is None
+
+    assert "not on PyPI" in readme
+    assert re.search(r"not published\s+on PyPI", install)
+    assert "Do not run `pip install jotline`" in install
+    assert "Windows is not supported" in install
+    assert "windows-latest" not in (ROOT / ".github/workflows/release.yml").read_text()
+
+
+def test_readme_identifies_caulshiver_jotline_and_first_run():
+    readme = (ROOT / "README.md").read_text()
+    heading, rest = readme.split("\n", 1)
+    intro = rest.split("## Install", 1)[0]
+    template = ROOT / "docs/terminal-reports/TEMPLATE.md"
+
+    assert heading.strip() == "# ›_ jotline"
+    assert "CaulShiver/jotline" in intro
+    assert "https://github.com/CaulShiver/jotline" in intro
+    assert "## 30-second start" in intro
+    assert intro.index("## 30-second start") < intro.index("Ctrl+N")
+    assert f"Version {jotline.__version__}" in readme
+    assert "docs/terminal-reports/TEMPLATE.md" in readme
+    assert "uv tool install 'jotline[encryption]'" not in readme
+    assert "Windows runs natively" not in readme
+    assert "Linux and macOS" in intro or "Linux, macOS" in intro
+    assert template.is_file()
+    assert "not tested" in template.read_text()

@@ -1,2 +1,3 @@
-from .cli import main
+from .launch import main
+
 main()

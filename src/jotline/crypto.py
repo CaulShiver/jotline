@@ -26,7 +26,8 @@ SALT_BYTES = 16
 NONCE_BYTES = 12  # The standard AES-GCM nonce size
 TAG_BYTES = 16  # AES-GCM appends this authentication tag to every ciphertext
 MISSING_LIBRARY = ("Note encryption needs the cryptography package; install it with "
-                   "uv tool install 'jotline[encryption]' or pip install cryptography")
+                   "pip install cryptography, or reinstall the GitHub release wheel "
+                   "with the [encryption] extra")
 LOCKED = "This note is encrypted; unlock encrypted notes first"
 _NOTE_CONTEXT = b"jotline-note-v1\0"
 _KEY_CONTEXT = b"jotline-key-v1"

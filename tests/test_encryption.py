@@ -149,7 +149,7 @@ def test_damaged_or_hostile_key_files_are_refused(tmp_path, change):
 
 def test_missing_library_explains_how_to_install_it(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "cryptography.hazmat.primitives.ciphers.aead", None)
-    with pytest.raises(EncryptionError, match=r"jotline\[encryption\]"):
+    with pytest.raises(EncryptionError, match=r"pip install cryptography"):
         KeyFile.create(PASSPHRASE, os.urandom(32), n=FAST)
 
 

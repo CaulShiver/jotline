@@ -159,6 +159,7 @@ async def test_failed_recovery_leaves_dirty_buffer(tmp_path, monkeypatch):
     vault.save(note)
     app = Jotline(vault, initial_note=note)
     async with app.run_test(size=(90, 40)) as pilot:
+        app.autosave_timer.stop()
         app.query_one('#editor', TextArea).load_text('unsaved local')
         app.show_recovery_dialog()
         def failure(note):
@@ -166,6 +167,7 @@ async def test_failed_recovery_leaves_dirty_buffer(tmp_path, monkeypatch):
         monkeypatch.setattr(vault, 'recovery', failure)
         await pilot.pause()
         await pilot.click('#preserve-reload')
+        await pilot.pause()
         assert app.query_one('#editor', TextArea).text == 'unsaved local'
         assert app.current.id == note.id and app.dirty
 
