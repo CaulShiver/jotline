@@ -1,0 +1,38 @@
+name: Terminal compatibility report
+description: Record a native terminal or screen-reader session. Do not invent results.
+labels: [documentation, help wanted]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use a disposable vault and synthetic notes. Copy `docs/terminal-reports/TEMPLATE.md` for a pull request that adds the report under `docs/terminal-reports/`. This form is for questions or a first draft; filled reports belong in that folder.
+        Related issues: [#2 native macOS/Windows terminal](https://github.com/CaulShiver/jotline/issues/2), [#3 screen reader](https://github.com/CaulShiver/jotline/issues/3).
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Report kind
+      options:
+        - Native macOS or Windows terminal (issue #2)
+        - Screen reader in a native terminal (issue #3)
+        - Other terminal or assistive setup
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, terminal, Python, jotline --version, install method, assistive tool versions. Write "not tested" for tools you did not run.
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Checklist results
+      description: Pass, fail, or not tested for the rows in docs/terminal-testing.md. Failures need a synthetic keyboard sequence. No personal notes or clipboard contents.
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: What you could not test
+      description: Hardware, OS, or assistive technology you did not have. Leave results blank rather than guessing.

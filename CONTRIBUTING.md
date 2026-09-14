@@ -28,12 +28,19 @@ screenshots.
 
 Follow [the terminal and accessibility checklist](docs/terminal-testing.md) for
 native UI verification. Headless tests cannot certify clipboard, screen-reader,
-or input-method compatibility. On POSIX, the fresh wheel environment can also
-run `python -I scripts/smoke_pty.py` to exercise actual terminal input and saves.
+or input-method compatibility. File hands-on results with
+[docs/terminal-reports/TEMPLATE.md](docs/terminal-reports/TEMPLATE.md); do not
+invent platform or assistive-technology outcomes. On POSIX, the fresh wheel
+environment can also run `python -I scripts/smoke_pty.py` to exercise actual
+terminal input and saves.
 
 The package version is single-sourced in `src/jotline/__init__.py`; `pyproject.toml`
-reads it dynamically. Release pull requests should update that value and any
-user-facing status text together.
+reads it dynamically. Release pull requests should update that value, Status
+text, [CHANGELOG.md](CHANGELOG.md), and `docs/release-notes.md` together.
+README and [docs/install.md](docs/install.md) should keep install examples as
+`jotline-<version>-py3-none-any.whl` and point at
+[GitHub Releases](https://github.com/CaulShiver/jotline/releases/latest), not a
+filename whose assets have not been published. Jotline is not on PyPI.
 
 For bugs, include the Jotline/Python version, terminal, steps to reproduce, and the
 error message. `jotline doctor --json` reports counts, paths, versions, limits,
@@ -43,13 +50,16 @@ user-triggered and preserve the offline core.
 
 ## Releases
 
-Update the package version, main README, [CHANGELOG.md](CHANGELOG.md), and
-`docs/release-notes.md` together. Build and exercise the installed wheel locally.
-`python scripts/release_metadata.py --checksums` checks package names and writes
-SHA-256 checksums after `uv build --clear`.
+Update the package version, Status text in the main README, [CHANGELOG.md](CHANGELOG.md),
+and `docs/release-notes.md` together. Keep README/install wheel examples on the
+`<version>` placeholder so they stay valid before assets exist. Build and
+exercise the installed wheel locally. `python scripts/release_metadata.py --checksums`
+checks package names and writes SHA-256 checksums after `uv build --clear`.
 
 Push a matching `vX.Y.Z` tag to start the release workflow. It runs the complete
 cross-platform test and wheel-smoke matrix before publishing the wheel, source
 archive, and checksums to GitHub Releases. The tag must match the single-sourced
-package version. A failed verification job prevents publication. Never move an
-already-published tag; fix the issue and release a new patch version.
+package version. A failed verification job prevents publication. A tag without
+uploaded Release assets is not an installable release; do not advertise that
+wheel until the publish job succeeds. Never move an already-published tag; fix
+the issue and release a new patch version.

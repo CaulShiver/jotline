@@ -54,3 +54,13 @@ The release runs automated tests and installed-wheel smoke checks on Linux,
 macOS and Windows. Local headless and POSIX PTY checks can validate rendering
 startup, keyboard input and note persistence, but cannot certify native emulator,
 clipboard, screen-reader or IME behavior. Those require the checks above.
+
+## Filing a report
+
+Copy [docs/terminal-reports/TEMPLATE.md](terminal-reports/TEMPLATE.md) into
+`docs/terminal-reports/` with a filename that names the OS and terminal.
+Fill only checks you ran; write `not tested` for the rest. Open a pull request
+and mention [issue #2](https://github.com/CaulShiver/jotline/issues/2) for a
+native macOS or Windows terminal report, or
+[issue #3](https://github.com/CaulShiver/jotline/issues/3) for screen-reader
+behavior. Reports without hardware must not invent results.

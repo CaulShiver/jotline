@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- README leads with a 30-second install from GitHub Release wheels (not PyPI),
+  identifies CaulShiver/jotline, and uses a `<version>` placeholder so install
+  examples cannot advertise an unpublished wheel. Native terminal and
+  screen-reader reports have a fill-in template under `docs/terminal-reports/`.
 - Settings opens with Ctrl+, so it works on Mac keyboards that do not send
   F-keys without Fn. F1 still opens Settings where function keys work.
 - On macOS, import and recipe files under `/tmp` or `$TMPDIR` (`/var/folders`)

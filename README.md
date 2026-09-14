@@ -1,6 +1,28 @@
 # ›_ jotline
 
-**A little room to think.** A keyboard-first terminal app for Linux, macOS, and Windows for capturing thoughts, writing, and connecting notes. Inspired by the quick-capture spirit of Drafts, with an original terminal interface.
+**A little room to think.** [CaulShiver/jotline](https://github.com/CaulShiver/jotline)
+is a quiet terminal Markdown workspace: a keyboard-first app for Linux, macOS, and
+Windows for capturing thoughts, writing, and connecting notes. Inspired by the
+quick-capture spirit of Drafts, with an original terminal interface. Other GitHub
+projects share the name jotline; this is the CaulShiver terminal workspace.
+
+## 30-second start
+
+Jotline is **not on PyPI**. Download the wheel from the
+[latest GitHub release](https://github.com/CaulShiver/jotline/releases/latest),
+then from that folder:
+
+```sh
+uv tool install ./jotline-<version>-py3-none-any.whl
+jotline
+```
+
+Use the filename shown on the release page in place of `<version>`. pipx works
+the same way: `pipx install ./jotline-<version>-py3-none-any.whl`. If `jotline`
+is not found, the installer likely did not update PATH — see
+[install.md](docs/install.md).
+
+Press `Ctrl+N` and start typing. Notes save as local Markdown files.
 
 ![Jotline terminal workspace](docs/screenshot.svg)
 
@@ -9,21 +31,25 @@ Jotline opens to a blank page. Start typing; your writing saves automatically to
 ## Install
 
 Requires Python 3.11+ and a terminal with Unicode and color support on Linux,
-macOS, or Windows. Windows runs natively; WSL is optional. Download the wheel from
-the [latest release](https://github.com/CaulShiver/jotline/releases/latest), then
-run one of these commands in its download folder. Git is not required.
+macOS, or Windows. Windows runs natively; WSL is optional. Git is not required.
+Wheels are GitHub Release assets only; there is no PyPI package. Download
+`jotline-<version>-py3-none-any.whl` from the
+[latest release](https://github.com/CaulShiver/jotline/releases/latest), then
+run one of these commands in its download folder. Substitute the version from
+that page; it may lag this repository's package version until the next tag
+publishes.
 
 With [uv](https://docs.astral.sh/uv/):
 
 ```sh
-uv tool install ./jotline-0.9.3-py3-none-any.whl
+uv tool install ./jotline-<version>-py3-none-any.whl
 jotline
 ```
 
 Or with pipx:
 
 ```sh
-pipx install ./jotline-0.9.3-py3-none-any.whl
+pipx install ./jotline-<version>-py3-none-any.whl
 jotline
 ```
 
@@ -266,7 +292,7 @@ Note files are readable only by your user account. For sensitive notes, such as
 client or athlete records, you can also encrypt a note's text on disk:
 
 ```sh
-uv tool install 'jotline[encryption]'  # adds the cryptography library
+uv tool install './jotline-<version>-py3-none-any.whl[encryption]'  # local wheel extra
 jotline encryption setup               # choose a passphrase
 jotline encrypt 'Athlete intake'
 jotline export 'Athlete intake'        # asks for the passphrase
@@ -637,14 +663,21 @@ detection. Recipes execute only these built-in steps; there is no shell evaluati
 
 ## Status
 
-Version 0.9.3 is an early release. It offers Markdown source editing, rendered
-preview, configurable local actions, and guided import/recovery workflows. See
-[CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,
-cloud sync, plugins, dictation and system-wide capture hotkeys remain future work.
-Automated cross-platform checks and a POSIX terminal smoke test complement the
+Version 0.9.3 is an early, in-tree package version (`jotline --version`). It
+offers Markdown source editing, rendered preview, configurable local actions,
+and guided import/recovery workflows. See [CHANGELOG.md](CHANGELOG.md) and
+[ROADMAP.md](ROADMAP.md). Full Vim emulation, cloud sync, plugins, dictation and
+system-wide capture hotkeys remain future work.
+
+Installable wheels come from [GitHub Releases](https://github.com/CaulShiver/jotline/releases/latest),
+not PyPI. The latest published assets may lag this branch until a matching tag
+finishes the release workflow. Automated cross-platform checks and a POSIX
+terminal smoke test complement the
 [native terminal and accessibility checklist](docs/terminal-testing.md);
-clipboard, IME and screen-reader compatibility still needs hands-on verification.
-See [Release verification](docs/release-verification.md) for the local test results
+clipboard, IME and screen-reader compatibility still needs hands-on verification
+([#2](https://github.com/CaulShiver/jotline/issues/2),
+[#3](https://github.com/CaulShiver/jotline/issues/3)). See
+[Release verification](docs/release-verification.md) for the local test results
 and the limits of that coverage.
 
 ## Contributing
@@ -655,8 +688,11 @@ documents the replacement feedback, selection navigation, and date-validation
 fixes. This focused pass passed 254 tests with 3 platform-specific skips on Linux,
 plus a fresh installed-wheel CLI and terminal workflow smoke check.
 
-Bug reports and focused pull requests are welcome. The package version is sourced
-from `src/jotline/__init__.py`; release builds and `jotline --version` use that same
-value. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and release checks,
+Bug reports and focused pull requests are welcome. Native macOS/Windows terminal
+and screen-reader reports are help-wanted: copy
+[docs/terminal-reports/TEMPLATE.md](docs/terminal-reports/TEMPLATE.md) rather than
+guessing results. The package version is sourced from `src/jotline/__init__.py`;
+release builds and `jotline --version` use that same value. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for development and release checks,
 [ROADMAP.md](ROADMAP.md) for starter contributions, and [SECURITY.md](SECURITY.md)
 for private vulnerability reporting. Licensed under [MIT](LICENSE).

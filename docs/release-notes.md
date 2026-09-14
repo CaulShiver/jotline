@@ -15,7 +15,8 @@ its error messages readable.
 **Behavior change:** scripts that relied on the exact join can pass
 `--no-newline` to keep it.
 
-Download `jotline-0.9.3-py3-none-any.whl` and install it with
+Download `jotline-0.9.3-py3-none-any.whl` from this GitHub Release (Jotline is
+not on PyPI) and install it with
 `uv tool install ./jotline-0.9.3-py3-none-any.whl` or
 `pipx install ./jotline-0.9.3-py3-none-any.whl`. Python 3.11+ is required; Git is not.
 For an existing installation add `--force`. `SHA256SUMS` covers both packages.
