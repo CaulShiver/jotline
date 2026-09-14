@@ -1,5 +1,15 @@
 # Release verification
 
+## 0.9.4
+
+- Complete locked suite on Linux/Python 3.12: **530 passed, 28 skipped**.
+- Windows runners, `_windows_fs.py`, and Windows product docs are gone; the
+  process entry refuses `win32` before storage imports.
+- Release identity is `v0.9.4`. Publication is gated on Linux/macOS Python
+  3.11–3.13 only (six jobs). The uploaded artifact remains the pure-Python
+  wheel `jotline-0.9.4-py3-none-any.whl`.
+- Do not move the existing `v0.9.3` tag; it never published assets.
+
 ## 0.9.3
 
 - Complete locked suite on Linux/Python 3.12: **372 passed, 3 platform-specific skips**,
