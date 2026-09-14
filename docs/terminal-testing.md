@@ -10,10 +10,10 @@ particular terminal's clipboard. Record those results separately.
 | --- | --- | --- |
 | Linux | Alacritty and GNOME Terminal | Orca where supported; IBus/Fcitx input; OSC 52 policy |
 | macOS | Terminal and iTerm2 | VoiceOver, system input methods, Control shortcuts |
-| Windows | Windows Terminal / PowerShell | NVDA or Narrator, IME composition, paste behavior |
 
-These are coverage targets, not claims that every combination works. Report
-terminal, OS, Jotline, and assistive-tool versions with each result.
+Windows is out of scope. These are coverage targets, not claims that every
+combination works. Report terminal, OS, Jotline, and assistive-tool versions
+with each result.
 
 ## Repeatable check
 
@@ -50,8 +50,8 @@ person's description of any confusion. Use findings to prioritize UI changes.
 
 ## Current verification limits
 
-The release runs automated tests and installed-wheel smoke checks on Linux,
-macOS and Windows. Local headless and POSIX PTY checks can validate rendering
+The release runs automated tests and installed-wheel smoke checks on Linux
+and macOS. Local headless and POSIX PTY checks can validate rendering
 startup, keyboard input and note persistence, but cannot certify native emulator,
 clipboard, screen-reader or IME behavior. Those require the checks above.
 
@@ -61,6 +61,7 @@ Copy [docs/terminal-reports/TEMPLATE.md](terminal-reports/TEMPLATE.md) into
 `docs/terminal-reports/` with a filename that names the OS and terminal.
 Fill only checks you ran; write `not tested` for the rest. Open a pull request
 and mention [issue #2](https://github.com/CaulShiver/jotline/issues/2) for a
-native macOS or Windows terminal report, or
+native macOS terminal report, or
 [issue #3](https://github.com/CaulShiver/jotline/issues/3) for screen-reader
-behavior. Reports without hardware must not invent results.
+behavior. Windows reports are out of scope. Reports without hardware must not
+invent results.

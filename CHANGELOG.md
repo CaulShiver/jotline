@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.9.4 — 2026-09-14
+
+- Linux and macOS only. Windows is out of scope: no Windows CI, classifiers,
+  install paths, or runtime support. The process entry exits with a clear
+  message on Windows. The `v0.9.3` tag never published wheels because Windows
+  CI failed; this release publishes a pure-Python wheel from Linux/macOS
+  verification instead.
 - README leads with a 30-second install from GitHub Release wheels (not PyPI),
   identifies CaulShiver/jotline, and uses a `<version>` placeholder so install
   examples cannot advertise an unpublished wheel. Native terminal and
@@ -23,12 +30,7 @@
   23.10 and later, where Chromium's sandbox cannot start, a browser is retried
   without it (the page loads nothing and its CSP blocks scripts). Chrome on
   macOS no longer waits on the keychain or on helper processes after printing,
-  Windows' `chrome.exe` launcher no longer counts as finished before the PDF is
-  written, and a stuck browser gives up after 30 seconds instead of 180.
-- On Windows, a command run with input from `NUL` (a scheduled task or script)
-  is no longer mistaken for a terminal: a missing passphrase fails with the
-  `JOTLINE_PASSPHRASE` hint instead of waiting forever, and `capture` reads the
-  empty input instead of opening the editor.
+  and a stuck browser gives up after 30 seconds instead of 180.
 - Markdown editing fixes from a code review. Format link keeps a multi-line
   selection on one line in CRLF notes and accepts a selected `<autolink>`.
   Insert or tidy table no longer pulls a paragraph above the table containing

@@ -19,7 +19,6 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Operating System :: POSIX :: Linux",
   "Operating System :: MacOS :: MacOS X",
-  "Operating System :: Microsoft :: Windows",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.11",
@@ -37,7 +36,7 @@ Repository = "https://github.com/CaulShiver/jotline"
 Issues = "https://github.com/CaulShiver/jotline/issues"
 
 [project.scripts]
-jotline = "jotline.cli:main"
+jotline = "jotline.launch:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.2", "pytest-asyncio>=0.24"]

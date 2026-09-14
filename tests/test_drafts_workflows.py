@@ -169,8 +169,7 @@ def test_cli_updates_json_and_actions(tmp_path, newline):
     note = saved(vault, 'middle')
     def cli(*args, input=None):
         return subprocess.run([sys.executable, '-m', 'jotline', '--vault', str(tmp_path), *args],
-                              # Binary pipes prevent Windows text mode from
-                              # translating the fixture before Jotline reads it.
+                              # Binary pipes keep fixture newlines intact.
                               input=input.encode('utf-8') if input is not None else None,
                               capture_output=True, timeout=15)
     assert cli('append', note.id, input=newline + 'end').returncode == 0

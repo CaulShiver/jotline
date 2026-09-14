@@ -9,7 +9,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Jotline version, Python version, OS, terminal and terminal version.
+      description: Jotline version, Python version, Linux or macOS, terminal and terminal version. Windows is not supported.
     validations:
       required: true
   - type: textarea

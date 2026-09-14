@@ -6,15 +6,16 @@ body:
     attributes:
       value: |
         Use a disposable vault and synthetic notes. Copy `docs/terminal-reports/TEMPLATE.md` for a pull request that adds the report under `docs/terminal-reports/`. This form is for questions or a first draft; filled reports belong in that folder.
-        Related issues: [#2 native macOS/Windows terminal](https://github.com/CaulShiver/jotline/issues/2), [#3 screen reader](https://github.com/CaulShiver/jotline/issues/3).
+        Related issues: [#2 native macOS terminal](https://github.com/CaulShiver/jotline/issues/2), [#3 screen reader](https://github.com/CaulShiver/jotline/issues/3). Windows is out of scope.
   - type: dropdown
     id: kind
     attributes:
       label: Report kind
       options:
-        - Native macOS or Windows terminal (issue #2)
+        - Native macOS terminal (issue #2)
+        - Linux terminal
         - Screen reader in a native terminal (issue #3)
-        - Other terminal or assistive setup
+        - Other Linux or macOS assistive setup
     validations:
       required: true
   - type: textarea

@@ -312,7 +312,7 @@ def test_backup_template_bytes_count_toward_aggregate_budget(tmp_path, monkeypat
     assert any(item['path'] == '.jotline-templates/large.md' for item in skipped)
 
 
-@pytest.mark.skipif(os.name == 'nt', reason='Windows pins directories against rename; covered by native tests')
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX-only; Windows is out of scope')
 def test_history_stays_on_pinned_vault_during_root_swap(tmp_path, monkeypatch):
     original = tmp_path / 'vault'
     vault = Vault(original)
@@ -337,7 +337,7 @@ def test_history_stays_on_pinned_vault_during_root_swap(tmp_path, monkeypatch):
     assert not (original / f'{note.id}.md').exists()
 
 
-@pytest.mark.skipif(os.name == 'nt', reason='Windows pins directories against rename; covered by native tests')
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX-only; Windows is out of scope')
 def test_backup_stays_on_pinned_folder_during_folder_swap(tmp_path, monkeypatch):
     vault = Vault(tmp_path)
     (tmp_path / 'plain.md').write_text('data')
@@ -359,7 +359,7 @@ def test_backup_stays_on_pinned_folder_during_folder_swap(tmp_path, monkeypatch)
         assert opened.read('plain.md') == b'data'
 
 
-@pytest.mark.skipif(os.name == 'nt', reason='Windows pins directories against rename; covered by native tests')
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX-only; Windows is out of scope')
 def test_history_browsing_stays_on_pinned_vault_during_root_swap(tmp_path, monkeypatch):
     original = tmp_path / 'vault'
     vault = Vault(original)

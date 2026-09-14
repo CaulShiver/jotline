@@ -57,7 +57,7 @@ executor shutdown after a test has passed. The final full suite and wheel smoke
 were therefore run outside that sandbox. No production workaround was added for
 this environment restriction.
 
-The release workflow separately gates publication on the Linux/macOS/Windows
+The release workflow separately gates publication on the Linux/macOS
 Python 3.11–3.13 matrix and smoke-tests the exact wheel it uploads. Consult the
 GitHub Actions run for the remote results associated with a tag.
 

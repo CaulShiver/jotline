@@ -15,8 +15,9 @@ the writing core remains offline.
 
 ## Next priorities
 
-1. Validate the release with newcomers on Linux, macOS and Windows. Measure
+1. Validate the release with newcomers on Linux and macOS. Measure
    whether they can install, capture, find, process and recover a note unaided.
+   Windows support is deferred indefinitely.
 2. Establish native terminal and assistive-technology coverage using
    [the terminal checklist](docs/terminal-testing.md).
 3. Improve performance using representative synthetic vault benchmarks before
@@ -33,7 +34,7 @@ Each item can be proposed as a focused issue or PR:
 
 | Task | Acceptance criteria |
 | --- | --- |
-| Document one terminal setup | Copy `docs/terminal-reports/TEMPLATE.md`, record OS/terminal versions, keyboard and clipboard behavior using the checklist; no personal notes ([#2](https://github.com/CaulShiver/jotline/issues/2), [#3](https://github.com/CaulShiver/jotline/issues/3)). |
+| Document one terminal setup | Copy `docs/terminal-reports/TEMPLATE.md`, record Linux or macOS terminal versions, keyboard and clipboard behavior using the checklist; no personal notes ([#2](https://github.com/CaulShiver/jotline/issues/2) macOS, [#3](https://github.com/CaulShiver/jotline/issues/3)). |
 | Add an example local action | Include a recipe, synthetic input/output, and a test; use supported built-in steps only. |
 | Improve one confusing empty state | Describe the trigger, include before/after screenshots, and verify keyboard navigation. |
 | Add a migration fixture | Provide a minimal synthetic export and verify metadata mapping and duplicate behavior. |

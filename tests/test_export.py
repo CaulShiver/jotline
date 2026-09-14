@@ -164,7 +164,7 @@ def test_a_browser_that_lingers_after_printing_is_not_waited_on(tmp_path, monkey
 
 @posix_only
 def test_a_launcher_that_exits_before_its_child_prints_is_waited_for(tmp_path, monkeypatch):
-    # chrome.exe on Windows exits with status 0 while a child writes the PDF.
+    # chrome on macOS may keep helper processes alive after printing.
     stand_in(tmp_path, "chromium", PRINT_TARGET + "( /bin/sleep 1; printf '%%PDF-1.4\\n%%%%EOF\\n' > \"$out\" ) &\nexit 0\n")
     only_stand_ins(tmp_path, monkeypatch)
     assert export_bytes("Plan", "body", "pdf") == b"%PDF-1.4\n%%EOF\n"

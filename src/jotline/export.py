@@ -140,12 +140,9 @@ def find_browsers() -> list[str]:
 
     for name in BROWSERS:
         add(shutil.which(name))
-    programs = [os.environ.get(name, "") for name in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
     for candidate in ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
                       "/Applications/Chromium.app/Contents/MacOS/Chromium",
-                      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-                      *(str(Path(root, "Google/Chrome/Application/chrome.exe")) for root in programs if root),
-                      *(str(Path(root, "Microsoft/Edge/Application/msedge.exe")) for root in programs if root)):
+                      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"):
         add(_existing(candidate))
     return found
 
@@ -157,9 +154,7 @@ def find_browser() -> str | None:
 
 def find_office() -> str | None:
     found = shutil.which("soffice") or shutil.which("libreoffice")
-    programs = [os.environ.get(name, "") for name in ("PROGRAMFILES", "PROGRAMFILES(X86)")]
-    return found or _existing("/Applications/LibreOffice.app/Contents/MacOS/soffice",
-                              *(str(Path(root, "LibreOffice/program/soffice.exe")) for root in programs if root))
+    return found or _existing("/Applications/LibreOffice.app/Contents/MacOS/soffice")
 
 
 def _pdf_complete(output: Path) -> bool:
@@ -189,8 +184,7 @@ def _run(command: list[str], output: Path, timeout: float = TIMEOUT_SECONDS) -> 
     """Run a converter; return why it failed, or None when it wrote the output.
 
     The PDF itself, not the process, decides when a browser is done. Chrome on
-    macOS keeps helper processes alive after printing, and chrome.exe on Windows
-    is a launcher that exits while its child is still writing. Errors go to a
+    macOS keeps helper processes alive after printing. Errors go to a
     file because a pipe nobody reads can fill and stall a chatty browser.
     """
     wants_pdf = output.suffix == ".pdf"

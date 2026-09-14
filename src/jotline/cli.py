@@ -39,8 +39,6 @@ def default_vault() -> Path:
     override = os.environ.get("JOTLINE_VAULT")
     if override:
         return Path(override)
-    if sys.platform == "win32":
-        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "jotline/notes"
     # The XDG specification says a relative XDG_DATA_HOME must be ignored.
     xdg_home = os.environ.get("XDG_DATA_HOME") or ""
     if not Path(xdg_home).is_absolute():
@@ -342,34 +340,13 @@ def has_terminal_controls(body: str) -> bool:
     return any(is_terminal_control(character) for character in body)
 
 
-def windows_console_input() -> bool:
-    """Whether stdin is a real Windows console.
-
-    isatty() is also true for the NUL device, so a script run with stdin from
-    NUL would otherwise be treated as a person at a terminal and getpass would
-    wait on the console forever.
-    """
-    try:
-        import ctypes
-        import msvcrt
-
-        handle = msvcrt.get_osfhandle(sys.stdin.fileno())
-        mode = ctypes.c_uint32()
-        return bool(ctypes.windll.kernel32.GetConsoleMode(handle, ctypes.byref(mode)))
-    except (AttributeError, ImportError, OSError, ValueError):
-        return False
-
-
 def stdin_is_interactive() -> bool:
     if sys.stdin is None:
         return True
     try:
-        interactive = sys.stdin.isatty()
+        return sys.stdin.isatty()
     except ValueError:
         return False
-    if interactive and sys.platform == "win32":
-        return windows_console_input()
-    return interactive
 
 
 def encoding_name(value: str) -> str:
@@ -384,8 +361,6 @@ def encoding_name(value: str) -> str:
 
 def command_text(words: list[str], encoding: str, errors: str) -> str:
     text = " ".join(words)
-    if sys.platform == "win32":
-        return text
     # POSIX passes argument bytes through; Python keeps undecodable ones as
     # surrogates, so recover the bytes and decode them as the user asked.
     return os.fsencode(text).decode(encoding, errors)
@@ -450,8 +425,6 @@ PASSPHRASE_NEEDED = ("This needs the passphrase for encrypted notes; run it in a
 
 
 def terminal_available() -> bool:
-    if sys.platform == "win32":
-        return stdin_is_interactive()
     try:
         with open("/dev/tty", "rb"):
             return True
@@ -517,7 +490,7 @@ def quick_capture(settings: Settings, daily: bool, workspace: str) -> str | None
 
 
 def missing_file_message(args: argparse.Namespace, error: FileNotFoundError) -> str:
-    # Windows reports a missing file without its name, so check the target itself.
+    # Some platforms omit the filename from FileNotFoundError; check the target.
     note_id = getattr(args, "id", None)
     vault = Path(args.vault).expanduser()
     if note_id and vault.is_dir() and not (vault / f"{note_id}.md").exists():
@@ -937,10 +910,6 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Invoca
 
 
 def main() -> None:
-    if sys.platform == "win32":
-        for stream in (sys.stdout, sys.stderr):
-            if hasattr(stream, "reconfigure"):
-                stream.reconfigure(encoding="utf-8", newline="")
     parser = build_parser()
     args = parser.parse_args()
     try:

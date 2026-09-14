@@ -31,7 +31,7 @@ async def test_right_click_moves_clicked_note_and_preserves_open_buffer(tmp_path
         assert editor.text == before
         assert await pilot.click('#note-menu-options', offset=(2, 0))
         # A submenu is a newly mounted screen. Wait for its offset/layout before
-        # calculating the next mouse position (Windows runners expose this race).
+        # calculating the next mouse position.
         await pilot.pause()
         assert app.screen.title_text == 'Move to collection'
         assert await pilot.click('#note-menu-options', offset=(2, 0))
