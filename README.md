@@ -639,7 +639,9 @@ detection. Recipes execute only these built-in steps; there is no shell evaluati
 
 Version 0.9.3 is an early release. It offers Markdown source editing, rendered
 preview, configurable local actions, and guided import/recovery workflows. See
-[CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,
+[CHANGELOG.md](CHANGELOG.md), [ROADMAP.md](ROADMAP.md), and the
+[quality backlog](docs/quality-backlog.md) for the connect-loop gaps (backlinks
+are the recommended next slice). Full Vim emulation,
 cloud sync, plugins, dictation and system-wide capture hotkeys remain future work.
 Automated cross-platform checks and a POSIX terminal smoke test complement the
 [native terminal and accessibility checklist](docs/terminal-testing.md);
@@ -658,5 +660,7 @@ plus a fresh installed-wheel CLI and terminal workflow smoke check.
 Bug reports and focused pull requests are welcome. The package version is sourced
 from `src/jotline/__init__.py`; release builds and `jotline --version` use that same
 value. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and release checks,
-[ROADMAP.md](ROADMAP.md) for starter contributions, and [SECURITY.md](SECURITY.md)
+[ROADMAP.md](ROADMAP.md) for starter contributions, the
+[quality backlog](docs/quality-backlog.md) for connect and first-hour gaps,
+and [SECURITY.md](SECURITY.md)
 for private vulnerability reporting. Licensed under [MIT](LICENSE).
