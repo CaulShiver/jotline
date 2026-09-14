@@ -30,6 +30,7 @@ from .note_menu import NoteList, NoteMenu
 from .review_ui import ReviewMixin
 from .encryption_ui import EncryptionMixin
 from .export import printable_markdown
+from .links import incoming_refs, outgoing_refs, wiki_link_at
 from .tasks import closes_fence
 from .markdown_editor import (TABLE_TEMPLATE, FENCE, JOTLINE_THEME, MarkdownEditor, fence_for, format_table,
                               headings, indent_lines, table_bounds, toggle_lines, unwrap_span)
@@ -47,6 +48,14 @@ class Command:
     label: str
     handler: Callable[[], None]
     hotkey_action: str | None = None
+
+
+class ConnectionsBar(Static):
+    """Clickable summary of incoming and outgoing note links."""
+
+    def on_click(self, event: events.Click) -> None:
+        event.stop()
+        self.app.action_backlinks()
 
 
 class Palette(Modal[str | None]):
@@ -168,11 +177,19 @@ class MarkdownPreview(Modal[None]):
             with VerticalScroll(id="markdown-scroll"):
                 # Let Markdown own its initial render during its mount lifecycle.
                 # A second update from the parent mount can race its empty render.
+                # open_links=False: handle jotline: wiki targets here, never a browser.
                 yield Markdown(self.body, open_links=False)
             yield Button("Back to writing", id="close-preview")
 
     def on_mount(self) -> None:
         self.query_one(VerticalScroll).focus()
+
+    @on(Markdown.LinkClicked)
+    def follow_preview_link(self, event: Markdown.LinkClicked) -> None:
+        event.stop()
+        if event.href.startswith("jotline:"):
+            self.dismiss(None)
+            self.app.follow_wiki_target(event.href.removeprefix("jotline:"))
 
     @on(Button.Pressed, "#close-preview")
     def action_done(self) -> None:
@@ -423,6 +440,10 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self._live_preview_ratio: float | None = None
         self._live_preview_lock = asyncio.Lock()
         self._live_preview_cursor_row: int | None = None
+        self._link_notes = None
+        self._link_workspace = ""
+        self._incoming = []
+        self._incoming_for = ""
         self.command_registry = self.build_command_registry()
 
     def compose(self) -> ComposeResult:
@@ -460,7 +481,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
                     yield Button("More", id="md-more", tooltip="All Markdown formats, including tables and code blocks")
                     yield Button("Preview", id="md-preview", tooltip="Preview Markdown; Esc returns to writing")
                 yield MarkdownEditor("", soft_wrap=True, tab_behavior="focus", show_line_numbers=False, id="editor")
-                yield Static("", id="connections", markup=False)
+                yield ConnectionsBar("", id="connections", markup=False)
                 yield Static("Ready · local Markdown", id="status", markup=False)
             with VerticalScroll(id="live-preview", classes="hidden"):
                 yield Markdown("", open_links=False, id="live-markdown")
@@ -498,7 +519,9 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         connections = self.query_one("#connections", Static)
         sidebar.set_class(self.focused_writing or (self.compact_layout and not self.compact_navigation), "hidden")
         hint.set_class(self.focused_writing or self.compact_layout or not self.settings.show_hints, "hidden")
-        connections.set_class(very_short, "hidden")
+        # Keep the dedicated bar when there is height; compact terminals keep
+        # connect reachable from the status line and Alt+K / Ctrl+P.
+        connections.set_class(very_short or self.focused_writing, "hidden")
         self.query_one("#markdown-toolbar").set_class(self.focused_writing, "hidden")
         preview = self.query_one("#live-preview")
         was_visible = not preview.has_class("hidden")
@@ -739,7 +762,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             gone = moved.workspace != self.workspace or moved.collection == 'trash'
             self.load(self.new_note() if gone else moved)
         self.refresh_notes()
-        self.connections()
+        self.connections(refresh=True)
         self.notify_backup_warning()
         self.notify(f'Moved to {workspace or collection}')
 
@@ -748,6 +771,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         if self.is_running:
             if self.capture_current_buffer():
                 self.offer_completion()
+                self.connections()
             self.schedule_live_preview()
 
     @on(TextArea.SelectionChanged, "#editor")
@@ -772,7 +796,9 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
     def status(self, message: str) -> None:
         tags = sorted(self.current.tags)[:5]
         details = f"{message}  ·  {len(self.current.body.split())} words"
-        if not self.compact_layout:
+        if self.compact_layout:
+            details += f"  ·  {self.connection_counts()}"
+        else:
             details += f"  ·  {self.current.collection}  ·  {self.workspace}"
             details += "  ·  encrypted" if self.current.encrypted else ""
             details += "  ·  " + " ".join("#" + tag for tag in tags) if tags else ""
@@ -804,7 +830,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.notify_backup_warning()
         self.notify_storage_warnings()
         self.refresh_notes()
-        self.connections()
+        self.connections(refresh=True)
         return True
 
     def autosave(self) -> None:
@@ -813,10 +839,60 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         if self.is_running and self.dirty:
             self.save_current()
 
-    def connections(self) -> None:
-        backlinks = self.vault.backlinks(self.current)
-        summary = " · ".join(n.title for n in backlinks[:3])
-        self.query_one("#connections", Static).update(f"← {len(backlinks)} backlinks" + (f"  {summary}" if summary else self.shortcut_text("  ·  ctrl+p → Insert note link")))
+    def cached_workspace_notes(self, refresh: bool = False):
+        if refresh or self._link_notes is None or self._link_workspace != self.workspace:
+            self._link_notes = self.vault.workspace_notes(self.workspace)
+            self._link_workspace = self.workspace
+            self._incoming_for = ""
+        return self._link_notes
+
+    def current_outgoing(self):
+        if self.current.locked:
+            return []
+        try:
+            body = self.query_one("#editor", TextArea).text
+        except Exception:
+            body = self.current.body
+        return outgoing_refs(body, self.cached_workspace_notes())
+
+    def current_incoming(self, refresh: bool = False):
+        notes = self.cached_workspace_notes(refresh)
+        if refresh or self._incoming_for != self.current.id:
+            self._incoming = incoming_refs(self.current, notes)
+            self._incoming_for = self.current.id
+        return self._incoming
+
+    def connection_counts(self) -> str:
+        if self.current.locked:
+            return "locked · unlock to see its links"
+        incoming = self.current_incoming()
+        outgoing = self.current_outgoing()
+        broken = sum(item.status == "broken" for item in outgoing)
+        text = f"←{len(incoming)} →{len(outgoing)}"
+        if broken:
+            text += f" · {broken} broken"
+        return text
+
+    def connections(self, *, refresh: bool = False) -> None:
+        incoming = self.current_incoming(refresh)
+        outgoing = self.current_outgoing()
+        if self.current.locked:
+            line = "Encrypted note (locked). Unlock to see its outgoing links."
+        elif not incoming and not outgoing:
+            line = self.shortcut_text(
+                "No links yet. Type [[ to connect this note, or alt+k / ctrl+p → Insert note link")
+        else:
+            broken = [item for item in outgoing if item.status == "broken"]
+            titles = [item.title for item in incoming[:3] if item.title]
+            line = f"← {len(incoming)}  → {len(outgoing)}"
+            if titles:
+                line += "  " + " · ".join(titles)
+            if broken:
+                line += f"  ·  {len(broken)} broken"
+            line += self.shortcut_text("  ·  alt+k connections")
+        self.query_one("#connections", Static).update(line)
+        if self.compact_layout:
+            self.status("Saving…" if self.dirty else ("Saved" if self.current.original else "Ready"))
 
     def new_note(self, body: str = "") -> Note:
         """An unsaved note in the current workspace, filed where settings send new thoughts."""
@@ -1144,7 +1220,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
 
     def preview_markdown(self, body: str) -> str:
         """Checkboxes as ☐/☒ and [[links]] as note titles, as in exports."""
-        return printable_markdown(body, self.note_titles() if "[[" in body else {})
+        return printable_markdown(body, self.note_titles() if "[[" in body else {}, followable=True)
 
     def action_preview(self) -> None:
         self.capture_current_buffer()
@@ -1449,7 +1525,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
                 self.status("Could not reload file · recovery available")
                 self.notify(f"Could not reload this note: {error}", severity="error", timeout=10)
         self.refresh_notes()
-        self.connections()
+        self.connections(refresh=True)
         if kept_unsaved and not reload_failed:
             self.status("Refreshed · unsaved changes kept")
         if not self.storage_warnings() and not reload_failed:
@@ -1483,8 +1559,8 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             Command("refresh", "Refresh vault from disk", self.refresh_vault),
             Command("star", "Toggle star on this note", self.toggle_star),
             Command("link", "Insert note link", lambda: self.select_related_note("link")),
-            Command("follow", "Follow a link in this note", lambda: self.select_related_note("follow")),
-            Command("backlinks", "Open a backlink", lambda: self.select_related_note("backlinks")),
+            Command("follow", "Follow a link in this note", self.action_follow),
+            Command("backlinks", "Show connections", self.action_backlinks, "backlinks"),
             Command("task", "Toggle task on current line", self.toggle_task),
             Command("copy", "Copy note to clipboard (terminal OSC 52)", self.copy_current_note),
             Command("recovery", "Save recovery copy", self.save_recovery_copy),
@@ -1596,28 +1672,140 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
     def select_related_note(self, mode: str) -> None:
         self.capture_current_buffer()
         if mode == "backlinks":
-            notes = self.vault.backlinks(self.current)
-        else:
-            notes = self.vault.search(workspace=self.workspace)
-            if mode == "follow":
-                links = self.current.links
-                notes = [note for note in notes if note.id in links or note.title in links or note.heading in links]
-            else:
-                notes = [note for note in notes if note.id != self.current.id]
+            self.action_backlinks()
+            return
+        if mode == "follow":
+            self.action_follow()
+            return
+        notes = [note for note in self.vault.search(workspace=self.workspace) if note.id != self.current.id]
         if not notes:
-            self.notify("No matching notes yet.")
+            self.notify("No notes to link yet. Capture another thought first.")
             return
 
         def picked(note_id: str | None) -> None:
-            if note_id and mode == "link":
-                note = next(note for note in notes if note.id == note_id)
-                label = note.title.replace("[", "").replace("]", "").replace("|", "")
-                self.query_one("#editor", TextArea).insert(f"[[{note.id}|{label}]]")
-                self.query_one("#editor", TextArea).focus()
-            elif note_id:
-                self.load_id(note_id)
+            if not note_id:
+                return
+            note = next(note for note in notes if note.id == note_id)
+            label = note.title.replace("[", "").replace("]", "").replace("|", "")
+            self.query_one("#editor", TextArea).insert(f"[[{note.id}|{label}]]")
+            self.query_one("#editor", TextArea).focus()
 
         self.push_screen(Palette(self.note_choices(notes), "Choose a note"), picked)
+
+    def action_backlinks(self) -> None:
+        self.capture_current_buffer()
+        incoming = self.current_incoming()
+        outgoing = self.current_outgoing()
+        if self.current.locked:
+            self.notify("Encrypted note (locked). Unlock to see its outgoing links.")
+        choices = self.connection_choices(incoming, outgoing)
+        if not choices:
+            self.notify("No links yet. Type [[ to connect this note, or insert a note link.")
+            return
+
+        def picked(key: str | None) -> None:
+            if not key:
+                return
+            if key.startswith("create:"):
+                self.create_from_link(key.removeprefix("create:"))
+            elif key.startswith("open:"):
+                self.load_id(key.removeprefix("open:"))
+
+        self.push_screen(Palette(choices, "Connections"), picked)
+
+    def action_follow(self) -> None:
+        self.capture_current_buffer()
+        editor = self.query_one("#editor", TextArea)
+        row, column = editor.cursor_location
+        if link := wiki_link_at(editor.text, row, column):
+            self.follow_wiki_target(link.target)
+            return
+        outgoing = [item for item in self.current_outgoing() if item.status != "broken"]
+        if not outgoing:
+            broken = [item for item in self.current_outgoing() if item.status == "broken"]
+            if broken:
+                self.follow_wiki_target(broken[0].target)
+                return
+            self.notify("No link under the cursor. Place the cursor on [[…]] or insert a note link.")
+            return
+        notes = [note for note in self.cached_workspace_notes() if note.id in {item.note_id for item in outgoing}]
+        self.push_screen(Palette(self.note_choices(notes), "Follow a link"),
+                         lambda key: self.load_id(key) if key else None)
+
+    def follow_wiki_target(self, target: str) -> None:
+        matches = [note for note in self.cached_workspace_notes()
+                   if target in {note.id, note.title, note.heading}]
+        if len(matches) == 1:
+            self.load_id(matches[0].id)
+            return
+        if len(matches) > 1:
+            self.push_screen(Palette(self.note_choices(matches), f"“{target}” matches {len(matches)} notes"),
+                             lambda key: self.load_id(key) if key else None)
+            return
+        self.notify(f"No note named {target}. Create it, or pick another link.")
+        self.push_screen(Palette([("create:" + target, f"Create note “{target}”")], "Broken link"),
+                         lambda key: self.create_from_link(target) if key else None)
+
+    def create_from_link(self, target: str) -> None:
+        title = " ".join(target.strip().split())
+        if not title:
+            self.notify("That link has no title to create.")
+            return
+        if not self.save_current():
+            return
+        note = self.new_note(f"# {title}\n")
+        try:
+            self.vault.save(note)
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity="error")
+            return
+        self.connections(refresh=True)
+        self.load(note)
+        self.refresh_notes()
+        self.notify(f"Created “{note.title}” from the broken link.")
+
+    def connection_choices(self, incoming, outgoing) -> list[tuple[str, str]]:
+        choices = []
+        seen = set()
+        for item in incoming:
+            key = "open:" + (item.note_id or item.target)
+            if key in seen:
+                continue
+            seen.add(key)
+            snippet = f" · {item.snippet}" if item.snippet else ""
+            choices.append((key, f"← {item.title or item.target}{snippet}"))
+        for item in outgoing:
+            if item.status == "broken":
+                key = "create:" + item.target
+                if key in seen:
+                    continue
+                seen.add(key)
+                snippet = f" · {item.snippet}" if item.snippet else ""
+                choices.append((key, f"! {item.target} — no matching note{snippet}"))
+                continue
+            key = "open:" + (item.note_id or item.target)
+            if key in seen:
+                continue
+            seen.add(key)
+            mark = "?" if item.status == "ambiguous" else "→"
+            snippet = f" · {item.snippet}" if item.snippet else ""
+            choices.append((key, f"{mark} {item.title or item.target}{snippet}"))
+        return choices
+
+    @on(Markdown.LinkClicked, "#live-markdown")
+    def follow_live_preview_link(self, event: Markdown.LinkClicked) -> None:
+        event.stop()
+        if event.href.startswith("jotline:"):
+            self.follow_wiki_target(event.href.removeprefix("jotline:"))
+
+    @on(events.Click, "#editor")
+    def follow_editor_click(self, event: events.Click) -> None:
+        if not event.ctrl:
+            return
+        editor = self.query_one("#editor", TextArea)
+        if link := wiki_link_at(editor.text, *editor.cursor_location):
+            event.stop()
+            self.follow_wiki_target(link.target)
 
     def open_generated_note(self, body: str) -> None:
         if self.save_current():
@@ -1672,7 +1860,9 @@ Appearance and editor settings are shared across this vault.
 Ctrl+P → Toggle task checks or unchecks the current line.
 Ctrl+B hides the sidebar. Ctrl+O finds a note by title.
 Ctrl+F searches this workspace (except trash). Multiple words narrow results.
-Ctrl+P → Follow a link or Open a backlink moves between connected notes.
+Alt+K shows incoming and outgoing connections, with the line that contains each link.
+Ctrl+P → Follow a link opens the [[link]] under the cursor. Broken links can create a note.
+Click a link in preview, or Ctrl+click one in the editor.
 Links inserted by Jotline use stable IDs, so changing titles is safe.
 
 ## Templates and history

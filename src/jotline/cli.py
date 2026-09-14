@@ -586,6 +586,9 @@ def build_parser() -> argparse.ArgumentParser:
     tagging = sub.add_parser("tag", help="Add inline tags to a note")
     tagging.add_argument("id", metavar="NOTE", help=NOTE_HELP)
     tagging.add_argument("tags", nargs="+")
+    backlinks = sub.add_parser("backlinks", help="List notes that link here, and outgoing links")
+    backlinks.add_argument("id", metavar="NOTE", help=NOTE_HELP)
+    backlinks.add_argument("--json", action="store_true", help="Print connections as JSON")
     tasks = sub.add_parser("tasks", help="List open checkbox tasks across notes")
     tasks.add_argument("query", nargs="?", default="", help="Only notes matching this search, such as #work")
     tasks.add_argument("--done", action="store_true", help="Include completed tasks")
@@ -869,6 +872,32 @@ def run_workspaces(run: Invocation) -> None:
     report_warnings(run.vault)
 
 
+def run_backlinks(run: Invocation) -> None:
+    note = read_note_here(run, run.args.id)
+    info = run.vault.connections(note)
+    if run.args.json:
+        print(json.dumps({
+            "id": note.id,
+            "title": note.title,
+            "locked": info.locked,
+            "incoming": [item.as_dict() for item in info.incoming],
+            "outgoing": [item.as_dict() for item in info.outgoing],
+        }, ensure_ascii=True))
+    else:
+        if info.locked:
+            print("Encrypted note (locked). Unlock with --unlock to see outgoing links.")
+        if not info.incoming and not info.outgoing:
+            print("No links yet")
+        for item in info.incoming:
+            print("\t".join(terminal_text(field) for field in
+                            ("←", item.note_id or "-", item.title, item.snippet)))
+        for item in info.outgoing:
+            mark = "!" if item.status == "broken" else ("?" if item.status == "ambiguous" else "→")
+            print("\t".join(terminal_text(field) for field in
+                            (mark, item.note_id or item.target, item.title or item.status, item.snippet)))
+    report_warnings(run.vault)
+
+
 def run_tags(run: Invocation) -> None:
     counts = sorted(run.vault.tags(run.workspace).items())
     if run.args.json:
@@ -898,13 +927,14 @@ def run_app(run: Invocation) -> None:
 COMMANDS = {
     "capture": run_capture, "import": run_import, "backup": run_backup,
     "append": run_append, "prepend": run_append, "actions": run_actions, "run": run_action,
-    "list": run_list, "tag": run_tag, "export": run_export, "tasks": run_tasks, "done": run_done,
+    "list": run_list, "tag": run_tag, "export": run_export, "backlinks": run_backlinks,
+    "tasks": run_tasks, "done": run_done,
     "encrypt": run_sealing, "decrypt": run_sealing, "encryption": run_encryption,
     "workspaces": run_workspaces, "tags": run_tags, "doctor": run_doctor,
     "open": run_app, None: run_app,
 }
 # Commands that only read must not turn a mistyped path into a new vault.
-READ_ONLY_COMMANDS = {"list", "actions", "export", "workspaces", "tags", "tasks", "doctor"}
+READ_ONLY_COMMANDS = {"list", "actions", "export", "workspaces", "tags", "tasks", "doctor", "backlinks"}
 
 
 def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Invocation:

@@ -3,10 +3,9 @@
 Jotline values fast capture, readable files, and a small keyboard-first interface.
 
 Start with [ROADMAP.md](ROADMAP.md) for priorities and scoped starter tasks.
-The [quality backlog](docs/quality-backlog.md) records the September 14 audit:
-this pass is documentation only; the recommended later slice is backlinks
-quality. Discuss changes that alter note formats, shortcuts, or public APIs
-before implementing that slice.
+The [quality backlog](docs/quality-backlog.md) records the connect-loop work
+and what is still parked. Discuss changes that alter note formats, shortcuts,
+or public APIs before implementation.
 Use the workflow-improvement issue template to describe user needs before a
 large change. Recipes and terminal compatibility reports are useful contributions
 alongside code. Security issues should follow [SECURITY.md](SECURITY.md).

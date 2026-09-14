@@ -19,6 +19,7 @@ from uuid import uuid4
 
 from .crypto import KEY_FILE, LOCKED, EncryptionError, KeyFile, NoteCipher, is_sealed, new_note_key
 from .filesystem import fs as os, lock_file
+from .links import LINK, NoteConnections, connect_note, wiki_link_targets
 
 COLLECTIONS = ("inbox", "projects", "areas", "resources", "archive", "trash")
 # Limits protect the interactive app from accidentally imported huge files.
@@ -48,7 +49,6 @@ class FileSignature(NamedTuple):
     ctime_ns: int
 
 
-LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|([^\[\]]*))?\]\]")
 TAG = re.compile(r"(?<![\w#])#([\w][\w/-]*)", re.UNICODE)
 
 
@@ -345,7 +345,10 @@ class Note:
 
     @property
     def links(self) -> set[str]:
-        return self._derived(LINK, "links")
+        values, warning = wiki_link_targets(self.body)
+        if warning and warning not in self.derived_warnings:
+            self.derived_warnings.append(warning)
+        return values
 
 
 class Vault:
@@ -742,17 +745,22 @@ class Vault:
             self._save_locked(note, directory)
             return note
 
-    def backlinks(self, target: Note) -> list[Note]:
-        targets = {target.id, target.title, target.heading}
-        matches = []
+    def workspace_notes(self, workspace: str) -> list[Note]:
+        """Notes in one workspace, excluding trash. Collects derived-link warnings."""
+        notes = []
         for note in self.notes():
-            if note.id == target.id or note.collection == "trash" or note.workspace != target.workspace:
+            if note.collection == "trash" or note.workspace != workspace:
                 continue
-            linked = targets.intersection(note.links)
             self._collect_derived_warnings(note)
-            if linked:
-                matches.append(note)
-        return matches
+            notes.append(note)
+        return notes
+
+    def connections(self, target: Note, *, body: str | None = None) -> NoteConnections:
+        return connect_note(target, self.workspace_notes(target.workspace), body=body)
+
+    def backlinks(self, target: Note) -> list[Note]:
+        by_id = {note.id: note for note in self.workspace_notes(target.workspace)}
+        return [by_id[item.note_id] for item in self.connections(target).incoming if item.note_id]
 
     def search(self, query: str = "", collection: str = "all", workspace: str | None = None) -> list[Note]:
         from .search import compile_query

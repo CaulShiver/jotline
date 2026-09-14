@@ -216,7 +216,7 @@ async def test_live_preview_refreshes_externally_renamed_link(tmp_path):
         app.autosave_timer.stop()
         app.command('live-preview')
         await app.workers.wait_for_complete()
-        assert 'See Old title' in app._live_preview_text
+        assert f'See [Old title](jotline:{target.id})' in app._live_preview_text
         external = Vault(tmp_path)
         renamed = external.read(target.id)
         renamed.body = '# New title'
@@ -226,7 +226,7 @@ async def test_live_preview_refreshes_externally_renamed_link(tmp_path):
         assert app.query_one('#editor', TextArea).cursor_location[0] == 2
         await pilot.pause(0.4)
         await app.workers.wait_for_complete()
-        assert 'See New title' in app._live_preview_text
+        assert f'See [New title](jotline:{target.id})' in app._live_preview_text
         assert 'Old title' not in app._live_preview_text
 
 

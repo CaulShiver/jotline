@@ -42,6 +42,7 @@ HOTKEY_ACTIONS = {
     "format_quote": ("", "Format quote (optional)"),
     "live_preview": ("", "Side-by-side preview (optional)"),
     "outline": ("", "Jump to heading (optional)"),
+    "backlinks": ("alt+k", "Show connections"),
     "format_strike": ("", "Format strikethrough (optional)"),
     "format_numbered": ("", "Format numbered list (optional)"),
     "format_task": ("", "Format task list (optional)"),

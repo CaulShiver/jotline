@@ -74,12 +74,13 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 | `Ctrl+D` | Today's daily log |
 | `Ctrl+F` | Search across notes |
 | `Ctrl+B` | Toggle quiet focus mode |
+| `Alt+K` | Show incoming and outgoing connections |
 | `Ctrl+S` | Save immediately |
 | `Ctrl+Q` | Save and quit |
 | `Tab` / `Shift+Tab` | Move between controls |
 | `Escape` | Close palette / return to writing |
 
-The palette also offers star, move, restore from trash, task toggle, link insertion/navigation, backlinks, recovery copies, and a writing guide. Type words to narrow commands, use arrows to choose, then Enter. Standard text selection, undo, and redo are provided by the editor. Clipboard copy uses OSC 52 and depends on your terminal's permissions and support.
+The palette also offers star, move, restore from trash, task toggle, link insertion/navigation, connections with context snippets, recovery copies, and a writing guide. Type words to narrow commands, use arrows to choose, then Enter. Standard text selection, undo, and redo are provided by the editor. Clipboard copy uses OSC 52 and depends on your terminal's permissions and support.
 
 ## Markdown editing
 
@@ -182,7 +183,7 @@ shell captures or external changes while retaining the current editor buffer.
 
 ![Find within a note](docs/find.svg)
 
-Inserted links use `[[stable-id|Readable title]]`. Renaming a heading does not break these links. Manually entered `[[Exact title]]` links also work, but ambiguous titles can match several notes. Use **Follow a link in this note** and **Open a backlink** in the palette.
+Inserted links use `[[stable-id|Readable title]]`. Renaming a heading does not break these links. Manually entered `[[Exact title]]` links also work, but ambiguous titles can match several notes. **Alt+K** (or **Show connections**) lists incoming and outgoing notes with the line that contains each link. **Follow a link** opens the `[[link]]` under the cursor; a missing target can create a note. Click a link in preview, or Ctrl+click one in the editor. `[[links]]` inside fenced code or code spans are examples, not connections. `jotline backlinks NOTE` prints the same graph for scripts.
 
 ## Use it from your shell
 
@@ -198,6 +199,7 @@ jotline export NOTE_ID > note.md
 jotline export last > note.md
 jotline export last --output plan.docx
 jotline tasks
+jotline backlinks last
 jotline path
 jotline --vault ~/Notes/Jotline
 ```
@@ -640,8 +642,8 @@ detection. Recipes execute only these built-in steps; there is no shell evaluati
 Version 0.9.3 is an early release. It offers Markdown source editing, rendered
 preview, configurable local actions, and guided import/recovery workflows. See
 [CHANGELOG.md](CHANGELOG.md), [ROADMAP.md](ROADMAP.md), and the
-[quality backlog](docs/quality-backlog.md) for the connect-loop gaps (backlinks
-are the recommended next slice). Full Vim emulation,
+[quality backlog](docs/quality-backlog.md) for remaining first-hour and
+search gaps. Full Vim emulation,
 cloud sync, plugins, dictation and system-wide capture hotkeys remain future work.
 Automated cross-platform checks and a POSIX terminal smoke test complement the
 [native terminal and accessibility checklist](docs/terminal-testing.md);

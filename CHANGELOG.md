@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Connections are a first-class loop: Alt+K (or Ctrl+P → Show connections)
+  lists incoming and outgoing notes with the line that contains each link.
+  Follow opens the `[[link]]` under the cursor; a missing target can create a
+  note. Click a link in preview, or Ctrl+click one in the editor. Compact
+  terminals keep `←N →N` on the status line when the connections bar is hidden.
+  `jotline backlinks NOTE [--json]` prints the same graph. Wiki links inside
+  fenced code or inline code spans no longer count as connections.
+
 - Settings opens with Ctrl+, so it works on Mac keyboards that do not send
   F-keys without Fn. F1 still opens Settings where function keys work.
 - On macOS, import and recipe files under `/tmp` or `$TMPDIR` (`/var/folders`)
