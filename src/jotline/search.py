@@ -2,12 +2,22 @@
 from collections.abc import Callable
 from datetime import date
 import shlex
+from typing import Protocol
 
 DATE_FIELDS = ('created-after', 'created-before', 'updated-after', 'updated-before')
 FIELDS = ('tag', 'title', *DATE_FIELDS)
 
 
-def compile_query(query: str) -> Callable[[object], bool]:
+class NoteQuery(Protocol):
+    id: str
+    body: str
+    title: str
+    tags: set[str]
+    created: str
+    updated: str
+
+
+def compile_query(query: str) -> Callable[[NoteQuery], bool]:
     """A note predicate for a query of words, #tags, field:value terms and -exclusions."""
     try:
         terms = shlex.split(query.casefold())

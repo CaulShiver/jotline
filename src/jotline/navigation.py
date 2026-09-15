@@ -4,9 +4,9 @@ from dataclasses import replace
 from textual import on
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
-from .modal import Modal
 from textual.widgets import Button, Input, Label, Select, Static, TextArea
 
+from .modal import Modal, Palette
 from .settings import SORT_ORDERS, THEMES, VIEW_COLLECTIONS
 from .store import validate_workspace
 
@@ -101,9 +101,15 @@ class Walkthrough(Modal[None]):
         self.app.query_one('#editor', TextArea).focus()
 
 
-class NavigationMixin:
+class Views:
+    """Saved-view ownership. Bound onto Jotline; not inherited."""
+
     def navigation_commands(self, Command):
         return [Command('collections', 'Browse collections', self.browse_collections),
+                Command('save-view', 'Save current search as a view', self.save_view_prompt),
+                Command('views', 'Open saved view', self.choose_view),
+                Command('delete-view', 'Delete saved view', lambda: self.choose_view(delete=True)),
+                Command('clear-view', 'Clear view and search', self.clear_view),
                 Command('manage-views', 'Manage saved views · edit, rename, duplicate', self.manage_views),
                 Command('filters', 'Edit search filters and sort', self.edit_filters),
                 Command('update-view', 'Update active saved view from current filters', self.update_active_view),
@@ -114,10 +120,22 @@ class NavigationMixin:
                     collection=self.collection, sort=self.view_sort or self.settings.sort_order, theme=self.theme)
 
     def browse_collections(self):
-        from .app import Palette
         self.push_screen(Palette([(c, c.title()) for c in VIEW_COLLECTIONS],
                                  'Collections · choose where to look'),
                          lambda c: self.show_collection(c) if c else None)
+
+    def save_view(self, name):
+        """Save the current filters under ``name`` without opening the view form."""
+        if not name:
+            return
+        try:
+            validate_workspace(name)
+            if name in self.settings.saved_views:
+                raise ValueError('View already exists; delete it first or choose another name')
+            self.replace_settings(saved_views={**self.settings.saved_views, name: self.current_view()})
+            self.notify('View saved')
+        except (ValueError, OSError) as error:
+            self.notify(str(error), severity='error')
 
     def save_view_prompt(self):
         self.push_screen(ViewEditor('', self.current_view(), self.settings), self.store_edited_view)
@@ -133,17 +151,14 @@ class NavigationMixin:
             if original:
                 views.pop(original, None)
             views[name] = view
-            settings = replace(self.settings, saved_views=views)
-            settings.save(self.settings_path)
+            self.replace_settings(saved_views=views)
         except (ValueError, OSError) as error:
             self.notify(str(error), severity='error')
             return
-        self.settings = settings
         self.apply_view(name)
         self.notify('View saved')
 
     def manage_views(self):
-        from .app import Palette
         choices = [(n, n) for n, v in self.settings.saved_views.items() if v['workspace'] == self.workspace]
         if not choices:
             self.save_view_prompt()
@@ -151,7 +166,6 @@ class NavigationMixin:
         self.push_screen(Palette(choices, 'Choose a view to edit, rename or duplicate'), self.view_operations)
 
     def view_operations(self, name):
-        from .app import Palette
         if name:
             self.push_screen(Palette([('edit', 'Edit or rename'), ('duplicate', 'Duplicate'),
                                       ('update', 'Replace with current filters'), ('delete', 'Delete view')], name),
@@ -175,20 +189,38 @@ class NavigationMixin:
         else:
             self.notify('Open a saved view first, or save your current filters as a new view.')
 
+    def choose_view(self, delete=False):
+        self.push_screen(Palette([(n, n) for n, view in self.settings.saved_views.items()
+                                  if view['workspace'] == self.workspace],
+                                 'Delete view' if delete else 'Open saved view'),
+                         lambda name: self.apply_view(name, delete=delete))
+
     def apply_view(self, name, delete=False):
-        if name and name in self.settings.saved_views:
-            if self.settings.saved_views[name]['workspace'] != self.workspace:
-                return
-            if not delete:
-                self.active_view = name
-            elif self.active_view == name:
+        if not name:
+            return
+        if delete:
+            if self.active_view == name:
                 self.active_view = None
-        super().apply_view(name, delete=delete)
+            self.delete_config('saved_views', name)
+            return
+        view = self.settings.saved_views[name]
+        if view['workspace'] != self.workspace:
+            return
+        self.active_view = name
+        self.collection, self.view_sort = view['collection'], view['sort']
+        self.theme = view['theme'] or self.settings.theme
+        self.query_one('#search', Input).value = view['query']
         self.refresh_notes()
+        self.set_focus_mode(False)
+        self.show_navigation()
 
     def clear_view(self):
         self.active_view = None
-        super().clear_view()
+        self.view_sort = None
+        self.theme = self.settings.theme
+        self.collection = 'all'
+        self.query_one('#search', Input).value = ''
+        self.refresh_notes()
 
     def edit_filters(self):
         self.push_screen(ViewEditor('', self.current_view(), self.settings, filters=True), self.apply_filters)

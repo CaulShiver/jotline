@@ -12,9 +12,9 @@ import time
 from uuid import uuid4
 import zipfile
 
-from .filesystem import fs as os
-from .store import (MAX_NOTE_BYTES, MAX_SETTINGS_BYTES, create_private_temp, read_regular_at, replace_at,
-                    unlink_quietly, validate_note_id)
+from .filesystem import create_private_temp, fs as os, read_regular_at, replace_at, unlink_quietly
+from .limits import MAX_NOTE_BYTES, MAX_SETTINGS_BYTES
+from .store import validate_note_id
 
 HISTORY_LIMIT = 30
 BACKUP_LIMIT = 7

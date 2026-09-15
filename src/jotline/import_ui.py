@@ -1,13 +1,14 @@
 """Import preview and app integration for safe recovery and migration."""
 from pathlib import Path
+
+from rich.text import Text
 from textual import on
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
-from .modal import Modal
-from textual.widgets import Button, Input, Label, Static
-from rich.text import Text
+from textual.widgets import Button, Label, Static
 
 from .importing import preview_import, apply_import
+from .modal import Modal, TextPrompt
 from .recovery_ui import RecoveryScreen
 
 
@@ -47,7 +48,8 @@ class ImportPreviewScreen(Modal[bool]):
         self.dismiss(False)
 
 
-class RecoveryImportMixin:
+class RecoveryImport:
+    """Conflict recovery and library import. Bound onto Jotline; not inherited."""
     def show_recovery_dialog(self):
         if self._recovery_dialog_open:
             return
@@ -89,7 +91,6 @@ class RecoveryImportMixin:
         self.push_screen(RecoveryScreen(self.current.body, external, error), resolve)
 
     def import_library(self):
-        from .app import TextPrompt
         def choose_path(value):
             if not value:
                 return

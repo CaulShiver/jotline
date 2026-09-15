@@ -2,7 +2,8 @@
 from dataclasses import replace
 import re
 
-from .store import MAX_NOTE_BYTES, validate_workspace
+from .limits import MAX_NOTE_BYTES
+from .store import validate_workspace
 from .templates import Templates
 
 

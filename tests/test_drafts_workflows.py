@@ -266,6 +266,6 @@ async def test_replace_all_rejects_oversized_output_before_editing(tmp_path, mon
         await pilot.pause()
         app.screen.query_one('#find-query', Input).value = 'a'
         app.screen.query_one('#replace-value', Input).value = 'long'
-        monkeypatch.setattr(module, 'EDIT_LIMIT_BYTES', 4)
+        monkeypatch.setattr('jotline.screens.EDIT_LIMIT_BYTES', 4)
         app.screen.replace_matches(all_matches=True)
         assert editor.text == 'aaaa'

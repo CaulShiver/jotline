@@ -20,8 +20,9 @@ from textual.theme import Theme
 from textual.widgets import TextArea
 from textual.widgets.text_area import Edit, TextAreaTheme
 
+from .limits import EDIT_LIMIT_BYTES
 from .store import LINK as WIKI, TAG
-from .tasks import CODE_SPAN, FENCE, fenced_rows
+from .tasks import CODE_SPAN, FENCE, TASK, closes_fence, fenced_rows, set_done
 
 # Above this size the editor stays plain so typing never waits on highlighting.
 HIGHLIGHT_MAX_CHARS = 512 * 1024
@@ -613,3 +614,237 @@ class MarkdownEditor(TextArea):
                         self._replace_via_keyboard("\n" + prefix, (row, column), (row, column))
                     return
         await super()._on_key(event)
+
+    def char_offset(self, location: tuple[int, int], text: str | None = None) -> int:
+        """Character offset in the editor's text for a (row, column) location."""
+        row, column = location
+        text = self.text if text is None else text
+        newline = self.document.newline
+        lines = text.split(newline)
+        return sum(len(line) + len(newline) for line in lines[:row]) + column
+
+    def location_at(self, offset: int, text: str | None = None) -> tuple[int, int]:
+        text = self.text if text is None else text
+        newline = self.document.newline
+        before = text[:offset]
+        row = before.count(newline)
+        return row, len(before.rsplit(newline, 1)[-1])
+
+    def insert_checked(self, body: str, limit: int = EDIT_LIMIT_BYTES) -> bool:
+        """Replace the selection, or insert at the cursor, as one undo step within the size limit."""
+        text = self.text
+        start, end = sorted((self.selection.start, self.selection.end))
+        begin, finish = self.char_offset(start, text), self.char_offset(end, text)
+        result_bytes = (len(text[:begin].encode("utf-8")) + len(body.encode("utf-8"))
+                        + len(text[finish:].encode("utf-8")))
+        if result_bytes > limit:
+            return False
+        self.history.checkpoint()
+        self.replace(body, start, end)
+        self.move_cursor(self.location_at(begin + len(body), self.text))
+        self.history.checkpoint()
+        return True
+
+    def replace_checked(self, body: str, limit: int = EDIT_LIMIT_BYTES) -> bool:
+        if len(body.encode("utf-8")) > limit:
+            return False
+        position = self.cursor_location
+        self.history.checkpoint()
+        self.replace(body, (0, 0), self.location_at(len(self.text), self.text))
+        self.history.checkpoint()
+        self.move_cursor(position)
+        return True
+
+    def select_match(self, query: str, *, reverse: bool = False,
+                     anchor: int | None = None, case_sensitive: bool = False) -> tuple[int, int] | None:
+        text = self.text
+        if not query:
+            return None
+        if anchor is None:
+            start, end = sorted((self.selection.start, self.selection.end))
+            location = start if reverse else end
+            anchor = self.char_offset(location, text)
+        first = last = candidate = None
+        first_ordinal = last_ordinal = candidate_ordinal = 0
+        total = 0
+        for total, match in enumerate(re.finditer(re.escape(query), text, 0 if case_sensitive else re.IGNORECASE), start=1):
+            if first is None:
+                first, first_ordinal = match, total
+            last, last_ordinal = match, total
+            if (reverse and match.start() < anchor) or (not reverse and match.start() >= anchor):
+                if reverse:
+                    candidate, candidate_ordinal = match, total
+                elif candidate is None:
+                    candidate, candidate_ordinal = match, total
+        if first is None:
+            return None
+        if candidate is None:
+            match, ordinal = (last, last_ordinal) if reverse else (first, first_ordinal)
+        else:
+            match, ordinal = candidate, candidate_ordinal
+        start = self.location_at(match.start(), text)
+        end = self.location_at(match.end(), text)
+        self.move_cursor(start)
+        self.move_cursor(end, select=True, center=True)
+        return ordinal, total
+
+    def toggle_task_line(self) -> None:
+        """Check, uncheck, or create a task on the current line using the canonical task pattern."""
+        row, _ = self.cursor_location
+        line = self.document.get_line(row)
+        if match := TASK.fullmatch(line):
+            updated, _ = set_done(line + "\n", 1, match["mark"] == " ")
+            self.replace(updated.splitlines()[0], (row, 0), (row, len(line)))
+            return
+        updated = toggle_lines([line], "task")[0]
+        self.replace(updated, (row, 0), (row, len(line)))
+
+    BLOCK_STYLES = {"heading": "h2", "list": "bullet", "numbered": "numbered", "task": "task", "quote": "quote",
+                    **{f"h{level}": f"h{level}" for level in range(1, 7)}}
+    WRAP_MARKERS = {"bold": "**", "italic": "*", "strike": "~~", "code": "`"}
+
+    def apply_format(self, style: str) -> str | None:
+        start, end = sorted((self.selection.start, self.selection.end))
+        self.history.checkpoint()
+        result = None
+        if style in self.BLOCK_STYLES:
+            self.transform_rows(start, end, lambda lines: toggle_lines(lines, self.BLOCK_STYLES[style]))
+        elif style in ("indent", "outdent"):
+            self.transform_rows(start, end, lambda lines: indent_lines(lines, outdent=style == "outdent"))
+        elif style in self.WRAP_MARKERS:
+            self.wrap_selection(style, start, end)
+        elif style in ("link", "image"):
+            self.insert_link(style == "image", start, end)
+        elif style == "codeblock":
+            self.format_code_block(start, end)
+        elif style == "rule":
+            self.insert_rule(end[0])
+        elif style == "table":
+            result = self.format_table_at_cursor()
+        self.history.checkpoint()
+        return result
+
+    def selected_rows(self, start: tuple[int, int], end: tuple[int, int]) -> tuple[int, int]:
+        first, last = start[0], end[0]
+        if end[1] == 0 and last > first:
+            last -= 1
+        return first, last
+
+    def transform_rows(self, start: tuple[int, int], end: tuple[int, int],
+                       transform) -> None:
+        first, last = self.selected_rows(start, end)
+        lines = self.document.lines[first:last + 1]
+        updated = transform(lines)
+        self.replace("\n".join(updated), (first, 0), (last, len(lines[-1])))
+
+        def shifted(location: tuple[int, int]) -> tuple[int, int]:
+            row, column = location
+            if first <= row <= last:
+                index = row - first
+                column = min(max(0, column + len(updated[index]) - len(lines[index])), len(updated[index]))
+            return row, column
+
+        self.move_cursor(shifted(start))
+        if start != end:
+            self.move_cursor(shifted(end), select=True)
+
+    def select_offsets(self, begin: int, finish: int) -> None:
+        text = self.text
+        self.move_cursor(self.location_at(begin, text))
+        self.move_cursor(self.location_at(finish, text), select=True)
+
+    def wrap_selection(self, style: str, start: tuple[int, int], end: tuple[int, int]) -> None:
+        text = self.text
+        begin, finish = self.char_offset(start, text), self.char_offset(end, text)
+        body = text[begin:finish]
+        marker = self.WRAP_MARKERS[style]
+        if body and (unwrapped := unwrap_span(style, text, begin, finish)):
+            outer_begin, outer_finish, inner = unwrapped
+            self.replace(inner, self.location_at(outer_begin, text), self.location_at(outer_finish, text))
+            self.select_offsets(outer_begin, outer_begin + len(inner))
+            return
+        body = body or "text"
+        padding = ""
+        if style == "code":
+            marker = "`" * (max((len(m[0]) for m in re.finditer(r"`+", body)), default=0) + 1)
+            padding = " " if body.startswith("`") or body.endswith("`") else ""
+        self.replace(marker + padding + body + padding + marker, start, end)
+        inner = begin + len(marker + padding)
+        self.select_offsets(inner, inner + len(body))
+
+    def insert_link(self, image: bool, start: tuple[int, int], end: tuple[int, int]) -> None:
+        text = self.text
+        begin = self.char_offset(start, text)
+        body = self.selected_text
+        bang = "!" if image else ""
+        url = body[1:-1] if body[:1] == "<" and body[-1:] == ">" else body
+        if re.fullmatch(r"(?:https?|mailto):\S+", url):
+            label = "alt text" if image else "text"
+            self.replace(f"{bang}[{label}]({url})", start, end)
+            self.select_offsets(begin + len(bang) + 1, begin + len(bang) + 1 + len(label))
+            return
+        label = " ".join(body.splitlines()) or ("alt text" if image else "text")
+        target = "path" if image else "url"
+        self.replace(f"{bang}[{label}]({target})", start, end)
+        target_start = begin + len(bang) + len(label) + 3
+        self.select_offsets(target_start, target_start + len(target))
+
+    def insert_rule(self, row: int) -> None:
+        lines = self.document.lines
+        line = lines[row]
+        below_blank = row + 1 < len(lines) and not lines[row + 1].strip()
+        if line.strip():
+            self.insert("\n\n---" + ("" if below_blank else "\n"), (row, len(line)))
+            rule_row = row + 2
+        else:
+            above_blank = row == 0 or not lines[row - 1].strip()
+            self.replace(("" if above_blank else "\n") + "---" + ("" if below_blank else "\n"),
+                         (row, 0), (row, len(line)))
+            rule_row = row + (0 if above_blank else 1)
+        self.move_cursor((rule_row + 1, 0))
+
+    def format_code_block(self, start: tuple[int, int], end: tuple[int, int]) -> None:
+        rows = self.document.lines
+        first, last = self.selected_rows(start, end)
+        opener = FENCE.fullmatch(rows[first])
+        if (end[1] == 0 and end[0] > first and opener and closes_fence(rows[end[0]], opener)
+                and not any(closes_fence(rows[row], opener) for row in range(first + 1, end[0]))):
+            last = end[0]
+        lines = rows[first:last + 1]
+        if last > first and opener and closes_fence(lines[-1], opener):
+            inner = lines[1:-1]
+            self.replace("\n".join(inner), (first, 0), (last, len(lines[-1])))
+            self.move_cursor((first, 0))
+            if inner:
+                self.move_cursor((first + len(inner) - 1, len(inner[-1])), select=True)
+            return
+        if start == end and not lines[0].strip():
+            self.replace("```\n\n```", (first, 0), (first, len(lines[0])))
+            self.move_cursor((first + 1, 0))
+            return
+        fence = fence_for("\n".join(lines))
+        self.replace("\n".join([fence, *lines, fence]), (first, 0), (last, len(lines[-1])))
+        self.move_cursor((first + 1, 0))
+        self.move_cursor((last + 1, len(lines[-1])), select=True)
+
+    def format_table_at_cursor(self) -> str | None:
+        row, column = self.cursor_location
+        lines = self.document.lines
+        if bounds := table_bounds(lines, row):
+            first, last = bounds
+            original = lines[first:last + 1]
+            tidy = format_table(original)
+            self.replace("\n".join(tidy), (first, 0), (last, len(original[-1])))
+            self.move_cursor((row, min(column, len(tidy[row - first]))))
+            return "tidied"
+        line = lines[row]
+        template = "\n".join(TABLE_TEMPLATE)
+        if line.strip():
+            self.insert("\n\n" + template + "\n", (row, len(line)))
+            top = row + 2
+        else:
+            self.replace(template, (row, 0), (row, len(line)))
+            top = row
+        self.move_cursor((top, 2))
+        self.move_cursor((top, 8), select=True)
+        return None

@@ -9,9 +9,9 @@ import re
 import stat
 from uuid import UUID
 
-from .filesystem import fs
-from .store import (COLLECTIONS, MAX_NOTE_BYTES, Note, Vault, decode_problem, pin_ancestors, read_regular_file,
-                    tagged_body, validate_workspace)
+from .filesystem import fs, pin_ancestors, read_regular_file
+from .limits import MAX_NOTE_BYTES
+from .store import COLLECTIONS, Note, Vault, decode_problem, tagged_body, validate_workspace
 
 MAX_IMPORT_BYTES = 32 * 1024 * 1024
 MAX_IMPORT_ENTRIES = 1000

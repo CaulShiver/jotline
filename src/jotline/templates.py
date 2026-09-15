@@ -7,9 +7,9 @@ from pathlib import Path
 import re
 import stat
 
-from .filesystem import fs as os
-from .store import (MAX_NOTE_BYTES, create_private_temp, read_regular_at,
-                    validate_workspace, vault_lock)
+from .filesystem import create_private_temp, fs as os, read_regular_at, vault_lock
+from .limits import MAX_NOTE_BYTES
+from .store import validate_workspace
 
 BUILTIN_TEMPLATES = {
     "meeting": "# Meeting — {{date}}\n\n## Attendees\n\n## Agenda\n\n- \n\n## Notes\n\n## Actions\n\n- [ ] \n",
@@ -150,3 +150,89 @@ class Templates:
                 raise ValueError("Expanded template exceeds the note size limit")
             return ''.join(pieces) + tail
         return expand(source, ())
+
+
+GUIDE = """# A little room to think
+
+Capture first. Press Ctrl+N and write without choosing a folder or title.
+The first line becomes the title. Your words save automatically.
+
+## A simple rhythm
+- Capture loose thoughts in the inbox.
+- Ctrl+D opens today's log: observations, decisions, and next steps.
+- Keep a useful idea in its own note. Ctrl+P → Insert note link connects it.
+- Review the inbox regularly. Move useful notes to projects, areas, or resources.
+- Archive what is finished. Trash is reversible; move a note back to restore it.
+
+## Make it yours
+Ctrl+, opens Settings for themes, editor, layout, keyboard shortcuts, and daily templates.
+Hotkey changes apply on Save. Ctrl+, and Esc stay fixed; Reset hotkeys restores defaults.
+Preferences are saved for this vault.
+
+## Writing
+Use Markdown: # headings, **bold**, *italic*, ~~strikethrough~~, `code`, - lists,
+1. numbered lists, - [ ] tasks, > quotes, tables, and fenced code. The editor
+colours Markdown as you type.
+Enter continues a bullet, numbered, task, or quote line. Enter on an empty item ends it.
+Select text, then Ctrl+P → Format bold, italic, strikethrough, inline code, or link.
+Without a selection, a selected placeholder is inserted. Run a format again to remove it.
+Headings (levels 1–6), bullet, numbered and task lists, blockquotes, code blocks,
+and indent or outdent apply to the current line or selected lines. Undo works normally.
+Ctrl+P → Format table inserts a table, or lines up the columns of the table under the cursor.
+Ctrl+P → Preview rendered Markdown displays your current text; Esc returns to editing.
+Ctrl+P → Toggle side-by-side Markdown preview keeps a live preview next to the editor.
+Ctrl+P → Jump to heading moves through a long note.
+Add #tags anywhere; search #tag to find exact tag matches.
+Ctrl+T browses workspace tags and counts. Ctrl+P → Add tags appends tags.
+Edit or remove inline tags directly in the note; no separate tag database is needed.
+
+## Workspaces
+Ctrl+W switches workspaces or creates one, such as work or personal.
+Ctrl+P → Move note to workspace moves a regular note without changing its file ID.
+Each workspace has its own daily logs, collections, search results, and links.
+Existing notes are in default. Workspace names use lowercase letters, numbers, - or _.
+All Markdown stays in the same vault folder; workspace is saved in note metadata.
+Appearance and editor settings are shared across this vault.
+
+## Navigation
+Ctrl+P → Toggle task checks or unchecks the current line.
+Ctrl+B hides the sidebar. Ctrl+O finds a note by title.
+Ctrl+F searches this workspace (except trash). Multiple words narrow results.
+Ctrl+P → Follow a link or Open a backlink moves between connected notes.
+Links inserted by Jotline use stable IDs, so changing titles is safe.
+
+## Templates and history
+Ctrl+P → New note from template starts a meeting, project, journal, or saved template.
+Save this note as a template keeps a reusable copy; use {{date}}, {{time}}, {{workspace}}.
+Copy template source to new note preserves placeholders for customization.
+Ctrl+, → Keyboard shortcuts includes optional Markdown formatting and preview keys.
+Ctrl+P → History of this note lets you inspect and restore a saved version as a new note.
+Browse saved note history includes externally deleted notes in this workspace.
+Back up vault now saves a local ZIP of notes, settings, and templates.
+
+## Your files
+Everything stays in your local vault as readable Markdown.
+Use `jotline capture` to send text from the shell, and `jotline export` to
+write a note without metadata. No account, telemetry, or cloud service.
+Ctrl+Q flushes edits before quitting. Use it before closing the terminal.
+"""
+
+REVIEW = """# Weekly review
+
+## Clear the inbox
+- [ ] Read unprocessed captures (Ctrl+P → Show inbox).
+- [ ] Turn actionable thoughts into a concrete next step.
+- [ ] Move active work to projects and ongoing responsibilities to areas.
+- [ ] Keep reference material in resources; archive what is finished.
+
+## Connect and reflect
+- [ ] Revisit this week's daily logs.
+- [ ] Extract useful ideas into their own notes and link them.
+- [ ] Review active projects: what is the next small action?
+- [ ] Choose what deserves attention next week.
+
+## What I learned
+
+## Next week
+
+"""
