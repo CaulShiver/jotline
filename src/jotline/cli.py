@@ -32,6 +32,7 @@ from .cli_io import (
 )
 from .completion import SHELLS, script
 from .crypto import check_passphrase
+from .desktop import DESKTOP_ACTIONS, RECIPE_NAMES, run_desktop_command
 from .export import BINARY, FORMAT_NAMES, FORMATS, export_bytes, format_for, write_export
 from .importing import apply_import, preview_import
 from .limits import MAX_NOTE_BYTES
@@ -302,6 +303,17 @@ def build_parser() -> argparse.ArgumentParser:
     add_encoding_options(importing)
     completion = sub.add_parser("completion", help="Print a shell completion script")
     completion.add_argument("shell", choices=SHELLS)
+    desktop = sub.add_parser("desktop", help="Install a capture launcher or print a desktop recipe")
+    desktop.add_argument("action", nargs="?", choices=DESKTOP_ACTIONS, default="status",
+                         help="install, uninstall, status, recipe, or launch")
+    desktop.add_argument("recipe", nargs="?", choices=RECIPE_NAMES,
+                         help="Recipe name when printing a snippet")
+    desktop.add_argument("--force", action="store_true",
+                         help="Replace an existing capture desktop entry")
+    desktop.add_argument("--daily", action="store_true",
+                         help="With launch, append to today's log")
+    desktop.add_argument("--output", type=Path, help="Write a recipe to this file")
+    desktop.add_argument("--json", action="store_true", help="Print status as JSON")
     return parser
 
 
@@ -679,6 +691,9 @@ def main() -> None:
             return
         if args.command == "completion":
             sys.stdout.write(script(args.shell, parser))
+            return
+        if args.command == "desktop":
+            run_desktop_command(args)
             return
         run = prepare(parser, args)
         COMMANDS[args.command](run)

@@ -201,6 +201,8 @@ jotline capture --daily "- [ ] Send the outline"
 jotline capture --daily --date yesterday "A thought from last night"
 jotline daily
 jotline daily --date 2026-09-14
+jotline desktop install
+jotline desktop recipe hyprland
 jotline list '#work'
 jotline stats
 jotline stats --json
@@ -271,9 +273,16 @@ files or contacts a server. In the app, use **Ctrl+P → Export note as…**.
 ### Quick capture from a hotkey
 
 `jotline capture` with no text opens a small editor: Ctrl+S saves and Esc
-cancels. Bind it to a global key to capture from anywhere;
-[docs/quick-capture.md](docs/quick-capture.md) has recipes for Omarchy/Hyprland,
-GNOME and KDE.
+cancels. On Linux, install a capture launcher and bind one command:
+
+```sh
+jotline desktop install
+jotline desktop launch
+```
+
+`jotline desktop recipe omarchy`, `hyprland`, `gnome`, `kde`, or `pipe` prints a
+filled-in snippet for that desktop. Pipe-in stays the integration when a
+launcher cannot open a terminal. See [docs/quick-capture.md](docs/quick-capture.md).
 
 ### Encrypted notes
 
@@ -666,7 +675,7 @@ Version 0.9.5 is an early release. It offers a one-liner install on Linux, macOS
 and Windows, Markdown source editing, rendered preview, configurable local
 actions, and guided import/recovery workflows. See
 [CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,
-cloud sync, plugins, dictation and system-wide capture hotkeys remain future work.
+cloud sync, plugins and dictation remain future work.
 Automated cross-platform checks and a POSIX terminal smoke test complement the
 [native terminal and accessibility checklist](docs/terminal-testing.md);
 clipboard, IME and screen-reader compatibility still needs hands-on verification.

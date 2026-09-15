@@ -1,0 +1,12 @@
+# GNOME: bind Super+Shift+J to Jotline capture.
+# 1. Once: jotline desktop install
+# 2. Settings → Keyboard → Keyboard Shortcuts → Custom Shortcuts → +
+#    Name:     Jotline Capture
+#    Command:  __JOTLINE__ desktop launch
+#    Shortcut: Super+Shift+J
+#
+# The same command works without the desktop entry. After install you can
+# also launch the app id: gtk-launch org.jotline.capture
+#
+# Fallback if you want a named GNOME terminal window:
+# gnome-terminal --title=Jotline -- __JOTLINE__ capture

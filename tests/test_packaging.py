@@ -1,4 +1,5 @@
 """Packaging metadata regressions."""
+from importlib.resources import files
 from pathlib import Path
 import re
 import tomllib
@@ -37,6 +38,19 @@ def test_ci_gives_pytest_eight_minutes():
 
     assert "      - name: Run tests\n        timeout-minutes: 8\n" in workflow
     assert "timeout-minutes: 15" in workflow
+
+
+def test_wheel_package_includes_desktop_capture_snippets():
+    root = files("jotline.desktop_data")
+    for name in (
+        "org.jotline.capture.desktop",
+        "omarchy.lua",
+        "hyprland.conf",
+        "gnome.txt",
+        "kde.txt",
+        "pipe.txt",
+    ):
+        assert (root / name).is_file(), name
 
 
 def test_install_docs_lead_with_a_one_liner_and_name_the_current_wheel_for_checksums():

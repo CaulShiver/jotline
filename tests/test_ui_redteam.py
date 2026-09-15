@@ -145,6 +145,7 @@ async def test_refresh_deleted_current_note_requires_recovery(tmp_path):
     vault.save(note)
     app = Jotline(vault)
     async with app.run_test(size=(100, 30)) as pilot:
+        app.autosave_timer.stop()
         app.load_id(note.id)
         vault.file(note.id).unlink()
 

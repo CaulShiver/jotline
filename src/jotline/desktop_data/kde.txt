@@ -1,0 +1,10 @@
+# KDE Plasma: bind Meta+Shift+J to Jotline capture.
+# 1. Once: jotline desktop install
+# 2. System Settings → Keyboard → Shortcuts → Custom Shortcuts
+#    (Plasma 6: System Settings → Shortcuts → Add New → Command)
+#    Name:    Jotline Capture
+#    Command: __JOTLINE__ desktop launch
+#    Trigger: Meta+Shift+J
+#
+# Fallback:
+# konsole --name org.jotline.capture -e __JOTLINE__ capture
