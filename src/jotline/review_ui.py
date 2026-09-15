@@ -12,12 +12,38 @@ from .tasks import gather
 
 class ReviewMixin:
     def review_commands(self, Command):
-        return [Command(key, label, handler) for key, label, handler in [
+        return [Command(*item) for item in [
             ("tasks", "Open tasks across notes", self.show_tasks),
+            ("process-inbox", "Process next inbox note", self.action_process_inbox, "process_inbox"),
             ("export-html", "Export note as HTML…", lambda: self.prompt_export("html")),
             ("export-docx", "Export note as Word document…", lambda: self.prompt_export("docx")),
             ("export-pdf", "Export note as PDF…", lambda: self.prompt_export("pdf")),
         ]]
+
+    def action_process_inbox(self) -> None:
+        if not self.save_current(explicit=True):
+            return
+        queue = self.vault.inbox_captures(self.workspace)
+        if not queue:
+            self.notify("Inbox is clear. Captures you file leave the inbox.")
+            return
+        target = queue[0]
+        self.collection = "inbox"
+        if self.current.id != target.id:
+            self.load_id(target.id)
+        remaining = len(self.vault.inbox_captures(self.workspace))
+        self.refresh_notes()
+        self.notify(f"Process this capture · {remaining} in inbox")
+
+    def open_next_inbox_capture(self) -> None:
+        queue = self.vault.inbox_captures(self.workspace)
+        if not queue:
+            self.notify("Inbox is clear")
+            return
+        self.collection = "inbox"
+        self.load_id(queue[0].id)
+        self.refresh_notes()
+        self.notify(f"Next inbox capture · {len(queue)} remaining")
 
     def show_tasks(self) -> None:
         from .app import Palette

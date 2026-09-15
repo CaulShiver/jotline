@@ -30,6 +30,8 @@ def value_kind(action: argparse.Action) -> str:
         return "words:" + " ".join(action.choices)
     if action.dest == "encoding":
         return "words:" + " ".join(ENCODINGS)
+    if action.dest == "date":
+        return "words:today yesterday"
     return OPTION_KINDS.get(action.dest, "none")
 
 

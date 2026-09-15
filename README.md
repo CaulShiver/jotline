@@ -46,9 +46,9 @@ uv run pytest
 ## The everyday loop
 
 1. **Capture.** `Ctrl+N` starts a thought. No required title, folder, or tags.
-2. **Log.** `Ctrl+D` opens today's page. Mix observations with Markdown tasks: `- [ ] Follow up`.
-3. **Connect.** Keep durable ideas in separate notes. Insert links and follow backlinks through the command palette.
-4. **Review.** Run **Start weekly review** for a checklist. Move notes into projects, areas, resources, or archive when useful.
+2. **Log.** `Ctrl+D` opens today's page. Mix observations with Markdown tasks: `- [ ] Follow up`. Previous/next daily log and **Open daily log by date** in the palette flip days; missing days use your daily template.
+3. **Connect.** Keep durable ideas in their own notes. Select a passage and run **Extract selection to new note** to leave a `[[link]]` behind.
+4. **Review.** **Process next inbox note** opens the oldest capture (daily logs stay out of that queue). File it with Move to collection; the next capture opens. **Start weekly review** is a checklist when you want one.
 
 These are optional practices, not a compulsory system. An inbox and search are enough to start.
 
@@ -79,7 +79,7 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 | `Tab` / `Shift+Tab` | Move between controls |
 | `Escape` | Close palette / return to writing |
 
-The palette also offers star, move, restore from trash, task toggle, link insertion/navigation, backlinks, recovery copies, and a writing guide. Type words to narrow commands, use arrows to choose, then Enter. Standard text selection, undo, and redo are provided by the editor. Clipboard copy uses OSC 52 and depends on your terminal's permissions and support.
+The palette also offers previous/next daily logs, opening a log by date, extracting a selection into a linked note, processing the next inbox capture, star, move, restore from trash, task toggle, link insertion/navigation, backlinks, recovery copies, and a writing guide. Type words to narrow commands, use arrows to choose, then Enter. Standard text selection, undo, and redo are provided by the editor. Clipboard copy uses OSC 52 and depends on your terminal's permissions and support. Previous daily, next daily, open-by-date, extract, and process-inbox start without shortcuts; assign them in **Ctrl+, → Keyboard shortcuts**.
 
 ## Markdown editing
 
@@ -190,7 +190,12 @@ Inserted links use `[[stable-id|Readable title]]`. Renaming a heading does not b
 jotline capture "A thought before I forget"
 printf 'Meeting notes\n\nNext step: draft the outline\n' | jotline capture
 jotline capture --daily "- [ ] Send the outline"
+jotline capture --daily --date yesterday "A thought from last night"
+jotline daily
+jotline daily --date 2026-09-14
 jotline list '#work'
+jotline stats
+jotline stats --json
 jotline doctor
 jotline doctor --json
 jotline import ~/Downloads/meeting.md
@@ -214,8 +219,9 @@ Captures, append/prepend and imports read UTF-8. For text in another encoding,
 pass `--encoding NAME` (for example `latin-1` or `cp1252`), or `--replace-invalid`
 to keep going and substitute the undecodable bytes.
 
-`list`, `tags`, `workspaces`, `actions`, `tasks` and `doctor` accept `--json` for
-scripts. Warnings still go to stderr, so stdout stays valid JSON.
+`list`, `tags`, `workspaces`, `actions`, `tasks`, `stats` and `doctor` accept `--json` for
+scripts. Warnings still go to stderr, so stdout stays valid JSON. `jotline stats`
+prints workspace counts (notes, inbox captures, open tasks, tags) without note bodies.
 
 ### Tasks across notes
 
@@ -370,7 +376,8 @@ escape terminal control characters.
 
 Open **Ctrl+, → Keyboard shortcuts**. Change shortcuts for new notes,
 tags, workspaces, commands, opening notes, daily logs, search, save, focus, and quit.
-Optional fields also support Markdown preview and formatting actions.
+Optional fields also support Markdown preview and formatting, previous/next daily
+log, open daily by date, extract selection, and process inbox.
 Use `ctrl+letter`, `alt+letter`, or `f2`–`f12` (for example `alt+n` or `f4`).
 Duplicate assignments and reserved editing/navigation keys are rejected.
 
@@ -531,6 +538,14 @@ The command palette now includes:
 - **Jump to heading**, **Previous note**, and **Recent notes:** move around
   Markdown headings and the notes visited this session. Returning to a note
   restores its cursor position; recent notes stay scoped to the workspace.
+- **Previous daily log**, **Next daily log**, and **Open daily log by date:**
+  move by calendar day. Dates are `YYYY-MM-DD`, `today`, or `yesterday`. A day
+  without a log is created from your daily template.
+- **Extract selection to new note:** saves the selected text as an inbox note
+  and leaves a `[[id|title]]` link. Undo reverses the replacement in the source.
+- **Process next inbox note:** opens the oldest inbox capture (not a daily log).
+  After **Move note to** a collection, the next capture opens. The status line
+  shows how many remain.
 - **Insert template at cursor** and **Insert note text at cursor:** replace the
   current selection, or insert at the cursor. Type `[[` for note-link suggestions
   or `;;` for template snippets; arrows and Enter choose, Escape cancels.

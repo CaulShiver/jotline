@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, replace
+from datetime import date, timedelta
 import re
 from typing import Callable
 
@@ -17,7 +18,8 @@ from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, 
 from textual.widgets.option_list import Option
 from rich.text import Text
 
-from .store import COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, tagged_body, validate_workspace
+from .store import (COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, daily_date_from_id,
+                    parse_calendar_date, tagged_body, validate_workspace)
 from .settings import Settings, HOTKEY_ACTIONS, VIEW_COLLECTIONS
 from .preferences import Preferences
 from .omarchy import OmarchySync
@@ -409,6 +411,8 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.compact_navigation = False
         self._shown_storage_warnings: set[str] = set()
         self._recovery_dialog_open = False
+        self._status_message = "Ready"
+        self.inbox_capture_count = 0
         self.recent_note_ids = []
         self.note_positions = {}
         # What the editor reports for the loaded note. Textual normalizes
@@ -471,8 +475,8 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.apply_settings(startup=True)
         self.omarchy_sync.start()
         self.update_responsive_layout()
-        self.status("Ready")
         self.refresh_notes()
+        self.status("Ready")
         self.autosave_timer = self.set_interval(self.settings.autosave_seconds, self.autosave)
         if self.initial_note is not None:
             self.collection = self.initial_note.collection
@@ -584,6 +588,8 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.notify('Settings saved. Startup choices apply next launch.')
 
     def refresh_notes(self) -> None:
+        self.inbox_capture_count = len(self.vault.inbox_captures(self.workspace))
+        self.status(self._status_message)
         try:
             notes = self.vault.search(self.query_one("#search", Input).value, self.collection, self.workspace)
         except ValueError as error:
@@ -770,8 +776,11 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         return True
 
     def status(self, message: str) -> None:
+        self._status_message = message
         tags = sorted(self.current.tags)[:5]
         details = f"{message}  ·  {len(self.current.body.split())} words"
+        if self.inbox_capture_count:
+            details += f"  ·  {self.inbox_capture_count} inbox"
         if not self.compact_layout:
             details += f"  ·  {self.current.collection}  ·  {self.workspace}"
             details += "  ·  encrypted" if self.current.encrypted else ""
@@ -864,17 +873,39 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             self.refresh_notes()
 
     def action_daily(self) -> None:
-        if self.save_current(explicit=True):
-            try:
-                note = self.vault.daily(self.settings.daily_template, self.workspace)
-            except (OSError, ValueError) as error:
-                self.notify(f"Could not open today's daily log: {error}", severity="error", timeout=10)
-                return
-            self.collection = note.collection
-            self.load(note)
-            self.refresh_notes()
-            editor = self.query_one("#editor", TextArea)
-            editor.move_cursor(editor.document.end)
+        self.open_daily(date.today())
+
+    def action_daily_previous(self) -> None:
+        self.open_daily((daily_date_from_id(self.current.id) or date.today()) - timedelta(days=1))
+
+    def action_daily_next(self) -> None:
+        self.open_daily((daily_date_from_id(self.current.id) or date.today()) + timedelta(days=1))
+
+    def action_daily_date(self) -> None:
+        self.push_screen(TextPrompt("Open daily log by date", "YYYY-MM-DD, today, or yesterday"),
+                         self.open_daily_from_prompt)
+
+    def open_daily_from_prompt(self, value: str | None) -> None:
+        if not value:
+            return
+        try:
+            self.open_daily(parse_calendar_date(value))
+        except ValueError as error:
+            self.notify(str(error), severity="error")
+
+    def open_daily(self, when: date) -> None:
+        if not self.save_current(explicit=True):
+            return
+        try:
+            note = self.vault.daily(self.settings.daily_template, self.workspace, when=when)
+        except (OSError, ValueError) as error:
+            self.notify(f"Could not open the {when.isoformat()} daily log: {error}", severity="error", timeout=10)
+            return
+        self.collection = note.collection
+        self.load(note)
+        self.refresh_notes()
+        editor = self.query_one("#editor", TextArea)
+        editor.move_cursor(editor.document.end)
 
     def action_search(self) -> None:
         self.collection = "all"
@@ -1477,6 +1508,9 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             Command("settings", "Settings · appearance, editor, hotkeys · Ctrl+,", self.action_settings),
             Command("new", "New thought", self.action_new, "new"),
             Command("daily", "Open today's daily log", self.action_daily, "daily"),
+            Command("daily-previous", "Previous daily log", self.action_daily_previous, "daily_previous"),
+            Command("daily-next", "Next daily log", self.action_daily_next, "daily_next"),
+            Command("daily-date", "Open daily log by date", self.action_daily_date, "daily_date"),
             Command("open", "Open a note", self.action_open_note, "open_note"),
             Command("focus", "Toggle focus mode", self.action_focus_mode, "focus_mode"),
             Command("find", "Find within current note", lambda: self.push_screen(FindInNote())),
@@ -1557,10 +1591,13 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.show_navigation()
 
     def move_to_collection(self, collection: str) -> None:
+        filing = (self.current.collection == "inbox" and not self.current.id.startswith("daily-")
+                  and collection != "inbox")
         if self.save_current():
             self.current.collection = collection
             self.dirty = True
-            self.save_current()
+            if self.save_current() and filing:
+                self.open_next_inbox_capture()
 
     def toggle_star(self) -> None:
         if self.save_current():
@@ -1611,8 +1648,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         def picked(note_id: str | None) -> None:
             if note_id and mode == "link":
                 note = next(note for note in notes if note.id == note_id)
-                label = note.title.replace("[", "").replace("]", "").replace("|", "")
-                self.query_one("#editor", TextArea).insert(f"[[{note.id}|{label}]]")
+                self.query_one("#editor", TextArea).insert(note.wiki_link())
                 self.query_one("#editor", TextArea).focus()
             elif note_id:
                 self.load_id(note_id)
@@ -1634,8 +1670,9 @@ The first line becomes the title. Your words save automatically.
 ## A simple rhythm
 - Capture loose thoughts in the inbox.
 - Ctrl+D opens today's log: observations, decisions, and next steps.
-- Keep a useful idea in its own note. Ctrl+P → Insert note link connects it.
-- Review the inbox regularly. Move useful notes to projects, areas, or resources.
+- Ctrl+P → Previous/next daily log, or Open daily log by date, moves through other days.
+- Keep a useful idea in its own note. Select it and Ctrl+P → Extract selection to new note.
+- Review the inbox with Ctrl+P → Process next inbox note. Move useful notes to projects, areas, or resources.
 - Archive what is finished. Trash is reversible; move a note back to restore it.
 
 ## Make it yours
@@ -1694,7 +1731,7 @@ Ctrl+Q flushes edits before quitting. Use it before closing the terminal.
 REVIEW = """# Weekly review
 
 ## Clear the inbox
-- [ ] Read unprocessed captures (Ctrl+P → Show inbox).
+- [ ] Read unprocessed captures (Ctrl+P → Process next inbox note).
 - [ ] Turn actionable thoughts into a concrete next step.
 - [ ] Move active work to projects and ongoing responsibilities to areas.
 - [ ] Keep reference material in resources; archive what is finished.

@@ -568,7 +568,7 @@ async def test_preview_refuses_block_heavy_notes(tmp_path):
 
 def test_read_only_commands_do_not_create_a_vault(tmp_path):
     missing = tmp_path / "typo"
-    for command in ("list", "doctor", "workspaces"):
+    for command in ("list", "doctor", "workspaces", "stats"):
         result = run_cli(missing, command)
         assert result.returncode == 1 and b"Vault does not exist" in result.stderr
         assert not missing.exists()

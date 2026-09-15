@@ -190,6 +190,46 @@ def test_tags_workspaces_and_actions_print_json(tmp_path):
     assert json.loads(run_cli(tmp_path, "actions", "--json").stdout) == [{"name": "shout", "steps": steps}]
 
 
+def test_stats_counts_without_note_bodies(tmp_path):
+    vault = Vault(tmp_path)
+    saved(vault, "# Plan\n\n- [ ] Next #work")
+    saved(vault, "Loose thought")
+    daily = vault.daily()
+    vault.save(daily)
+    starred = saved(vault, "Starred", starred=True)
+    data = json.loads(run_cli(tmp_path, "stats", "--json").stdout)
+    assert data["workspace"] == "default"
+    assert data["notes"] == 4
+    assert data["inbox"] == 4
+    assert data["inbox_captures"] == 3
+    assert data["daily_logs"] == 1
+    assert data["open_tasks"] == 1
+    assert data["tagged"] == 1
+    assert data["starred"] == 1
+    text = run_cli(tmp_path, "stats").stdout.decode()
+    assert f"inbox_captures\t3\n" in text
+    assert starred.body not in text and "Loose thought" not in text
+
+
+def test_capture_date_requires_daily_and_rejects_compact_dates(tmp_path):
+    missing = run_cli(tmp_path, "capture", "--date", "yesterday", "hi")
+    assert missing.returncode == 2
+    assert "--date is only used with --daily" in error(missing)
+    compact = run_cli(tmp_path, "capture", "--daily", "--date", "20260901", "hi")
+    assert compact.returncode == 2
+    assert "today, or yesterday" in error(compact)
+
+
+def test_daily_command_resolves_a_dated_log_without_launching(tmp_path):
+    from jotline.cli import build_parser, prepare
+    parser = build_parser()
+    args = parser.parse_args(["--vault", str(tmp_path), "daily", "--date", "2026-09-01"])
+    run = prepare(parser, args)
+    note = run.vault.daily(run.settings.daily_template, run.workspace, when=args.date)
+    assert note.id == "daily-2026-09-01"
+    assert "2026-09-01" in note.body
+
+
 # Shell completion ---------------------------------------------------------
 
 @pytest.fixture
@@ -223,6 +263,8 @@ def shell_words(line: str) -> list[str]:
 
 BASH_CASES = [
     ("jotline cap", {"capture"}),
+    ("jotline dai", {"daily"}),
+    ("jotline sta", {"stats"}),
     ("jotline --vault VAULT tag ab", {"abcd1234"}),
     ("jotline --vault VAULT tag abcd1234 wo", {"work"}),
     ("jotline --vault=VAULT export ", {"abcd1234", "last"}),
@@ -233,6 +275,8 @@ BASH_CASES = [
     ("jotline import --duplicates ", {"skip", "copy"}),
     ("jotline append --encoding latin", {"latin-1"}),
     ("jotline list --j", {"--json"}),
+    ("jotline capture --da", {"--daily", "--date"}),
+    ("jotline capture --date ", {"today", "yesterday"}),
     ("jotline completion ", {"bash", "zsh", "fish"}),
     ("jotline --vau", {"--vault"}),
 ]
@@ -293,6 +337,7 @@ FISH_CASES = [
     ("jotline import --duplicates c", {"copy"}),
     ("jotline append abcd --encoding latin", {"latin-1"}),
     ("jotline list --j", {"--json"}),
+    ("jotline capture --da", {"--daily", "--date"}),
     ("jotline completion f", {"fish"}),
 ]
 

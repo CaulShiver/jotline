@@ -6,7 +6,7 @@ editor instead of the full app:
 - **Ctrl+S** saves the text as a new note in your default collection and prints its ID.
 - **Esc** cancels. If you have typed something, press Esc twice so a stray key
   cannot throw it away. **Ctrl+Q** saves rather than discarding.
-- `jotline capture --daily` appends to today's log instead, and
+- `jotline capture --daily` appends to today's log instead, `jotline capture --daily --date yesterday` appends to another day, and
   `jotline --workspace work capture` captures into another workspace.
 
 Closing the window any other way discards the text.
