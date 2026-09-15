@@ -39,8 +39,6 @@ async def test_find_navigation_uses_document_order_for_backward_selection(tmp_pa
 
 
 async def test_rejected_single_replace_preserves_text_selection_and_status(tmp_path, monkeypatch):
-    import jotline.workflows as workflows
-
     app = Jotline(Vault(tmp_path))
     async with app.run_test() as pilot:
         app.autosave_timer.stop()
@@ -53,7 +51,7 @@ async def test_rejected_single_replace_preserves_text_selection_and_status(tmp_p
         app.screen.query_one('#replace-value', Input).value = 'much longer'
         await pilot.pause()
         before = editor.selection
-        monkeypatch.setattr(workflows, 'EDIT_LIMIT_BYTES', 7)
+        monkeypatch.setattr('jotline.screens.EDIT_LIMIT_BYTES', 7)
         app.screen.replace_matches()
         assert editor.text == 'cat cat'
         assert editor.selection == before

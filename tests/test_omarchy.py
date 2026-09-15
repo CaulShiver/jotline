@@ -92,7 +92,10 @@ async def test_live_desktop_change_preserves_editing_and_manual_theme(tmp_path, 
         assert editor._theme.selection_style.bgcolor == Color.parse('#2b2f37').rich_color
         palette.write_text(PALETTE.replace('#181a1f', '#f0f0f0').replace('"dark"', '"light"')
                            .replace('#eceff2', '#223344').replace('#2b2f37', '#cccccc'))
-        await pilot.pause(1.2)
+        for _ in range(20):
+            if app.get_css_variables()['background'] == '#F0F0F0':
+                break
+            await pilot.pause(0.2)
         assert app.get_css_variables()['background'] == '#F0F0F0'
         assert not app.current_theme.dark
         assert editor._theme.cursor_style.bgcolor == Color.parse('#223344').rich_color

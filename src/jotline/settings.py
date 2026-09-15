@@ -1,13 +1,21 @@
 """Validated per-vault preferences, stored separately from notes."""
+from __future__ import annotations
+
 from dataclasses import asdict, dataclass, field, fields
 import json
-import re
 from pathlib import Path
-import weakref
+import re
 
-from .filesystem import fs as os
-from .store import (COLLECTIONS, MAX_SETTINGS_BYTES, create_private_temp, read_regular_at,
-                    read_regular_file, replace_at, unlink_quietly, validate_workspace, vault_lock)
+from .actions import validate_actions
+from .filesystem import (
+    create_private_temp, fs as os, read_regular_at, read_regular_file, replace_at,
+    unlink_quietly, vault_lock,
+)
+from .history import stamp
+from .limits import MAX_SETTINGS_BYTES
+from .search import compile_query
+from .store import COLLECTIONS, validate_workspace
+
 
 THEMES = ('jotline', 'nord', 'gruvbox', 'catppuccin-mocha', 'dracula', 'tokyo-night',
           'solarized-dark', 'solarized-light', 'textual-light',
@@ -56,40 +64,55 @@ HOTKEY_ACTIONS = {
 # Preserve editing controls and terminal aliases for Tab, Enter and Backspace.
 RESERVED_HOTKEYS = {"ctrl+" + letter for letter in "acehijkmuvxyz"}
 
-# Persistence metadata deliberately lives outside the dataclass so it never
-# appears in asdict(), preferences controls, or the on-disk format.  Keeping a
-# few value snapshots also lets dataclasses.replace() and Preferences' rebuild
-# retain their nearest load baseline.
-_BASELINES: dict[Path, list[tuple[dict, dict | None]]] = {}
-_OBJECT_BASELINES: dict[int, tuple[weakref.ReferenceType, tuple[dict, dict | None]]] = {}
-_NO_BASELINE = object()
+
+@dataclass(frozen=True)
+class SavedView:
+    workspace: str
+    query: str
+    collection: str
+    sort: str
+    theme: str
+
+    def __getitem__(self, key: str):
+        if key not in {"workspace", "query", "collection", "sort", "theme"}:
+            raise KeyError(key)
+        return getattr(self, key)
+
+    @classmethod
+    def from_raw(cls, value: SavedView | dict) -> SavedView:
+        if isinstance(value, SavedView):
+            return value
+        if not isinstance(value, dict) or set(value) != {"workspace", "query", "collection", "sort", "theme"}:
+            raise ValueError("Invalid saved view")
+        return cls(**value)
 
 
-def _remember(path: Path, settings: "Settings", disk: dict | None) -> None:
-    values = asdict(settings)
-    key = path.absolute()
-    entries = _BASELINES.setdefault(key, [])
-    entry = (values, disk)
-    entries.append(entry)
-    del entries[:-16]
-    identity = id(settings)
-    _OBJECT_BASELINES[identity] = (weakref.ref(
-        settings, lambda reference, identity=identity: _OBJECT_BASELINES.pop(identity, None)), entry)
+@dataclass(frozen=True)
+class ActionStep:
+    type: str
+    value: str | None = None
+
+    def to_dict(self) -> dict:
+        payload = {"type": self.type}
+        if self.value is not None:
+            payload["value"] = self.value
+        return payload
+
+    @classmethod
+    def from_raw(cls, value: ActionStep | dict) -> ActionStep:
+        if isinstance(value, ActionStep):
+            return value
+        if not isinstance(value, dict) or not isinstance(value.get("type"), str):
+            raise ValueError("Unknown action step")
+        extra = set(value) - {"type", "value"}
+        if extra:
+            raise ValueError("Invalid action step fields")
+        return cls(value["type"], value["value"] if "value" in value else None)
 
 
-def _nearest_baseline(path: Path, settings: "Settings", desired: dict) -> tuple[dict, dict | None] | object:
-    exact = _OBJECT_BASELINES.get(id(settings))
-    if exact is not None and exact[0]() is settings:
-        return exact[1]
-    entries = _BASELINES.get(path.absolute(), [])
-    if not entries:
-        return _NO_BASELINE
-    if any(values == desired for values, _ in entries[:-1]) and entries[-1][0] != desired:
-        # A rebuilt dataclass that exactly returns to an older saved value is a
-        # normal explicit reversion; compare it with the most recent baseline.
-        return entries[-1]
-    # Otherwise the baseline whose values differ from the desired ones in the fewest fields.
-    return min(entries, key=lambda entry: sum(entry[0].get(key) != value for key, value in desired.items()))
+def action_dicts(actions: dict) -> dict[str, list[dict]]:
+    return {name: [step.to_dict() if isinstance(step, ActionStep) else dict(step) for step in steps]
+            for name, steps in actions.items()}
 
 
 @dataclass
@@ -113,31 +136,65 @@ class Settings:
     workspace_names: list[str] = field(default_factory=lambda: ["default"])
 
     hotkeys: dict[str, str] = field(default_factory=dict)
-    saved_views: dict[str, dict] = field(default_factory=dict)
-    actions: dict[str, list[dict]] = field(default_factory=dict)
+    saved_views: dict[str, SavedView] = field(default_factory=dict)
+    actions: dict[str, list[ActionStep]] = field(default_factory=dict)
+    # Last known published values for this instance. Copied by dataclasses.replace
+    # and Preferences rebuild so concurrent saves merge without a process-global table.
+    _baseline: dict | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        views = {}
+        for name, view in dict(self.saved_views).items():
+            try:
+                views[name] = view if isinstance(view, SavedView) else SavedView.from_raw(view)
+            except (TypeError, ValueError):
+                views[name] = view
+        self.saved_views = views
+        steps = {}
+        for name, raw_steps in dict(self.actions).items():
+            converted = []
+            try:
+                for step in raw_steps:
+                    converted.append(step if isinstance(step, ActionStep) else ActionStep.from_raw(step))
+            except (TypeError, ValueError):
+                converted = list(raw_steps)
+            steps[name] = converted
+        self.actions = steps
 
     @property
     def effective_hotkeys(self) -> dict[str, str]:
         return {action: self.hotkeys.get(action, default).strip().lower()
                 for action, (default, _) in HOTKEY_ACTIONS.items()}
 
+    def values(self) -> dict:
+        data = {}
+        for item in fields(self):
+            if item.name == "_baseline":
+                continue
+            value = getattr(self, item.name)
+            if item.name == "saved_views":
+                data[item.name] = {name: asdict(view) if isinstance(view, SavedView) else view
+                                   for name, view in value.items()}
+            elif item.name == "actions":
+                data[item.name] = action_dicts(value)
+            else:
+                data[item.name] = value
+        return data
+
     def validate(self):
-        from .search import compile_query
-        from .actions import validate_actions
-        validate_actions(self.actions)
+        validate_actions(action_dicts(self.actions))
         if not isinstance(self.saved_views, dict) or len(self.saved_views) > 128:
             raise ValueError("At most 128 saved views are allowed")
         for name, view in self.saved_views.items():
             validate_workspace(name)
-            if not isinstance(view, dict) or set(view) != {'workspace', 'query', 'collection', 'sort', 'theme'}:
-                raise ValueError("Invalid saved view")
-            validate_workspace(view['workspace'])
-            if not isinstance(view['query'], str) or len(view['query']) > 2000:
+            view = SavedView.from_raw(view)
+            validate_workspace(view.workspace)
+            if not isinstance(view.query, str) or len(view.query) > 2000:
                 raise ValueError("View query must be text under 2,000 characters")
-            compile_query(view['query'])
-            if view['collection'] not in VIEW_COLLECTIONS:
+            compile_query(view.query)
+            if view.collection not in VIEW_COLLECTIONS:
                 raise ValueError("Invalid view collection")
-            if view['sort'] not in SORT_ORDERS or view['theme'] not in (*THEMES, ''):
+            if view.sort not in SORT_ORDERS or view.theme not in (*THEMES, ''):
                 raise ValueError("Invalid view sort or theme")
 
         if not isinstance(self.hotkeys, dict) or set(self.hotkeys) - HOTKEY_ACTIONS.keys():
@@ -181,15 +238,17 @@ class Settings:
         if not isinstance(self.daily_template, str) or len(self.daily_template) > 20000:
             raise ValueError('Daily template must be text under 20,000 characters')
         self.daily_template.encode('utf-8')
-        if len((json.dumps(asdict(self), indent=2, ensure_ascii=False) + '\n').encode('utf-8')) > MAX_SETTINGS_BYTES:
+        payload = self.values()
+        if len((json.dumps(payload, indent=2, ensure_ascii=False) + '\n').encode('utf-8')) > MAX_SETTINGS_BYTES:
             raise ValueError('Settings exceed the file size limit')
 
     @classmethod
-    def _partial(cls, data: dict) -> tuple["Settings", list[str]]:
+    def _partial(cls, data: dict) -> tuple[Settings, list[str]]:
         """Keep every field that validates alongside the others; name the rest."""
         kept: dict = {}
         rejected = []
-        for name in (f.name for f in fields(cls)):
+        known = {item.name for item in fields(cls) if item.name != "_baseline"}
+        for name in known:
             if name not in data:
                 continue
             trial = {**kept, name: data[name]}
@@ -208,14 +267,14 @@ class Settings:
             data = json.loads(read_regular_file(path, MAX_SETTINGS_BYTES))
             if not isinstance(data, dict):
                 raise ValueError('Settings must be an object')
-            known = {f.name for f in fields(cls)}
+            known = {item.name for item in fields(cls) if item.name != "_baseline"}
             settings = cls(**{k: v for k, v in data.items() if k in known})
             settings.validate()
-            _remember(path, settings, data)
+            settings._baseline = settings.values()
             return settings, ''
         except FileNotFoundError:
             settings = cls()
-            _remember(path, settings, {})
+            settings._baseline = settings.values()
             return settings, ''
         except (ValueError, TypeError, OSError, RecursionError) as error:
             if isinstance(data, dict):
@@ -223,11 +282,11 @@ class Settings:
                 # the next save must not rewrite the file from defaults.
                 settings, rejected = cls._partial(data)
                 if rejected:
-                    _remember(path, settings, data)
+                    settings._baseline = settings.values()
                     return settings, (f'Could not load settings field(s) {", ".join(rejected)}; '
                                       f'using defaults for them. {error}')
             settings = cls()
-            _remember(path, settings, None)
+            settings._baseline = None
             return settings, f'Could not load settings; using defaults. {error}'
 
     def save(self, path: Path):
@@ -251,32 +310,31 @@ class Settings:
             if unreadable:
                 # Never overwrite bytes that could not be understood; keep them
                 # next to the fresh file so nothing hand-written is lost.
-                from .history import stamp
                 replace_at(directory, path.name, f'{path.name}.invalid-{stamp()}.json')
-            desired = asdict(self)
-            baseline = _nearest_baseline(path, self, desired)
-            if current is not None and baseline is not _NO_BASELINE and baseline[1] is not None:
+            desired = self.values()
+            baseline = self._baseline
+            if current is not None and baseline is not None:
                 merged = dict(current)
-                defaults = asdict(Settings())
+                defaults = Settings().values()
                 # Values that failed validation on disk are replaced, never merged.
                 _, rejected = Settings._partial(current)
                 for key, value in desired.items():
-                    old = baseline[0].get(key, defaults[key])
+                    old = baseline.get(key, defaults[key])
                     if value != old or key in rejected:
                         merged[key] = value
                 # Validate the effective known settings before publication.
-                known = {field.name for field in fields(Settings)}
+                known = {item.name for item in fields(Settings) if item.name != "_baseline"}
                 effective = Settings(**{key: value for key, value in merged.items() if key in known})
                 effective.validate()
-                desired = asdict(effective)
+                desired = effective.values()
                 output = {**merged, **desired}
             else:
                 output = desired
             self._save_locked(path, output, directory)
-            _remember(path, self, output)
+            self._baseline = {key: output[key] for key in desired}
 
     def _save_locked(self, path: Path, data: dict | None = None, directory: int | None = None):
-        output = json.dumps(asdict(self) if data is None else data, indent=2, ensure_ascii=False) + '\n'
+        output = json.dumps(self.values() if data is None else data, indent=2, ensure_ascii=False) + '\n'
         if len(output.encode('utf-8')) > MAX_SETTINGS_BYTES:
             raise ValueError('Settings exceed the file size limit')
         if directory is None:

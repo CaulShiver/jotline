@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, replace
+from dataclasses import replace
 import re
-from typing import Callable
 
 from textual import events, on
 from textual.geometry import Size
@@ -12,345 +11,41 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, HorizontalScroll, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from .modal import Modal
-from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, Static, Switch, TextArea
+from textual.widgets import Button, Footer, Input, Markdown, OptionList, Static, TextArea
 from textual.widgets.option_list import Option
 from rich.text import Text
 
-from .store import COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, tagged_body, validate_workspace
-from .settings import Settings, HOTKEY_ACTIONS, VIEW_COLLECTIONS
-from .preferences import Preferences
-from .omarchy import OmarchySync
-from .templates import Templates
-from .workflows import WorkflowMixin
-from .navigation import NavigationMixin
-from .action_ui import ActionWorkflowMixin
-from .import_ui import RecoveryImportMixin
+from .action_ui import ActionWorkflows
+from .commands import Command
+from .encryption_ui import Encryption
+from .import_ui import RecoveryImport
+from .markdown_editor import JOTLINE_THEME, MarkdownEditor
+from .modal import Palette, TextPrompt
+from .navigation import Views
 from .note_menu import NoteList, NoteMenu
-from .review_ui import ReviewMixin
-from .encryption_ui import EncryptionMixin
-from .export import printable_markdown
-from .tasks import closes_fence
-from .markdown_editor import (TABLE_TEMPLATE, FENCE, JOTLINE_THEME, MarkdownEditor, fence_for, format_table,
-                              headings, indent_lines, table_bounds, toggle_lines, unwrap_span)
+from .omarchy import OmarchySync
+from .preferences import Preferences
+from .review_ui import Review
+from .screens import FindInNote, MarkdownPreview, RevisionPreview
+from .settings import HOTKEY_ACTIONS, Settings, VIEW_COLLECTIONS
+from .store import COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, tagged_body, validate_workspace, wiki_link
+from .templates import GUIDE, REVIEW, Templates
+from .workflows import Workflows
+
+__all__ = ["Command", "FindInNote", "Jotline", "MarkdownPreview", "Palette", "RevisionPreview", "TextPrompt"]
 
 
-@dataclass(frozen=True)
-class Command:
-    """One user-visible palette action.
-
-    Keeping its label and handler together prevents the palette from drifting
-    away from the action dispatcher as features are added.
-    """
-
-    key: str
-    label: str
-    handler: Callable[[], None]
-    hotkey_action: str | None = None
+def _bind_capabilities(target, *sources):
+    """Copy public methods and constants onto the app class without mixin inheritance or MRO."""
+    for source in sources:
+        for name, value in source.__dict__.items():
+            if name.startswith("_") or name in target.__dict__:
+                continue
+            if callable(value) or isinstance(value, (int, float, str, bytes, tuple, frozenset)):
+                setattr(target, name, value)
 
 
-class Palette(Modal[str | None]):
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
-    CSS = """
-    Palette { align: center top; background: $background 70%; }
-    #palette { width: 76; max-width: 95%; height: 80%; max-height: 80%; margin-top: 3;
-        border: round $accent; padding: 1 2; background: $surface; }
-    #palette-title { color: $accent; margin-bottom: 1; }
-    #palette-help, #command-count { color: $text-muted; }
-    #commands { height: 1fr; min-height: 3; border: none; }
-    """
-
-    def __init__(self, choices: list[tuple[str, str]], title: str = "Run a command"):
-        super().__init__()
-        self.choices = choices
-        self.heading = title
-        self.filtered = choices
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="palette"):
-            yield Label(self.heading, id="palette-title")
-            yield Input(placeholder="Type to filter…", id="command-query")
-            yield Static("Type to filter · ↑↓ choose · Enter run · Esc cancel", id="palette-help")
-            yield Static("", id="command-count", markup=False)
-            yield OptionList(id="commands")
-
-    def on_mount(self) -> None:
-        self.filter("")
-        self.query_one(Input).focus()
-
-    def filter(self, query: str) -> None:
-        terms = query.casefold().split()
-        self.filtered = [(key, label) for key, label in self.choices if all(t in label.casefold() for t in terms)]
-        options = self.query_one(OptionList)
-        options.clear_options()
-        options.add_options([Option(Text(label), id=key) for key, label in self.filtered])
-        count = self.query_one("#command-count", Static)
-        count.update(f"{len(self.filtered)} result" + ("" if len(self.filtered) == 1 else "s")
-                     if self.filtered else "No matching commands · adjust the filter or press Esc")
-        if self.filtered:
-            options.highlighted = 0
-
-    @on(Input.Changed)
-    def changed(self, event: Input.Changed) -> None:
-        self.filter(event.value)
-
-    @on(Input.Submitted)
-    def submitted(self) -> None:
-        options = self.query_one(OptionList)
-        if options.highlighted is not None:
-            self.dismiss(self.filtered[options.highlighted][0])
-
-    @on(OptionList.OptionSelected)
-    def selected(self, event: OptionList.OptionSelected) -> None:
-        self.dismiss(event.option.id)
-
-    @on(OptionList.OptionHighlighted)
-    def highlighted(self) -> None:
-        # Arrow navigation starts in the query field, so keep the selected row
-        # in the independently scrollable result region explicitly visible.
-        self.query_one(OptionList).scroll_to_highlight()
-
-    def on_key(self, event) -> None:
-        if event.key in ("down", "up") and self.query_one(Input).has_focus:
-            options = self.query_one(OptionList)
-            if event.key == "down":
-                options.action_cursor_down()
-            else:
-                options.action_cursor_up()
-            event.prevent_default()
-            event.stop()
-
-
-class TextPrompt(Modal[str | None]):
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
-    CSS = """
-    TextPrompt { align: center top; background: $background 70%; }
-    #text-prompt { width: 72; max-width: 95%; height: auto; margin-top: 3;
-        border: round $accent; padding: 1 2; background: $surface; }
-    """
-
-    def __init__(self, title: str, placeholder: str, value: str = "", *, password: bool = False):
-        super().__init__()
-        self.heading, self.placeholder, self.value, self.password = title, placeholder, value, password
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="text-prompt"):
-            yield Label(self.heading)
-            yield Input(self.value, placeholder=self.placeholder, password=self.password, id="prompt-value")
-            yield Static("Enter to apply · Esc to cancel")
-
-    def on_mount(self) -> None:
-        self.query_one(Input).focus()
-
-    @on(Input.Submitted)
-    def submitted(self, event: Input.Submitted) -> None:
-        # Spaces are part of a passphrase; trimming them would lock the user out.
-        self.dismiss((event.value if self.password else event.value.strip()) or None)
-
-
-class MarkdownPreview(Modal[None]):
-    BINDINGS = [Binding("escape", "done", "Back to writing")]
-    CSS = """
-    MarkdownPreview { align: center middle; background: $background 80%; }
-    #markdown-panel { width: 100; max-width: 96%; height: 94%;
-        border: round $accent; padding: 1 2; background: $surface; }
-    #markdown-scroll { height: 1fr; }
-    """
-
-    def __init__(self, body: str):
-        super().__init__()
-        self.body = body
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="markdown-panel"):
-            yield Label("Markdown preview · Esc to return to writing"
-                        + (" · raw HTML blocks are not rendered" if re.search(r"^ {0,3}<[A-Za-z!?/]", self.body, re.M) else ""))
-            with VerticalScroll(id="markdown-scroll"):
-                # Let Markdown own its initial render during its mount lifecycle.
-                # A second update from the parent mount can race its empty render.
-                yield Markdown(self.body, open_links=False)
-            yield Button("Back to writing", id="close-preview")
-
-    def on_mount(self) -> None:
-        self.query_one(VerticalScroll).focus()
-
-    @on(Button.Pressed, "#close-preview")
-    def action_done(self) -> None:
-        self.dismiss(None)
-        self.app.query_one("#editor", TextArea).focus()
-
-
-class RevisionPreview(Modal[bool]):
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
-    CSS = """
-    RevisionPreview { align: center middle; background: $background 80%; }
-    #revision-panel { width: 100; max-width: 96%; height: 90%;
-        border: round $accent; padding: 1 2; background: $surface; }
-    #revision-text { height: 1fr; }
-    #revision-buttons { height: 3; }
-    """
-
-    def __init__(self, note: Note):
-        super().__init__()
-        self.note = note
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="revision-panel"):
-            yield Static("Saved version · " + self.note.title, markup=False)
-            yield Static("Restore creates a separate inbox note and keeps the original.")
-            yield TextArea(self.note.body, read_only=True, soft_wrap=False, id="revision-text")
-            with Horizontal(id="revision-buttons"):
-                yield Button("Restore as new note", variant="primary", id="restore-revision")
-                yield Button("Cancel", id="cancel-revision")
-
-    def action_cancel(self) -> None:
-        self.dismiss(False)
-
-    @on(Button.Pressed)
-    def button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id == "restore-revision")
-
-
-class FindInNote(Modal[None]):
-    BINDINGS = [Binding("escape", "done", "Done"), Binding("f3", "next", "Next"),
-                Binding("shift+f3", "previous", "Previous")]
-    CSS = """
-    FindInNote { align: center top; background: $background 70%; }
-    #find-panel { width: 68; max-width: 95%; height: auto; max-height: 90%; margin-top: 1;
-        border: round $accent; padding: 1 2; background: $surface; }
-    #find-title { color: $accent; margin-bottom: 1; }
-    #find-status { height: 2; padding-top: 1; color: $text-muted; }
-    #find-context { height: auto; max-height: 3; color: $foreground; background: $background;
-        padding: 0 1; }
-    #find-buttons, #replace-buttons { height: 3; margin-top: 1; }
-    #find-buttons Button { margin-right: 1; }
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.anchor = 0
-        self.case_sensitive = False
-
-    def compose(self) -> ComposeResult:
-        with VerticalScroll(id="find-panel"):
-            yield Label("Find within this note", id="find-title")
-            yield Input(placeholder="Type text to find…", id="find-query")
-            yield Input(placeholder="Replace with…", id="replace-value")
-            yield Label("Match case")
-            yield Switch(False, id="find-case")
-            with Horizontal(id="replace-buttons"):
-                yield Button("Replace", id="replace-one")
-                yield Button("Replace all", id="replace-all")
-            yield Static("Enter / F3 next · Shift+F3 previous · Esc done", id="find-status")
-            yield Static("", id="find-context", markup=False)
-            with Horizontal(id="find-buttons"):
-                yield Button("Next", variant="primary", id="find-next")
-                yield Button("Previous", id="find-previous")
-                yield Button("Done", id="find-done")
-
-    def on_mount(self) -> None:
-        editor = self.app.query_one("#editor", TextArea)
-        self.anchor = self.app.editor_offset(editor.cursor_location, editor.text)
-        self.query_one("#find-query", Input).focus()
-
-    def show_match(self, *, reverse: bool = False, initial: bool = False) -> None:
-        query = self.query_one("#find-query", Input).value
-        status = self.query_one("#find-status", Static)
-        if not query:
-            status.update("Enter / F3 next · Shift+F3 previous · Esc done")
-            self.query_one("#find-context", Static).update("")
-            return
-        result = self.app.select_editor_match(query, reverse=reverse,
-                                              anchor=self.anchor if initial else None, case_sensitive=self.case_sensitive)
-        if result is None:
-            status.update("No matches · keep typing or Esc to return")
-            self.query_one("#find-context", Static).update("")
-        else:
-            current, total = result
-            status.update(f"Match {current} of {total} · Enter / F3 next · Shift+F3 previous")
-            self.update_context()
-
-    def update_context(self) -> None:
-        editor = self.app.query_one("#editor", TextArea)
-        row, start = editor.selection.start
-        _, end = editor.selection.end
-        line = editor.document.get_line(row)
-        preview = Text(f"Line {row + 1} · ", style="dim")
-        preview.append(line[:start])
-        preview.append(line[start:end], style="bold reverse")
-        preview.append(line[end:])
-        self.query_one("#find-context", Static).update(preview)
-
-    @on(Input.Changed, "#find-query")
-    def query_changed(self) -> None:
-        self.show_match(initial=True)
-
-    @on(Input.Submitted, "#find-query")
-    def query_submitted(self) -> None:
-        self.show_match()
-
-    @on(Button.Pressed)
-    def button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id in {"replace-one", "replace-all"}:
-            self.replace_matches(all_matches=event.button.id == "replace-all")
-        elif event.button.id == "find-next":
-            self.show_match()
-        elif event.button.id == "find-previous":
-            self.show_match(reverse=True)
-        else:
-            self.action_done()
-
-    @on(Switch.Changed, "#find-case")
-    def case_changed(self, event: Switch.Changed) -> None:
-        self.case_sensitive = event.value
-        self.show_match(initial=True)
-
-    def replace_matches(self, *, all_matches: bool = False) -> None:
-        query = self.query_one("#find-query", Input).value
-        if not query:
-            return
-        editor = self.app.query_one("#editor", TextArea)
-        status = self.query_one("#find-status", Static)
-        pattern = re.compile(re.escape(query), 0 if self.case_sensitive else re.IGNORECASE)
-        replacement = self.query_one("#replace-value", Input).value
-        if all_matches:
-            replacement_bytes = len(replacement.encode("utf-8"))
-            output_bytes = len(editor.text.encode("utf-8")) + sum(
-                replacement_bytes - len(match[0].encode("utf-8"))
-                for match in pattern.finditer(editor.text))
-            if output_bytes > EDIT_LIMIT_BYTES:
-                self.app.notify("Replacement exceeds the note size limit", severity="error")
-                status.update("Not replaced · note size limit exceeded")
-                return
-            body, count = pattern.subn(lambda match: replacement, editor.text)
-            if count and not self.app.replace_editor_text(body):
-                status.update("Not replaced · note size limit exceeded")
-                return
-        else:
-            if not pattern.fullmatch(editor.selected_text):
-                self.show_match(initial=True)
-            if not pattern.fullmatch(editor.selected_text):
-                return
-            if not self.app.insert_editor_text(replacement):
-                status.update("Not replaced · note size limit exceeded")
-                return
-            count = 1
-        self.show_match()
-        status.update(f"Replaced {count} match(es) · Undo in editor to reverse")
-
-    def action_next(self) -> None:
-        self.show_match()
-
-    def action_previous(self) -> None:
-        self.show_match(reverse=True)
-
-    def action_done(self) -> None:
-        self.dismiss(None)
-        self.app.query_one("#editor", TextArea).focus()
-
-
-class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowMixin, NavigationMixin,
-              WorkflowMixin, App):
+class Jotline(App):
     TITLE = "jotline"
     ENABLE_COMMAND_PALETTE = False
     CSS = """
@@ -370,9 +65,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
     #markdown-toolbar { height: 2; scrollbar-size-horizontal: 1; background: $surface; }
     #markdown-toolbar Button { height: 1; min-height: 1; min-width: 0; width: auto;
                                padding: 0 1; border: none; background: $surface; color: $foreground; }
-    #markdown-toolbar Button:hover, #markdown-toolbar Button:focus {
-        background: $primary-muted; color: $accent; text-style: bold;
-    }
+    #markdown-toolbar Button:hover, #markdown-toolbar Button:focus { background: $primary-muted; color: $accent; text-style: bold; }
     #editor { height: 1fr; border: none; background: $background; }
     #live-preview { width: 1fr; border-left: solid $primary-muted; padding: 0 2; }
     #status { height: 2; padding-top: 1; color: $text-muted; }
@@ -382,7 +75,6 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
     .hidden { display: none; }
     .compact-footer { display: none; }
     """
-    # Textual requires a nonempty binding key; these placeholders cannot be typed.
     BINDINGS = [Binding(key or "jotline_" + action + "_unassigned",
                         "format_markdown(" + repr(action[7:]) + ")" if action.startswith("format_") else action,
                         label, priority=True, show=bool(key), id="jotline." + action)
@@ -411,9 +103,6 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self._recovery_dialog_open = False
         self.recent_note_ids = []
         self.note_positions = {}
-        # What the editor reports for the loaded note. Textual normalizes
-        # unusual line separators, so this can differ from note.body without
-        # any user edit; only a change from this baseline is a real edit.
         self._editor_baseline = ""
         self.view_sort = None
         self.active_view = None
@@ -424,6 +113,9 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self._live_preview_lock = asyncio.Lock()
         self._live_preview_cursor_row: int | None = None
         self.command_registry = self.build_command_registry()
+
+    def editor(self) -> MarkdownEditor:
+        return self.query_one("#editor", MarkdownEditor)
 
     def compose(self) -> ComposeResult:
         yield Static("›_ jotline     /     " + self.workspace, id="brand", markup=False)
@@ -482,14 +174,13 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             self.action_daily()
         if self.settings_warning:
             self.notify(self.settings_warning, severity='warning', timeout=10)
-        self.query_one("#editor", TextArea).focus()
+        self.editor().focus()
         self.notify_storage_warnings()
 
     def on_resize(self, event: events.Resize) -> None:
         self.update_responsive_layout(event.size)
 
     def update_responsive_layout(self, size: Size | None = None) -> None:
-        """Keep writing usable before a terminal has room for the full chrome."""
         size = size or self.size
         self.compact_layout = size.width <= 80 or size.height <= 24
         very_short = size.height <= 24
@@ -512,23 +203,10 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
 
     @property
     def live_preview_visible(self) -> bool:
-        """The side-by-side preview is on and the terminal has room for it."""
         return self.live_preview and not self.compact_layout
 
     def storage_warnings(self) -> list[str]:
-        """Read optional storage safety warnings without coupling the UI to one API."""
-        messages: list[str] = []
-        for name in ("warnings", "partial_warnings", "budget_warnings"):
-            value = getattr(self.vault, name, ())
-            if isinstance(value, str):
-                messages.append(value)
-            elif isinstance(value, (list, tuple, set)):
-                messages.extend(item for item in value if isinstance(item, str))
-        for name in ("partial_warning", "budget_warning", "cache_warning", "permission_warning"):
-            value = getattr(self.vault, name, "")
-            if isinstance(value, str) and value:
-                messages.append(value)
-        return list(dict.fromkeys(message for message in messages if message))
+        return list(dict.fromkeys(message for message in self.vault.warnings if message))
 
     def notify_storage_warnings(self) -> None:
         for warning in self.storage_warnings():
@@ -537,7 +215,6 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
                 self._shown_storage_warnings.add(warning)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        # Let modal screens own the keyboard; never run editor shortcuts underneath them.
         if isinstance(self.screen, ModalScreen) and action not in {'focus_next', 'focus_previous'}:
             return False
         return super().check_action(action, parameters)
@@ -549,7 +226,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.query_one('#hint', Static).update(self.shortcut_text(
             "Capture first. Make sense of it later.   ctrl+p commands · ctrl+d daily log"))
         self.theme = settings.theme
-        editor = self.query_one('#editor', TextArea)
+        editor = self.editor()
         editor.soft_wrap = settings.soft_wrap
         editor.show_line_numbers = settings.line_numbers
         editor.highlight_cursor_line = settings.highlight_line
@@ -559,12 +236,25 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
 
     def shortcut_text(self, text: str) -> str:
         effective = self.settings.effective_hotkeys
-        keys = {default: effective[action]
-                for action, (default, _) in HOTKEY_ACTIONS.items()}
+        keys = {default: effective[action] for action, (default, _) in HOTKEY_ACTIONS.items()}
         return re.sub(r"ctrl\+[a-z]", lambda match: keys.get(match[0].lower(), match[0]), text, flags=re.I)
 
     def action_settings(self) -> None:
         self.push_screen(Preferences(self.settings), self.save_settings)
+
+    def replace_settings(self, **changes):
+        settings = replace(self.settings, **changes)
+        settings.save(self.settings_path)
+        self.settings = settings
+        return settings
+
+    def delete_config(self, field, name):
+        try:
+            values = dict(getattr(self.settings, field))
+            values.pop(name, None)
+            self.replace_settings(**{field: values})
+        except (ValueError, OSError) as error:
+            self.notify(str(error), severity='error')
 
     def save_settings(self, settings: Settings | None) -> None:
         if settings is None:
@@ -580,12 +270,14 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.autosave_timer = self.set_interval(settings.autosave_seconds, self.autosave)
         self.refresh_notes()
         self.connections()
-        self.query_one('#editor', TextArea).focus()
+        self.editor().focus()
         self.notify('Settings saved. Startup choices apply next launch.')
 
     def refresh_notes(self) -> None:
+        snapshot = self.vault.notes()
         try:
-            notes = self.vault.search(self.query_one("#search", Input).value, self.collection, self.workspace)
+            notes = self.vault.search(self.query_one("#search", Input).value, self.collection, self.workspace,
+                                      notes=snapshot)
         except ValueError as error:
             self.query_one("#collection", Static).update(str(error))
             self.query_one("#notes", OptionList).clear_options()
@@ -621,6 +313,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             "Nothing here yet. Ctrl+N captures a new note. Collections shows your other notes."))
         self.query_one("#brand", Static).update(self.shortcut_text(
             f"›_ jotline     /     {self.workspace}     ·     ctrl+w workspaces · ctrl+t tags"))
+        self.connections(notes=snapshot)
         self.notify_storage_warnings()
 
     @on(Button.Pressed, "#nav-collections")
@@ -700,8 +393,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         if action in ('trash', 'restore'):
             self.move_context_note(note, collection='trash' if action == 'trash' else 'inbox')
         elif action == 'move':
-            choices = [(name, name.title()) for name in COLLECTIONS
-                       if name not in ('trash', note.collection)]
+            choices = [(name, name.title()) for name in COLLECTIONS if name not in ('trash', note.collection)]
             self.push_screen(NoteMenu('Move to collection', choices, x, y),
                              lambda value: self.move_context_note(note, collection=value) if value else None)
         elif action == 'workspace':
@@ -717,7 +409,6 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         if not self.save_current():
             return
         is_current = note.id == self.current.id
-        # Keep the menu's read baseline for other notes, so external edits conflict.
         moved = replace(self.current if is_current else note)
         try:
             if moved.workspace != self.workspace:
@@ -739,7 +430,6 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             gone = moved.workspace != self.workspace or moved.collection == 'trash'
             self.load(self.new_note() if gone else moved)
         self.refresh_notes()
-        self.connections()
         self.notify_backup_warning()
         self.notify(f'Moved to {workspace or collection}')
 
@@ -752,15 +442,13 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
 
     @on(TextArea.SelectionChanged, "#editor")
     def cursor_moved(self, event: TextArea.SelectionChanged) -> None:
-        # Horizontal cursor movement does not change the preview's scroll ratio.
         row = event.selection.end[0]
         if row != self._live_preview_cursor_row:
             self._live_preview_cursor_row = row
             self.schedule_live_preview()
 
     def capture_current_buffer(self) -> bool:
-        """Copy the editor into the note while preserving its unsaved state."""
-        body = self.query_one("#editor", TextArea).text
+        body = self.editor().text
         if body == self._editor_baseline:
             return False
         self.current.body = body
@@ -780,8 +468,6 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.query_one("#note-heading", Static).update(Text(self.current.title + " / " + self.current.collection))
 
     def save_current(self, *, explicit: bool = False) -> bool:
-        """Save if dirty. Explicit user actions always surface a blocking conflict."""
-        # Capture the buffer synchronously even when its Changed message is pending.
         self.capture_current_buffer()
         if not self.dirty:
             return True
@@ -804,22 +490,19 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.notify_backup_warning()
         self.notify_storage_warnings()
         self.refresh_notes()
-        self.connections()
         return True
 
     def autosave(self) -> None:
-        # Textual clears is_running before pruning widgets, but timer callbacks
-        # may still fire until the message pump closes (observed on macOS).
         if self.is_running and self.dirty:
             self.save_current()
 
-    def connections(self) -> None:
-        backlinks = self.vault.backlinks(self.current)
+    def connections(self, notes=None) -> None:
+        backlinks = self.vault.backlinks(self.current, notes=notes)
         summary = " · ".join(n.title for n in backlinks[:3])
-        self.query_one("#connections", Static).update(f"← {len(backlinks)} backlinks" + (f"  {summary}" if summary else self.shortcut_text("  ·  ctrl+p → Insert note link")))
+        self.query_one("#connections", Static).update(
+            f"← {len(backlinks)} backlinks" + (f"  {summary}" if summary else self.shortcut_text("  ·  ctrl+p → Insert note link")))
 
     def new_note(self, body: str = "") -> Note:
-        """An unsaved note in the current workspace, filed where settings send new thoughts."""
         note = self.vault.new(body, workspace=self.workspace)
         note.collection = self.settings.default_collection
         return note
@@ -827,7 +510,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
     def load(self, note: Note) -> None:
         if note.workspace != self.workspace:
             raise ValueError("Note moved to another workspace; save a recovery copy if needed")
-        editor = self.query_one("#editor", TextArea)
+        editor = self.editor()
         self.note_positions[self.current.id] = editor.cursor_location
         if self.current.original is not None and self.current.id != note.id:
             self.recent_note_ids = [self.current.id] + [key for key in self.recent_note_ids if key != self.current.id]
@@ -844,8 +527,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         if not self.save_current(explicit=True):
             return
         if note_id == self.current.id and self.current.original is not None:
-            # Re-selecting the open note must not discard its undo history.
-            self.query_one("#editor", TextArea).focus()
+            self.editor().focus()
             return
         try:
             note = self.vault.read(note_id)
@@ -873,7 +555,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             self.collection = note.collection
             self.load(note)
             self.refresh_notes()
-            editor = self.query_one("#editor", TextArea)
+            editor = self.editor()
             editor.move_cursor(editor.document.end)
 
     def action_search(self) -> None:
@@ -885,7 +567,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
     def action_editor_focus(self) -> None:
         self.compact_navigation = False
         self.update_responsive_layout()
-        self.query_one("#editor", TextArea).focus()
+        self.editor().focus()
 
     def action_save(self) -> None:
         self.save_current(explicit=True)
@@ -896,7 +578,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
 
     def action_focus_mode(self) -> None:
         self.set_focus_mode(not self.focused_writing)
-        self.query_one("#editor", TextArea).focus()
+        self.editor().focus()
 
     def set_focus_mode(self, enabled: bool) -> None:
         self.focused_writing = enabled
@@ -905,7 +587,6 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.update_responsive_layout()
 
     def show_navigation(self, target: str = "notes") -> None:
-        """Temporarily reveal compact navigation before focusing its controls."""
         self.compact_navigation = True
         self.update_responsive_layout()
         self.query_one("#" + target).focus()
@@ -922,7 +603,6 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         return re.sub(r"\s+", " ", excerpt)[:44]
 
     def note_choices(self, notes: list[Note]) -> list[tuple[str, str]]:
-        """Only add noisy metadata when a title alone would be ambiguous."""
         titles: dict[str, int] = {}
         for note in notes:
             title = note.title.casefold()
@@ -962,13 +642,12 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             name = validate_workspace(name)
             if not self.save_current(explicit=True):
                 return
-            settings = replace(self.settings, active_workspace=name,
-                               workspace_names=sorted(set(self.settings.workspace_names) | {name}))
-            settings.save(self.settings_path)
+            self.replace_settings(active_workspace=name,
+                                  workspace_names=sorted(set(self.settings.workspace_names) | {name}))
         except (OSError, ValueError) as error:
             self.notify(str(error), severity="error")
             return
-        self.settings, self.workspace = settings, name
+        self.workspace = name
         self.active_view = None
         self.view_sort = None
         self.theme = self.settings.theme
@@ -1003,7 +682,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
     def add_tags(self, tags: str | None) -> None:
         if not tags:
             return
-        editor = self.query_one("#editor", TextArea)
+        editor = self.editor()
         try:
             body = tagged_body(editor.text, tags)
         except ValueError as error:
@@ -1012,7 +691,6 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         if len(body.encode("utf-8")) > EDIT_LIMIT_BYTES:
             self.notify("Result exceeds the note size limit", severity="error")
             return
-        # Insert only the suffix, retaining the editor's undo history.
         editor.insert(body[len(editor.text):], editor.document.end)
         self.save_current()
         editor.focus()
@@ -1047,7 +725,7 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         if not name:
             return
         try:
-            Templates(self.vault.path).save(name, self.query_one("#editor", TextArea).text)
+            Templates(self.vault.path).save(name, self.editor().text)
         except (OSError, ValueError) as error:
             self.notify(str(error), severity="error")
             return
@@ -1122,316 +800,18 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         self.refresh_notes()
         self.notify("Saved version restored as a new inbox note.")
 
-    PREVIEW_MAX_BLOCKS = 600
-    PREVIEW_MAX_CELLS = 400
-    PREVIEW_MAX_BYTES = 256 * 1024
-
-    def preview_fits(self, body: str) -> bool:
-        # Render cost follows the number of Markdown blocks (one widget each)
-        # and table cells, not bytes: a 4 KiB list of 1,000 items stalls the UI.
-        lines = body.splitlines()
-        blocks = sum(1 for line in lines if line.strip())
-        cells = max((line.count("|") for line in lines), default=0)
-        return (len(body.encode("utf-8")) <= self.PREVIEW_MAX_BYTES and blocks <= self.PREVIEW_MAX_BLOCKS
-                and cells <= self.PREVIEW_MAX_CELLS)
-
-    def note_titles(self) -> dict[str, str]:
-        """Note id to title for this workspace, using the vault's external-edit cache."""
-        try:
-            return self.vault.titles(self.workspace)
-        except (OSError, ValueError):
-            return {}
-
-    def preview_markdown(self, body: str) -> str:
-        """Checkboxes as ☐/☒ and [[links]] as note titles, as in exports."""
-        return printable_markdown(body, self.note_titles() if "[[" in body else {})
-
-    def action_preview(self) -> None:
-        self.capture_current_buffer()
-        body = self.current.body
-        if not self.preview_fits(body):
-            self.notify(f"Preview supports notes up to {self.PREVIEW_MAX_BYTES // 1024} KiB and "
-                        f"{self.PREVIEW_MAX_BLOCKS} lines of content. You can still edit and save this note.",
-                        severity="warning")
-            return
-        self.push_screen(MarkdownPreview(self.preview_markdown(body)))
-
-    def action_live_preview(self) -> None:
-        if not self.live_preview and self.compact_layout:
-            self.notify("Side-by-side preview needs a terminal wider than 80 columns and taller than 24 rows; "
-                        "showing the full preview instead.")
-            self.action_preview()
-            return
-        self.live_preview = not self.live_preview
-        self._live_preview_text = self._live_preview_ratio = None
-        self.update_responsive_layout()  # renders the preview as the pane appears
-        self.query_one("#editor", TextArea).focus()
-
-    def schedule_live_preview(self) -> None:
-        if not self.live_preview_visible:
-            return
-        if self._live_preview_timer is not None:
-            self._live_preview_timer.stop()
-        # Debounce so fast typing renders once per pause rather than per key.
-        self._live_preview_timer = self.set_timer(0.3, self.refresh_live_preview)
-
-    def refresh_live_preview(self) -> None:
-        self._live_preview_timer = None
-        if not self.live_preview_visible or not self.is_running:
-            return
-        editor = self.query_one("#editor", TextArea)
-        body = editor.text
-        text = (self.preview_markdown(body) if self.preview_fits(body) else
-                f"*Preview paused: this note is longer than {self.PREVIEW_MAX_BLOCKS} lines of content "
-                f"or {self.PREVIEW_MAX_BYTES // 1024} KiB. Editing and saving still work.*")
-        ratio = editor.cursor_location[0] / max(1, editor.document.line_count - 1)
-        changed = text != self._live_preview_text
-        if not changed and ratio == self._live_preview_ratio:
-            return
-        self._live_preview_text, self._live_preview_ratio = text, ratio
-        self.run_worker(self.render_live_preview(text if changed else None), group="live-preview")
-
-    async def render_live_preview(self, text: str | None) -> None:
-        # Do not cancel an in-flight update: later workers may only need to scroll.
-        async with self._live_preview_lock:
-            if text is not None:
-                await self.query_one("#live-markdown", Markdown).update(text)
-            pane = self.query_one("#live-preview", VerticalScroll)
-            self.call_after_refresh(lambda: pane.scroll_to(
-                y=pane.max_scroll_y * (self._live_preview_ratio or 0.0), animate=False))
-
-    def action_outline(self) -> None:
-        editor = self.query_one("#editor", TextArea)
-        found = headings(editor.document.lines)
-        if not found:
-            self.notify("No headings yet. Start a line with # to add one.")
-            return
-        self.push_screen(Palette([(str(row), "  " * (level - 1) + title + f" · line {row + 1}")
-                                  for row, level, title in found], "Jump to heading"), self.jump_to_row)
-
-    def jump_to_row(self, key: str | None) -> None:
-        editor = self.query_one("#editor", TextArea)
-        if key and key.isdigit() and int(key) < editor.document.line_count:
-            editor.move_cursor((int(key), 0), center=True)
-        editor.focus()
-
-    # Palette names that differ from the toggle_lines style they apply.
-    BLOCK_STYLES = {"heading": "h2", "list": "bullet", "numbered": "numbered", "task": "task", "quote": "quote",
-                    **{f"h{level}": f"h{level}" for level in range(1, 7)}}
-    WRAP_MARKERS = {"bold": "**", "italic": "*", "strike": "~~", "code": "`"}
-
     def action_format_markdown(self, style: str) -> None:
-        editor = self.query_one("#editor", TextArea)
-        start, end = sorted((editor.selection.start, editor.selection.end))
-        editor.history.checkpoint()
-        if style in self.BLOCK_STYLES:
-            self.transform_rows(start, end, lambda lines: toggle_lines(lines, self.BLOCK_STYLES[style]))
-        elif style in ("indent", "outdent"):
-            self.transform_rows(start, end, lambda lines: indent_lines(lines, outdent=style == "outdent"))
-        elif style in self.WRAP_MARKERS:
-            self.wrap_selection(style, start, end)
-        elif style in ("link", "image"):
-            self.insert_link(style == "image", start, end)
-        elif style == "codeblock":
-            self.format_code_block(start, end)
-        elif style == "rule":
-            self.insert_rule(end[0])
-        elif style == "table":
-            self.format_table_at_cursor()
-        editor.history.checkpoint()
+        editor = self.editor()
+        result = editor.apply_format(style)
+        if result == "tidied":
+            self.notify("Table tidied.")
         self.capture_current_buffer()
         editor.focus()
-
-    def selected_rows(self, start: tuple[int, int], end: tuple[int, int]) -> tuple[int, int]:
-        first, last = start[0], end[0]
-        if end[1] == 0 and last > first:
-            last -= 1
-        return first, last
-
-    def transform_rows(self, start: tuple[int, int], end: tuple[int, int],
-                       transform: Callable[[list[str]], list[str]]) -> None:
-        """Replace the selected rows with transform(rows), keeping the cursor or selection on the same text."""
-        editor = self.query_one("#editor", TextArea)
-        first, last = self.selected_rows(start, end)
-        # Use the editor's own line model; splitting the text on "\n" would
-        # disagree with it for CR and CRLF documents and index past the end.
-        lines = editor.document.lines[first:last + 1]
-        updated = transform(lines)
-        editor.replace("\n".join(updated), (first, 0), (last, len(lines[-1])))
-
-        def shifted(location: tuple[int, int]) -> tuple[int, int]:
-            row, column = location
-            if first <= row <= last:
-                index = row - first
-                column = min(max(0, column + len(updated[index]) - len(lines[index])), len(updated[index]))
-            return row, column
-
-        editor.move_cursor(shifted(start))
-        if start != end:
-            editor.move_cursor(shifted(end), select=True)
-
-    def select_offsets(self, begin: int, finish: int) -> None:
-        editor = self.query_one("#editor", TextArea)
-        text = editor.text
-        editor.move_cursor(self.editor_location(begin, text))
-        editor.move_cursor(self.editor_location(finish, text), select=True)
-
-    def wrap_selection(self, style: str, start: tuple[int, int], end: tuple[int, int]) -> None:
-        editor = self.query_one("#editor", TextArea)
-        text = editor.text
-        begin, finish = self.editor_offset(start, text), self.editor_offset(end, text)
-        body = text[begin:finish]
-        marker = self.WRAP_MARKERS[style]
-        if body and (unwrapped := unwrap_span(style, text, begin, finish)):
-            outer_begin, outer_finish, inner = unwrapped
-            editor.replace(inner, self.editor_location(outer_begin, text), self.editor_location(outer_finish, text))
-            self.select_offsets(outer_begin, outer_begin + len(inner))
-            return
-        body = body or "text"
-        padding = ""
-        if style == "code":
-            marker = "`" * (max((len(m[0]) for m in re.finditer(r"`+", body)), default=0) + 1)
-            padding = " " if body.startswith("`") or body.endswith("`") else ""
-        editor.replace(marker + padding + body + padding + marker, start, end)
-        inner = begin + len(marker + padding)
-        self.select_offsets(inner, inner + len(body))
-
-    def insert_link(self, image: bool, start: tuple[int, int], end: tuple[int, int]) -> None:
-        editor = self.query_one("#editor", TextArea)
-        text = editor.text
-        begin = self.editor_offset(start, text)
-        body = editor.selected_text
-        bang = "!" if image else ""
-        # A whole selected URL, bare or as an <autolink>, becomes the target.
-        url = body[1:-1] if body[:1] == "<" and body[-1:] == ">" else body
-        if re.fullmatch(r"(?:https?|mailto):\S+", url):
-            label = "alt text" if image else "text"
-            editor.replace(f"{bang}[{label}]({url})", start, end)
-            self.select_offsets(begin + len(bang) + 1, begin + len(bang) + 1 + len(label))
-            return
-        # splitlines drops CR and CRLF endings too; a stray \r would split the link.
-        label = " ".join(body.splitlines()) or ("alt text" if image else "text")
-        target = "path" if image else "url"
-        editor.replace(f"{bang}[{label}]({target})", start, end)
-        target_start = begin + len(bang) + len(label) + 3
-        self.select_offsets(target_start, target_start + len(target))
-
-    def insert_rule(self, row: int) -> None:
-        """A horizontal rule with a blank line on each side, leaving the cursor on the blank line after it."""
-        editor = self.query_one("#editor", TextArea)
-        lines = editor.document.lines
-        line = lines[row]
-        below_blank = row + 1 < len(lines) and not lines[row + 1].strip()
-        if line.strip():
-            editor.insert("\n\n---" + ("" if below_blank else "\n"), (row, len(line)))
-            rule_row = row + 2
-        else:
-            # A rule directly under text would turn that text into a heading.
-            above_blank = row == 0 or not lines[row - 1].strip()
-            editor.replace(("" if above_blank else "\n") + "---" + ("" if below_blank else "\n"),
-                           (row, 0), (row, len(line)))
-            rule_row = row + (0 if above_blank else 1)
-        editor.move_cursor((rule_row + 1, 0))
-
-    def format_code_block(self, start: tuple[int, int], end: tuple[int, int]) -> None:
-        editor = self.query_one("#editor", TextArea)
-        rows = editor.document.lines
-        first, last = self.selected_rows(start, end)
-        opener = FENCE.fullmatch(rows[first])
-        if (end[1] == 0 and end[0] > first and opener and closes_fence(rows[end[0]], opener)
-                and not any(closes_fence(rows[row], opener) for row in range(first + 1, end[0]))):
-            last = end[0]  # a selection ending at the start of the closing fence still means the block
-        lines = rows[first:last + 1]
-        if last > first and opener and closes_fence(lines[-1], opener):
-            inner = lines[1:-1]
-            editor.replace("\n".join(inner), (first, 0), (last, len(lines[-1])))
-            editor.move_cursor((first, 0))
-            if inner:
-                editor.move_cursor((first + len(inner) - 1, len(inner[-1])), select=True)
-            return
-        if start == end and not lines[0].strip():
-            editor.replace("```\n\n```", (first, 0), (first, len(lines[0])))
-            editor.move_cursor((first + 1, 0))
-            return
-        fence = fence_for("\n".join(lines))
-        editor.replace("\n".join([fence, *lines, fence]), (first, 0), (last, len(lines[-1])))
-        editor.move_cursor((first + 1, 0))
-        editor.move_cursor((last + 1, len(lines[-1])), select=True)
-
-    def format_table_at_cursor(self) -> None:
-        editor = self.query_one("#editor", TextArea)
-        row, column = editor.cursor_location
-        lines = editor.document.lines
-        if bounds := table_bounds(lines, row):
-            first, last = bounds
-            original = lines[first:last + 1]
-            tidy = format_table(original)
-            editor.replace("\n".join(tidy), (first, 0), (last, len(original[-1])))
-            editor.move_cursor((row, min(column, len(tidy[row - first]))))
-            self.notify("Table tidied.")
-            return
-        line = lines[row]
-        template = "\n".join(TABLE_TEMPLATE)
-        if line.strip():
-            editor.insert("\n\n" + template + "\n", (row, len(line)))
-            top = row + 2
-        else:
-            editor.replace(template, (row, 0), (row, len(line)))
-            top = row
-        editor.move_cursor((top, 2))
-        editor.move_cursor((top, 8), select=True)
-
-    def editor_newline(self) -> str:
-        return self.query_one("#editor", TextArea).document.newline
-
-    def editor_offset(self, location: tuple[int, int], text: str) -> int:
-        """Character offset in the editor's text for a (row, column) location."""
-        row, column = location
-        newline = self.editor_newline()
-        lines = text.split(newline)
-        return sum(len(line) + len(newline) for line in lines[:row]) + column
-
-    def editor_location(self, offset: int, text: str) -> tuple[int, int]:
-        newline = self.editor_newline()
-        before = text[:offset]
-        row = before.count(newline)
-        return row, len(before.rsplit(newline, 1)[-1])
+        self.call_after_refresh(editor.focus)
 
     def select_editor_match(self, query: str, *, reverse: bool = False,
                             anchor: int | None = None, case_sensitive: bool = False) -> tuple[int, int] | None:
-        editor = self.query_one("#editor", TextArea)
-        text = editor.text
-        if not query:
-            return None
-        if anchor is None:
-            start, end = sorted((editor.selection.start, editor.selection.end))
-            location = start if reverse else end
-            anchor = self.editor_offset(location, text)
-        # Scan once and retain only the candidate, wrap target, and counters.
-        # Notes can be large; materialising every match is unnecessary memory use.
-        first = last = candidate = None
-        first_ordinal = last_ordinal = candidate_ordinal = 0
-        total = 0
-        for total, match in enumerate(re.finditer(re.escape(query), text, 0 if case_sensitive else re.IGNORECASE), start=1):
-            if first is None:
-                first, first_ordinal = match, total
-            last, last_ordinal = match, total
-            if (reverse and match.start() < anchor) or (not reverse and match.start() >= anchor):
-                if reverse:
-                    candidate, candidate_ordinal = match, total
-                elif candidate is None:
-                    candidate, candidate_ordinal = match, total
-        if first is None:
-            return None
-        if candidate is None:
-            match, ordinal = (last, last_ordinal) if reverse else (first, first_ordinal)
-        else:
-            match, ordinal = candidate, candidate_ordinal
-        start = self.editor_location(match.start(), text)
-        end = self.editor_location(match.end(), text)
-        editor.move_cursor(start)
-        editor.move_cursor(end, select=True, center=True)
-        return ordinal, total
+        return self.editor().select_match(query, reverse=reverse, anchor=anchor, case_sensitive=case_sensitive)
 
     def refresh_vault(self) -> None:
         self.vault.invalidate_cache()
@@ -1449,7 +829,6 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
                 self.status("Could not reload file · recovery available")
                 self.notify(f"Could not reload this note: {error}", severity="error", timeout=10)
         self.refresh_notes()
-        self.connections()
         if kept_unsaved and not reload_failed:
             self.status("Refreshed · unsaved changes kept")
         if not self.storage_warnings() and not reload_failed:
@@ -1569,20 +948,12 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             self.save_current()
 
     def copy_current_note(self) -> None:
-        self.copy_to_clipboard(self.query_one("#editor", TextArea).text)
+        self.copy_to_clipboard(self.editor().text)
         self.notify("Copy requested. Your terminal must allow OSC 52 clipboard access.")
 
     def toggle_task(self) -> None:
-        editor = self.query_one("#editor", TextArea)
-        row, _ = editor.cursor_location
-        line = editor.document.get_line(row)
-        if line.lstrip().startswith("- [ ] "):
-            updated = line.replace("- [ ] ", "- [x] ", 1)
-        elif line.lstrip().startswith("- [x] "):
-            updated = line.replace("- [x] ", "- [ ] ", 1)
-        else:
-            updated = "- [ ] " + line
-        editor.replace(updated, (row, 0), (row, len(line)))
+        self.editor().toggle_task_line()
+        self.capture_current_buffer()
 
     def save_recovery_copy(self) -> None:
         self.capture_current_buffer()
@@ -1611,9 +982,8 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
         def picked(note_id: str | None) -> None:
             if note_id and mode == "link":
                 note = next(note for note in notes if note.id == note_id)
-                label = note.title.replace("[", "").replace("]", "").replace("|", "")
-                self.query_one("#editor", TextArea).insert(f"[[{note.id}|{label}]]")
-                self.query_one("#editor", TextArea).focus()
+                self.editor().insert(wiki_link(note))
+                self.editor().focus()
             elif note_id:
                 self.load_id(note_id)
 
@@ -1626,87 +996,4 @@ class Jotline(EncryptionMixin, ReviewMixin, RecoveryImportMixin, ActionWorkflowM
             self.save_current()
 
 
-GUIDE = """# A little room to think
-
-Capture first. Press Ctrl+N and write without choosing a folder or title.
-The first line becomes the title. Your words save automatically.
-
-## A simple rhythm
-- Capture loose thoughts in the inbox.
-- Ctrl+D opens today's log: observations, decisions, and next steps.
-- Keep a useful idea in its own note. Ctrl+P → Insert note link connects it.
-- Review the inbox regularly. Move useful notes to projects, areas, or resources.
-- Archive what is finished. Trash is reversible; move a note back to restore it.
-
-## Make it yours
-Ctrl+, opens Settings for themes, editor, layout, keyboard shortcuts, and daily templates.
-Hotkey changes apply on Save. Ctrl+, and Esc stay fixed; Reset hotkeys restores defaults.
-Preferences are saved for this vault.
-
-## Writing
-Use Markdown: # headings, **bold**, *italic*, ~~strikethrough~~, `code`, - lists,
-1. numbered lists, - [ ] tasks, > quotes, tables, and fenced code. The editor
-colours Markdown as you type.
-Enter continues a bullet, numbered, task, or quote line. Enter on an empty item ends it.
-Select text, then Ctrl+P → Format bold, italic, strikethrough, inline code, or link.
-Without a selection, a selected placeholder is inserted. Run a format again to remove it.
-Headings (levels 1–6), bullet, numbered and task lists, blockquotes, code blocks,
-and indent or outdent apply to the current line or selected lines. Undo works normally.
-Ctrl+P → Format table inserts a table, or lines up the columns of the table under the cursor.
-Ctrl+P → Preview rendered Markdown displays your current text; Esc returns to editing.
-Ctrl+P → Toggle side-by-side Markdown preview keeps a live preview next to the editor.
-Ctrl+P → Jump to heading moves through a long note.
-Add #tags anywhere; search #tag to find exact tag matches.
-Ctrl+T browses workspace tags and counts. Ctrl+P → Add tags appends tags.
-Edit or remove inline tags directly in the note; no separate tag database is needed.
-
-## Workspaces
-Ctrl+W switches workspaces or creates one, such as work or personal.
-Ctrl+P → Move note to workspace moves a regular note without changing its file ID.
-Each workspace has its own daily logs, collections, search results, and links.
-Existing notes are in default. Workspace names use lowercase letters, numbers, - or _.
-All Markdown stays in the same vault folder; workspace is saved in note metadata.
-Appearance and editor settings are shared across this vault.
-
-## Navigation
-Ctrl+P → Toggle task checks or unchecks the current line.
-Ctrl+B hides the sidebar. Ctrl+O finds a note by title.
-Ctrl+F searches this workspace (except trash). Multiple words narrow results.
-Ctrl+P → Follow a link or Open a backlink moves between connected notes.
-Links inserted by Jotline use stable IDs, so changing titles is safe.
-
-## Templates and history
-Ctrl+P → New note from template starts a meeting, project, journal, or saved template.
-Save this note as a template keeps a reusable copy; use {{date}}, {{time}}, {{workspace}}.
-Copy template source to new note preserves placeholders for customization.
-Ctrl+, → Keyboard shortcuts includes optional Markdown formatting and preview keys.
-Ctrl+P → History of this note lets you inspect and restore a saved version as a new note.
-Browse saved note history includes externally deleted notes in this workspace.
-Back up vault now saves a local ZIP of notes, settings, and templates.
-
-## Your files
-Everything stays in your local vault as readable Markdown.
-Use `jotline capture` to send text from the shell, and `jotline export` to
-write a note without metadata. No account, telemetry, or cloud service.
-Ctrl+Q flushes edits before quitting. Use it before closing the terminal.
-"""
-
-REVIEW = """# Weekly review
-
-## Clear the inbox
-- [ ] Read unprocessed captures (Ctrl+P → Show inbox).
-- [ ] Turn actionable thoughts into a concrete next step.
-- [ ] Move active work to projects and ongoing responsibilities to areas.
-- [ ] Keep reference material in resources; archive what is finished.
-
-## Connect and reflect
-- [ ] Revisit this week's daily logs.
-- [ ] Extract useful ideas into their own notes and link them.
-- [ ] Review active projects: what is the next small action?
-- [ ] Choose what deserves attention next week.
-
-## What I learned
-
-## Next week
-
-"""
+_bind_capabilities(Jotline, Encryption, Review, RecoveryImport, ActionWorkflows, Views, Workflows)

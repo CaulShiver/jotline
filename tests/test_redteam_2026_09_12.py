@@ -20,7 +20,7 @@ from jotline.app import Jotline, MarkdownPreview, Palette, TextPrompt
 from jotline.importing import apply_import, preview_import
 from jotline.note_menu import NoteMenu
 from jotline.recovery_ui import RecoveryScreen
-from jotline.settings import Settings
+from jotline.settings import Settings, action_dicts
 from jotline.store import Vault
 import jotline.store as store
 from jotline.templates import Templates
@@ -210,7 +210,7 @@ def test_one_invalid_setting_keeps_every_other_preference(tmp_path):
     path.write_text(json.dumps(original))
     settings, warning = Settings.load(path)
     assert "theme" in warning
-    assert settings.sidebar_width == 40 and settings.actions == original["actions"]
+    assert settings.sidebar_width == 40 and action_dicts(settings.actions) == original["actions"]
     assert settings.theme == "jotline"
     replace(settings, active_workspace="work").save(path)
     after = json.loads(path.read_text())

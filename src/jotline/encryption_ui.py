@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 from .crypto import EncryptionError, check_passphrase
+from .modal import TextPrompt
 
 LOST_PASSPHRASE = "There is no way to open encrypted notes without the passphrase."
 
 
-class EncryptionMixin:
+class Encryption:
+    """Passphrase and note sealing. Bound onto Jotline; not inherited."""
+
     def encryption_commands(self, Command):
         return [Command(key, label, handler) for key, label, handler in [
             ("encrypt", "Encrypt this note", self.encrypt_current),
@@ -17,8 +20,6 @@ class EncryptionMixin:
         ]]
 
     def ask_secret(self, title: str, then) -> None:
-        from .app import TextPrompt
-
         self.push_screen(TextPrompt(title, "Passphrase", password=True), lambda value: then(value) if value else None)
 
     def prompt_unlock(self, then=None) -> None:
@@ -82,12 +83,26 @@ class EncryptionMixin:
         self.set_current_encryption(False)
 
     def set_current_encryption(self, encrypted: bool) -> None:
+        if self.current.original is None:
+            self.current.encrypted = encrypted
+            self.dirty = True
+            if not self.save_current(explicit=True):
+                self.current.encrypted = not encrypted
+                return
+            self.notify("Note encrypted on disk. Its unencrypted saved versions were removed; backups made before "
+                        "now still contain the old text." if encrypted else
+                        "Encryption removed. This note is stored as plain text again.", timeout=12)
+            return
         if not self.save_current(explicit=True):
             return
-        self.current.encrypted = encrypted
-        self.dirty = True
-        if not self.save_current(explicit=True):
-            self.current.encrypted = not encrypted
+        try:
+            note, changed = self.vault.set_encrypted(self.current.id, self.workspace, encrypted)
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity="error", timeout=10)
+            return
+        self.load(note)
+        if not changed:
+            self.notify("This note is already encrypted." if encrypted else "This note is not encrypted.")
             return
         self.notify("Note encrypted on disk. Its unencrypted saved versions were removed; backups made before "
                     "now still contain the old text." if encrypted else

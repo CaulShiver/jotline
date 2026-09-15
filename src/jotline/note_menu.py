@@ -4,9 +4,10 @@ from textual import events, on
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.message import Message
-from .modal import Modal
 from textual.widgets import Label, OptionList
 from textual.widgets.option_list import Option
+
+from .modal import Modal
 
 
 class NoteList(OptionList):

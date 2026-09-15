@@ -3,8 +3,9 @@ from dataclasses import asdict
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from .modal import Modal
 from textual.widgets import Button, Input, Label, Select, Static, Switch, TextArea
+
+from .modal import Modal
 from .settings import BOOLEAN_SETTINGS, DEFAULT_COLLECTIONS, HOTKEY_ACTIONS, Settings, THEMES
 
 
@@ -143,7 +144,7 @@ class Preferences(Modal[Settings | None]):
                 if name == 'hotkeys':
                     self.reset_hotkeys()
                     continue
-                if name in ('active_workspace', 'workspace_names', 'saved_views', 'actions'):
+                if name in ('active_workspace', 'workspace_names', 'saved_views', 'actions', '_baseline'):
                     continue
                 if name == 'daily_template':
                     self.query_one('#daily-template', TextArea).load_text(value)

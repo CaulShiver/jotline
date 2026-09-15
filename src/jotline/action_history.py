@@ -4,9 +4,8 @@ import json
 from pathlib import Path
 
 from .actions import MAX_STEPS, ActionCommitError, run_action
-from .filesystem import fs as os
+from .filesystem import create_private_temp, fs as os, read_regular_at, replace_at, unlink_quietly, vault_lock
 from .history import stamp
-from .store import create_private_temp, read_regular_at, replace_at, unlink_quietly, vault_lock
 
 MAX_RUNS = 100
 MAX_HISTORY_BYTES = 256 * 1024

@@ -2,8 +2,9 @@
 from textual import on
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
-from .modal import Modal
 from textual.widgets import Button, Label, TextArea
+
+from .modal import Modal
 
 # Rendering two huge read-only editors would stall the dialog; the full draft is still preserved.
 COMPARE_LIMIT = 100_000

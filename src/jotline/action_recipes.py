@@ -4,9 +4,8 @@ import json
 from pathlib import Path
 
 from .actions import validate_actions
-from .filesystem import fs as os
-from .store import (MAX_SETTINGS_BYTES, create_private_temp, pin_ancestors, publish_new, read_regular_file,
-                    unlink_quietly)
+from .filesystem import create_private_temp, fs as os, pin_ancestors, publish_new, read_regular_file, unlink_quietly
+from .limits import MAX_SETTINGS_BYTES
 
 
 def encode_recipes(actions):

@@ -1,17 +1,20 @@
 """Keyboard-accessible recipe builder and management workflows."""
 from copy import deepcopy
 from dataclasses import replace
+import json
 
 from rich.text import Text
 from textual import on
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from .modal import Modal
 from textual.widgets import Button, Input, Label, OptionList, Select, Static, TextArea
 
-from .actions import BUILTIN_ACTIONS, MAX_STEPS, STEP_TYPES, preview_action, truncate_preview, validate_actions
-from .action_history import ActionHistory, format_history
+from .action_history import ActionHistory, format_history, run_recorded_action as run_action
 from .action_recipes import merge_recipes, read_recipes, write_recipes
+from .actions import ActionCommitError, BUILTIN_ACTIONS, MAX_STEPS, STEP_TYPES, preview_action, truncate_preview, validate_actions
+from .markdown_editor import MarkdownEditor
+from .modal import Modal, Palette, TextPrompt
+from .settings import action_dicts
 
 # One label per entry in actions.STEP_TYPES; the builder looks every step type up here.
 STEP_LABELS = {'uppercase': 'Uppercase text', 'lowercase': 'Lowercase text', 'strip': 'Trim surrounding whitespace',
@@ -142,7 +145,6 @@ class ActionEditor(Modal[tuple | None]):
         return self.query_one('#recipe-steps', OptionList).highlighted
 
     def prompt_target(self):
-        from .app import Palette
         targets = [(note.id, f'{note.title} · {note.collection} · {note.id}')
                    for note in self.vault.notes()
                    if note.workspace == self.note.workspace and note.id != self.note.id
@@ -207,19 +209,25 @@ class ActionEditor(Modal[tuple | None]):
             self.notify(str(error), severity='error')
 
 
-class ActionWorkflowMixin:
+class ActionWorkflows:
+    """Local action recipes. Bound onto Jotline; not inherited."""
+
     def action_workflow_commands(self, Command):
-        return [Command('action-builder', 'Create action with step-by-step builder', self.create_action_recipe),
+        return [Command('actions', 'Run local action', self.choose_action),
+                Command('save-action', 'Save action recipe from this note', self.save_action_prompt),
+                Command('delete-action', 'Delete local action', lambda: self.choose_action(delete=True)),
+                Command('action-builder', 'Create action with step-by-step builder', self.create_action_recipe),
                 Command('action-recipes', 'Use a built-in action recipe', self.builtin_action_recipe),
                 Command('manage-actions', 'Edit, rename, duplicate or export action', self.manage_action_recipe),
                 Command('import-actions', 'Import shared action recipes', self.import_action_recipes),
                 Command('action-history', 'View action run history', self.show_action_history)]
 
     def open_action_editor(self, name='', steps=None, original=None):
-        # Snapshot current unsaved editor text; opening a builder must not save it.
-        note = replace(self.current, body=self.query_one('#editor', TextArea).text)
+        note = replace(self.current, body=self.query_one('#editor', MarkdownEditor).text)
+        if steps is not None:
+            steps = action_dicts({name or '_': steps})[name or '_']
         self.push_screen(ActionEditor(self.vault, note, name=name, steps=steps,
-                                      selection=self.query_one('#editor', TextArea).selected_text,
+                                      selection=self.query_one('#editor', MarkdownEditor).selected_text,
                                       unavailable_names=set(self.settings.actions) - {original}),
                          lambda result: self.store_action_recipe(result, original))
 
@@ -227,7 +235,6 @@ class ActionWorkflowMixin:
         self.open_action_editor()
 
     def builtin_action_recipe(self):
-        from .app import Palette
         self.push_screen(Palette([(name, name.replace('-', ' ')) for name in BUILTIN_ACTIONS], 'Choose a starter recipe'),
                          lambda name: self.open_action_editor(name, BUILTIN_ACTIONS[name]) if name else None)
 
@@ -236,36 +243,94 @@ class ActionWorkflowMixin:
             return
         name, steps = result
         try:
-            values = deepcopy(self.settings.actions)
+            values = action_dicts(self.settings.actions)
             if name != original and name in values:
                 raise ValueError('Action already exists; choose a different name')
             if original is not None:
                 values.pop(original, None)
             values[name] = steps
-            updated = replace(self.settings, actions=values)
-            updated.save(self.settings_path)
-            self.settings = updated
+            self.replace_settings(actions=values)
             self.notify('Action saved. Use Run local action to execute it.')
         except (ValueError, OSError) as error:
             self.notify(str(error), severity='error')
             self.open_action_editor(name, steps, original=original)
 
+    def save_action_prompt(self):
+        self.push_screen(TextPrompt('Save action recipe from note (JSON step list)', 'Unique action name'),
+                         self.save_action)
+
+    def save_action(self, name):
+        if not name:
+            return
+        try:
+            steps = json.loads(self.query_one('#editor', MarkdownEditor).text)
+            values = action_dicts(self.settings.actions)
+            if name in values:
+                raise ValueError('Action already exists; choose another name or delete it first')
+            values[name] = steps
+            self.replace_settings(actions=values)
+            self.notify('Action saved; choose Run local action to use it')
+        except (ValueError, OSError, RecursionError) as error:
+            self.notify(str(error), severity='error')
+
+    def choose_action(self, delete=False):
+        if not self.settings.actions:
+            if delete:
+                self.notify('No saved actions to delete.')
+            else:
+                self.builtin_action_recipe()
+            return
+        self.push_screen(Palette([(n, n) for n in self.settings.actions],
+                                 'Delete action' if delete else 'Run local action'),
+                         lambda name: self.delete_config('actions', name) if delete and name
+                         else self.run_local_action(name))
+
+    def run_local_action(self, name):
+        if not name or not self.save_current():
+            return
+        try:
+            def export(body):
+                note = self.vault.new(body, workspace=self.workspace)
+                self.vault.save(note)
+                self.notify(f'Exported action output to new inbox note {note.id}')
+            steps = action_dicts({name: self.settings.actions[name]})[name]
+            note = run_action(self.vault, self.current, steps, name=name,
+                              history_warning=lambda message: self.notify(message, severity='warning'),
+                              selection=self.query_one('#editor', MarkdownEditor).selected_text,
+                              copy=self.copy_to_clipboard, export=export)
+            self.accept_action_note(note)
+            self.status('Saved')
+            self.notify('Action completed')
+        except ActionCommitError as error:
+            self.accept_action_note(error.note)
+            self.status('Saved · durability warning')
+            self.notify(str(error) + '. Review action history before retrying.', severity='warning', timeout=12)
+        except (ValueError, OSError) as error:
+            self.notify(f'Action stopped: {error}. Earlier completed steps remain applied.', severity='error', timeout=12)
+
+    def accept_action_note(self, note):
+        editor = self.query_one('#editor', MarkdownEditor)
+        if editor.text != note.body:
+            self.replace_whole_text(note.body)
+        self._editor_baseline = editor.text
+        self.current, self.dirty, self.last_error = note, False, ''
+        self.refresh_notes()
+        self.connections()
+
     def manage_action_recipe(self):
-        from .app import Palette
         if not self.settings.actions:
             self.builtin_action_recipe()
             return
-        self.push_screen(Palette([(name, name) for name in self.settings.actions], 'Manage action'), self.action_recipe_options)
+        self.push_screen(Palette([(name, name) for name in self.settings.actions], 'Manage action'),
+                         self.action_recipe_options)
 
     def action_recipe_options(self, name):
-        from .app import Palette
         if name:
             self.push_screen(Palette([('edit', 'Edit steps or rename'), ('duplicate', 'Duplicate and edit'),
                                       ('export', 'Export shareable recipe')], name),
                              lambda choice: self.manage_action_choice(name, choice))
 
     def manage_action_choice(self, name, choice):
-        from .app import TextPrompt
         if choice == 'edit':
             self.open_action_editor(name, self.settings.actions[name], original=name)
         elif choice == 'duplicate':
@@ -277,13 +342,12 @@ class ActionWorkflowMixin:
     def export_action_recipe(self, path, name):
         if path:
             try:
-                write_recipes(path, {name: self.settings.actions[name]})
+                write_recipes(path, {name: action_dicts({name: self.settings.actions[name]})[name]})
                 self.notify('Recipe exported. Review template text and target IDs before sharing.')
             except (ValueError, OSError) as error:
                 self.notify(str(error), severity='error')
 
     def import_action_recipes(self):
-        from .app import TextPrompt
         self.push_screen(TextPrompt('Import recipes (adds configuration; does not run actions)', '/path/to/recipe.json'),
                          self.load_action_recipes)
 
@@ -291,9 +355,7 @@ class ActionWorkflowMixin:
         if path:
             try:
                 incoming = read_recipes(path)
-                updated = replace(self.settings, actions=merge_recipes(self.settings.actions, incoming))
-                updated.save(self.settings_path)
-                self.settings = updated
+                self.replace_settings(actions=merge_recipes(action_dicts(self.settings.actions), incoming))
                 self.notify(f'Imported {len(incoming)} recipes. Review steps and target IDs before running.')
             except (ValueError, OSError, RecursionError) as error:
                 self.notify(str(error), severity='error')
