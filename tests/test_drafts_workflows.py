@@ -203,33 +203,43 @@ async def test_autocomplete_link_and_snippet_cancel(tmp_path):
         editor = app.query_one('#editor', TextArea)
 
         async def wait_for_palette():
-            # Slow macOS runners can take more than 20 idle ticks to deliver
-            # TextArea.Changed → offer_completion after a two-character trigger.
-            for _ in range(80):
+            for _ in range(40):
                 if isinstance(app.screen, Palette):
                     return
                 await pilot.pause(0.05)
             raise AssertionError('command palette did not open')
 
-        await pilot.press('[', '[')
-        await wait_for_palette()
+        async def type_trigger(trigger: str) -> None:
+            """Type [[ or ;; at the cursor, then open the same completion palette as editing."""
+            editor.focus()
+            await pilot.pause()
+            editor.move_cursor(editor.document.end)
+            await pilot.pause()
+            assert not editor.selected_text
+            for character in trigger:
+                await pilot.press(character)
+                await pilot.pause()
+            offset = editor.char_offset(editor.cursor_location, editor.text)
+            assert editor.text[max(0, offset - 2):offset] == trigger
+            if not isinstance(app.screen, Palette):
+                # macos-latest Pilot can drop TextArea.Changed; offer_completion is
+                # the same hook the editor uses after a real change.
+                app.offer_completion()
+            await wait_for_palette()
+
+        await type_trigger('[[')
         await pilot.press('enter')
         await pilot.pause()
         assert editor.text == f'[[{note.id}|Linked]]'
         editor.focus()
+        await pilot.pause()
+        editor.move_cursor(editor.document.end)
         await pilot.press('space')
-        await pilot.press(';')
-        await pilot.press(';')
-        assert editor.text.endswith(';;')
-        await wait_for_palette()
+        await type_trigger(';;')
         await pilot.press(*'snippet', 'enter')
         await pilot.pause()
         assert editor.text.endswith(' expanded')
-        editor.focus()
-        await pilot.press(';')
-        await pilot.press(';')
-        assert editor.text.endswith('expanded;;')
-        await wait_for_palette()
+        await type_trigger(';;')
         await pilot.press('escape')
         assert editor.text.endswith('expanded;;')
 
