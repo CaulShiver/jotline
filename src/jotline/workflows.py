@@ -111,9 +111,10 @@ class Workflows:
     """Insert, arrange, and bulk-edit notes. Bound onto Jotline; not inherited."""
 
     def workflow_commands(self, Command):
-        return [Command(key, label, handler) for key, label, handler in [
+        return [Command(*item) for item in [
             ('recent', 'Recent notes', self.show_recent),
             ('previous', 'Previous note', self.previous_note),
+            ('extract', 'Extract selection to new note', self.action_extract_note, 'extract_note'),
             ('insert-template', 'Insert template at cursor', self.insert_template),
             ('insert-note', 'Insert note text at cursor', self.insert_note),
             ('arrange-lines', 'Arrange lines', lambda: self.arrange(False)),
@@ -129,6 +130,36 @@ class Workflows:
             return False
         self.capture_current_buffer()
         return True
+
+    def action_extract_note(self) -> None:
+        """Turn the selection into a new inbox note and leave a [[link]] behind."""
+        editor = self.query_one('#editor', MarkdownEditor)
+        selected = editor.selected_text
+        if not selected.strip():
+            self.notify('Select the text to extract first')
+            return
+        if len(selected.encode('utf-8')) > EDIT_LIMIT_BYTES:
+            self.notify('Result exceeds the note size limit', severity='error')
+            return
+        note = self.vault.new(selected, workspace=self.workspace)
+        link = wiki_link(note)
+        text = editor.text
+        start, end = sorted((editor.selection.start, editor.selection.end))
+        begin, finish = editor.char_offset(start, text), editor.char_offset(end, text)
+        result_bytes = (len(text[:begin].encode('utf-8')) + len(link.encode('utf-8'))
+                        + len(text[finish:].encode('utf-8')))
+        if result_bytes > EDIT_LIMIT_BYTES:
+            self.notify('Result exceeds the note size limit', severity='error')
+            return
+        try:
+            self.vault.save(note)
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity='error')
+            return
+        if not self.insert_editor_text(link):
+            return
+        self.refresh_notes()
+        self.notify(f'Extracted to {note.title}')
 
     def replace_whole_text(self, body) -> None:
         """Replace the whole note text as one undo step, keeping the cursor where it was."""

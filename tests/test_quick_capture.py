@@ -49,14 +49,14 @@ def test_capture_without_text_opens_the_editor_in_a_terminal(tmp_path, monkeypat
     opened = []
     monkeypatch.setattr(cli, "can_open_editor", lambda: True)
     monkeypatch.setattr(cli, "stdin_is_interactive", lambda: True)
-    monkeypatch.setattr(cli, "quick_capture", lambda settings, daily, workspace: opened.append(
-        (daily, workspace)) or "From the hotkey")
+    monkeypatch.setattr(cli, "quick_capture", lambda settings, daily, workspace, when=None: opened.append(
+        (daily, workspace, when)) or "From the hotkey")
     run_main(monkeypatch, tmp_path, "capture")
     note_id = capsys.readouterr().out.strip()
     assert Vault(tmp_path).read(note_id).body == "From the hotkey"
-    assert opened == [(False, "default")]
+    assert opened == [(False, "default", None)]
 
-    monkeypatch.setattr(cli, "quick_capture", lambda settings, daily, workspace: None)
+    monkeypatch.setattr(cli, "quick_capture", lambda settings, daily, workspace, when=None: None)
     with pytest.raises(SystemExit) as cancelled:
         run_main(monkeypatch, tmp_path, "capture")
     assert cancelled.value.code == 1

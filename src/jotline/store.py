@@ -4,7 +4,7 @@ from __future__ import annotations
 import codecs
 from collections import Counter
 from dataclasses import dataclass, field, replace
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import io
 import json
 from pathlib import Path
@@ -42,6 +42,7 @@ from .limits import (
     MAX_SETTINGS_BYTES,
 )
 from .search import compile_query
+from .tasks import gather
 
 COLLECTIONS = ("inbox", "projects", "areas", "resources", "archive", "trash")
 
@@ -71,6 +72,48 @@ def validate_note_id(note_id: str) -> str:
     if not re.fullmatch(r"[a-zA-Z0-9_-]+", note_id):
         raise ValueError("Invalid note ID")
     return note_id
+
+
+def parse_calendar_date(value: str, *, today: date | None = None) -> date:
+    """YYYY-MM-DD, today, or yesterday. Compact dates such as 20260914 are refused."""
+    today = today or date.today()
+    text = value.strip()
+    folded = text.casefold()
+    if folded == "today":
+        return today
+    if folded == "yesterday":
+        return today - timedelta(days=1)
+    try:
+        parsed = date.fromisoformat(text)
+    except ValueError:
+        parsed = None
+    if parsed is None or parsed.isoformat() != text:
+        raise ValueError("Use a date like 2026-09-14, today, or yesterday")
+    return parsed
+
+
+def daily_id(when: date, workspace: str = "default") -> str:
+    validate_workspace(workspace)
+    return f"daily-{when.isoformat()}" + (f"-{workspace}" if workspace != "default" else "")
+
+
+def daily_date_from_id(note_id: str) -> date | None:
+    """The calendar day encoded in a daily log ID, if the ID is well formed."""
+    if not note_id.startswith("daily-"):
+        return None
+    parts = note_id.split("-")
+    if len(parts) < 4:
+        return None
+    stamp = "-".join(parts[1:4])
+    try:
+        parsed = date.fromisoformat(stamp)
+    except ValueError:
+        return None
+    return parsed if parsed.isoformat() == stamp else None
+
+
+def is_daily_id(note_id: str) -> bool:
+    return note_id.startswith("daily-")
 
 
 def tagged_body(body: str, tags: str) -> str:
@@ -518,14 +561,15 @@ class Vault:
         with self.locked() as directory:
             return history.backup(self, vault_directory=directory)
 
-    def daily(self, template: str = "# {{date}}\n\n", workspace: str = "default") -> Note:
+    def daily(self, template: str = "# {{date}}\n\n", workspace: str = "default",
+              when: date | None = None) -> Note:
         with self.locked() as directory:
-            return self._daily_locked(template, workspace, directory=directory)
+            return self._daily_locked(template, workspace, when=when, directory=directory)
 
-    def _daily_locked(self, template: str, workspace: str = "default", *, directory: int | None = None) -> Note:
-        today = date.today().isoformat()
-        validate_workspace(workspace)
-        note_id = f"daily-{today}" + (f"-{workspace}" if workspace != "default" else "")
+    def _daily_locked(self, template: str, workspace: str = "default", *,
+                      when: date | None = None, directory: int | None = None) -> Note:
+        day = when or date.today()
+        note_id = daily_id(day, workspace)
         try:
             note = self.read(note_id, directory=directory)
             if note.workspace != workspace:
@@ -533,12 +577,14 @@ class Vault:
             return note
         except FileNotFoundError:
             stamp = now()
-            return Note(note_id, template.replace("{{date}}", today), "inbox", stamp, stamp, workspace=workspace)
+            return Note(note_id, template.replace("{{date}}", day.isoformat()), "inbox", stamp, stamp,
+                        workspace=workspace)
 
-    def append_daily(self, body: str, template: str = "# {{date}}\n\n", workspace: str = "default") -> Note:
+    def append_daily(self, body: str, template: str = "# {{date}}\n\n", workspace: str = "default",
+                     when: date | None = None) -> Note:
         """Append a shell capture atomically with respect to other Jotline writers."""
         with self.locked() as directory:
-            note = self._daily_locked(template, workspace, directory=directory)
+            note = self._daily_locked(template, workspace, when=when, directory=directory)
             separator = "" if note.body.endswith("\n\n") else ("\n" if note.body.endswith("\n") else "\n\n")
             note.body = note.body + separator + body + "\n"
             self._save_locked(note, directory)
@@ -596,6 +642,31 @@ class Vault:
             if matched:
                 matches.append(note)
         return matches
+
+    def inbox_captures(self, workspace: str, *, notes: list[Note] | None = None) -> list[Note]:
+        """Oldest inbox notes that are not daily logs, so processing skips the log itself."""
+        snapshot = self.notes() if notes is None else notes
+        captures = [note for note in self.search(collection="inbox", workspace=workspace, notes=snapshot)
+                    if not is_daily_id(note.id) and not note.locked]
+        captures.sort(key=lambda note: (note.created, note.id))
+        return captures
+
+    def stats(self, workspace: str, *, notes: list[Note] | None = None) -> dict[str, object]:
+        """Workspace counts with no note bodies, for `jotline stats` and scripts."""
+        snapshot = self.notes() if notes is None else notes
+        found = self.search(workspace=workspace, notes=snapshot)
+        inbox = self.search(collection="inbox", workspace=workspace, notes=snapshot)
+        captures = self.inbox_captures(workspace, notes=snapshot)
+        return {
+            "workspace": workspace,
+            "notes": len(found),
+            "inbox": len(inbox),
+            "inbox_captures": len(captures),
+            "daily_logs": sum(is_daily_id(note.id) for note in found),
+            "open_tasks": len(gather(found)),
+            "tagged": sum(bool(note.tags) for note in found),
+            "starred": sum(note.starred for note in found),
+        }
 
     def tags(self, workspace: str, *, notes: list[Note] | None = None) -> Counter:
         result = Counter()

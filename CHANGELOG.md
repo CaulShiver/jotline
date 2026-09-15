@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Daily logs can move through days: Previous daily log, Next daily log, and Open
+  daily log by date (`YYYY-MM-DD`, `today`, or `yesterday`) in the command
+  palette. Missing days use the daily template, as today already did. Optional
+  shortcuts start unassigned. `jotline daily` opens today's log in the app;
+  `jotline daily --date yesterday` opens another day. `jotline capture --daily --date`
+  appends to that log.
+- **Extract selection to new note** saves the selection as an inbox note and
+  replaces it with a `[[id|title]]` link, as one undo step.
+- **Process next inbox note** opens the oldest inbox capture (daily logs are
+  skipped). Filing that note with Move to collection opens the next. The status
+  line shows how many captures remain. `jotline stats` (and `--json`) prints
+  workspace counts without note bodies.
+
 ## 0.9.5 — 2026-09-15
 
 - Install no longer requires hunting a wheel filename. A tagged GitHub Release

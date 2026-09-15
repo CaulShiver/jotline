@@ -1,8 +1,9 @@
+from datetime import date, timedelta
 import subprocess
 import sys
 
 import pytest
-from jotline.store import ConflictError, Vault
+from jotline.store import ConflictError, Vault, daily_date_from_id, daily_id, is_daily_id, parse_calendar_date, wiki_link
 
 
 def test_roundtrip_and_external_edit(tmp_path):
@@ -57,6 +58,41 @@ def test_daily_and_corrupt_file(tmp_path):
         vault.read('../escape')
 
 
+def test_dated_daily_logs_are_per_day_and_workspace(tmp_path):
+    vault = Vault(tmp_path)
+    past = vault.daily(when=date(2026, 9, 1))
+    assert past.id == "daily-2026-09-01"
+    assert "# 2026-09-01" in past.body
+    vault.save(past)
+    assert vault.daily(when=date(2026, 9, 1)).body == past.body
+    work = vault.daily(when=date(2026, 9, 1), workspace="work")
+    assert work.id == "daily-2026-09-01-work"
+    vault.save(work)
+    appended = vault.append_daily("later", when=date(2026, 9, 1))
+    assert appended.id == past.id
+    assert appended.body.endswith("later\n")
+
+
+def test_inbox_captures_skip_dailies_and_sort_oldest_first(tmp_path):
+    vault = Vault(tmp_path)
+    newer = vault.new("new capture")
+    newer.created = "2026-06-01T00:00:00+00:00"
+    vault.save(newer)
+    older = vault.new("old capture")
+    older.created = "2026-01-01T00:00:00+00:00"
+    vault.save(older)
+    daily = vault.daily()
+    vault.save(daily)
+    other = vault.new("elsewhere", workspace="work")
+    vault.save(other)
+    queued = vault.inbox_captures("default")
+    assert [note.id for note in queued] == [older.id, newer.id]
+    counts = vault.stats("default")
+    assert counts["inbox"] == 3
+    assert counts["inbox_captures"] == 2
+    assert counts["daily_logs"] == 1
+
+
 def test_external_deletion_is_conflict(tmp_path):
     vault = Vault(tmp_path)
     note = vault.new('original')
@@ -78,6 +114,34 @@ def test_cli_capture_export_and_daily(tmp_path):
     second = cli('capture', '--daily', 'two').stdout.strip()
     assert first == second
     assert cli('export', first).stdout.endswith('one\n\ntwo\n')
+    dated = cli('capture', '--daily', '--date', '2026-09-01', 'from the first').stdout.strip()
+    assert dated == 'daily-2026-09-01'
+    assert cli('export', dated).stdout.endswith('from the first\n')
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    assert cli('capture', '--daily', '--date', 'yesterday', 'later').stdout.strip() == f'daily-{yesterday}'
+
+
+def test_parse_calendar_date_words_and_canonical_iso():
+    today = date(2026, 9, 15)
+    assert parse_calendar_date('today', today=today) == today
+    assert parse_calendar_date(' TODAY ', today=today) == today
+    assert parse_calendar_date('yesterday', today=today) == date(2026, 9, 14)
+    assert parse_calendar_date('2026-09-01', today=today) == date(2026, 9, 1)
+    assert daily_id(date(2026, 9, 1), 'work') == 'daily-2026-09-01-work'
+    assert daily_date_from_id('daily-2026-09-01') == date(2026, 9, 1)
+    assert daily_date_from_id('daily-2026-09-01-work') == date(2026, 9, 1)
+    assert daily_date_from_id('abcd1234') is None
+    assert daily_date_from_id('daily-nope') is None
+    assert is_daily_id('daily-2026-09-01')
+    assert not is_daily_id('abcd1234')
+    for value in ('20260901', '2026-9-1', 'tomorrow', '', '  '):
+        with pytest.raises(ValueError):
+            parse_calendar_date(value, today=today)
+
+
+def test_wiki_link_strips_markup_characters(tmp_path):
+    note = Vault(tmp_path).new('# Title | with [brackets]')
+    assert wiki_link(note) == f'[[{note.id}|Title   with brackets]]'
 
 
 @pytest.mark.parametrize("body", ["[" * 100_000, "[[x|" * 25_000], ids=['unclosed', 'repeated-alias'])

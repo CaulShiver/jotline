@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from datetime import date, timedelta
 import re
 
 from textual import events, on
@@ -28,7 +29,8 @@ from .preferences import Preferences
 from .review_ui import Review
 from .screens import FindInNote, MarkdownPreview, RevisionPreview
 from .settings import HOTKEY_ACTIONS, Settings, VIEW_COLLECTIONS
-from .store import COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, tagged_body, validate_workspace, wiki_link
+from .store import (COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, daily_date_from_id,
+                    is_daily_id, parse_calendar_date, tagged_body, validate_workspace, wiki_link)
 from .templates import GUIDE, REVIEW, Templates
 from .workflows import Workflows
 
@@ -101,6 +103,8 @@ class Jotline(App):
         self.compact_navigation = False
         self._shown_storage_warnings: set[str] = set()
         self._recovery_dialog_open = False
+        self._status_message = "Ready"
+        self.inbox_capture_count = 0
         self.recent_note_ids = []
         self.note_positions = {}
         self._editor_baseline = ""
@@ -163,8 +167,8 @@ class Jotline(App):
         self.apply_settings(startup=True)
         self.omarchy_sync.start()
         self.update_responsive_layout()
-        self.status("Ready")
         self.refresh_notes()
+        self.status("Ready")
         self.autosave_timer = self.set_interval(self.settings.autosave_seconds, self.autosave)
         if self.initial_note is not None:
             self.collection = self.initial_note.collection
@@ -275,6 +279,8 @@ class Jotline(App):
 
     def refresh_notes(self) -> None:
         snapshot = self.vault.notes()
+        self.inbox_capture_count = len(self.vault.inbox_captures(self.workspace, notes=snapshot))
+        self.status(self._status_message)
         try:
             notes = self.vault.search(self.query_one("#search", Input).value, self.collection, self.workspace,
                                       notes=snapshot)
@@ -382,7 +388,7 @@ class Jotline(App):
             self.notify(str(error), severity='error')
             return
         choices = [('move', 'Move to collection…')]
-        if not note.id.startswith('daily-'):
+        if not is_daily_id(note.id):
             choices.append(('workspace', 'Move to workspace…'))
         choices.append(('restore', 'Restore to Inbox') if note.collection == 'trash'
                        else ('trash', 'Delete · Move to Trash'))
@@ -419,7 +425,7 @@ class Jotline(App):
                 moved.collection = collection
             if workspace is not None:
                 validate_workspace(workspace)
-                if moved.id.startswith('daily-'):
+                if is_daily_id(moved.id):
                     raise ValueError('Daily logs belong to their workspace; copy their text into a regular note to move it')
                 moved.workspace = workspace
             self.vault.save(moved)
@@ -458,8 +464,11 @@ class Jotline(App):
         return True
 
     def status(self, message: str) -> None:
+        self._status_message = message
         tags = sorted(self.current.tags)[:5]
         details = f"{message}  ·  {len(self.current.body.split())} words"
+        if self.inbox_capture_count:
+            details += f"  ·  {self.inbox_capture_count} inbox"
         if not self.compact_layout:
             details += f"  ·  {self.current.collection}  ·  {self.workspace}"
             details += "  ·  encrypted" if self.current.encrypted else ""
@@ -546,17 +555,39 @@ class Jotline(App):
             self.refresh_notes()
 
     def action_daily(self) -> None:
-        if self.save_current(explicit=True):
-            try:
-                note = self.vault.daily(self.settings.daily_template, self.workspace)
-            except (OSError, ValueError) as error:
-                self.notify(f"Could not open today's daily log: {error}", severity="error", timeout=10)
-                return
-            self.collection = note.collection
-            self.load(note)
-            self.refresh_notes()
-            editor = self.editor()
-            editor.move_cursor(editor.document.end)
+        self.open_daily(date.today())
+
+    def action_daily_previous(self) -> None:
+        self.open_daily((daily_date_from_id(self.current.id) or date.today()) - timedelta(days=1))
+
+    def action_daily_next(self) -> None:
+        self.open_daily((daily_date_from_id(self.current.id) or date.today()) + timedelta(days=1))
+
+    def action_daily_date(self) -> None:
+        self.push_screen(TextPrompt("Open daily log by date", "YYYY-MM-DD, today, or yesterday"),
+                         self.open_daily_from_prompt)
+
+    def open_daily_from_prompt(self, value: str | None) -> None:
+        if not value:
+            return
+        try:
+            self.open_daily(parse_calendar_date(value))
+        except ValueError as error:
+            self.notify(str(error), severity="error")
+
+    def open_daily(self, when: date) -> None:
+        if not self.save_current(explicit=True):
+            return
+        try:
+            note = self.vault.daily(self.settings.daily_template, self.workspace, when=when)
+        except (OSError, ValueError) as error:
+            self.notify(f"Could not open the {when.isoformat()} daily log: {error}", severity="error", timeout=10)
+            return
+        self.collection = note.collection
+        self.load(note)
+        self.refresh_notes()
+        editor = self.editor()
+        editor.move_cursor(editor.document.end)
 
     def action_search(self) -> None:
         self.collection = "all"
@@ -856,6 +887,9 @@ class Jotline(App):
             Command("settings", "Settings · appearance, editor, hotkeys · Ctrl+,", self.action_settings),
             Command("new", "New thought", self.action_new, "new"),
             Command("daily", "Open today's daily log", self.action_daily, "daily"),
+            Command("daily-previous", "Previous daily log", self.action_daily_previous, "daily_previous"),
+            Command("daily-next", "Next daily log", self.action_daily_next, "daily_next"),
+            Command("daily-date", "Open daily log by date", self.action_daily_date, "daily_date"),
             Command("open", "Open a note", self.action_open_note, "open_note"),
             Command("focus", "Toggle focus mode", self.action_focus_mode, "focus_mode"),
             Command("find", "Find within current note", lambda: self.push_screen(FindInNote())),
@@ -936,10 +970,13 @@ class Jotline(App):
         self.show_navigation()
 
     def move_to_collection(self, collection: str) -> None:
+        filing = (self.current.collection == "inbox" and not is_daily_id(self.current.id)
+                  and collection != "inbox")
         if self.save_current():
             self.current.collection = collection
             self.dirty = True
-            self.save_current()
+            if self.save_current() and filing:
+                self.open_next_inbox_capture()
 
     def toggle_star(self) -> None:
         if self.save_current():

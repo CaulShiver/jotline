@@ -1,6 +1,7 @@
 """Launch the workspace or capture text without leaving your shell."""
 import argparse
 from dataclasses import dataclass
+from datetime import date
 import getpass
 import json
 import os
@@ -35,7 +36,8 @@ from .export import BINARY, FORMAT_NAMES, FORMATS, export_bytes, format_for, wri
 from .importing import apply_import, preview_import
 from .limits import MAX_NOTE_BYTES
 from .settings import Settings, action_dicts
-from .store import OTHER_WORKSPACE, Vault, read_regular_file, tagged_body, validate_workspace
+from .store import (OTHER_WORKSPACE, Vault, parse_calendar_date, read_regular_file, tagged_body,
+                    validate_workspace)
 from .tasks import due_limit, gather, parse_reference, set_done, short_ids
 
 
@@ -173,12 +175,22 @@ def due_argument(value: str) -> str:
         raise argparse.ArgumentTypeError(str(error)) from None
 
 
+def calendar_date_argument(value: str) -> date:
+    try:
+        return parse_calendar_date(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from None
+
+
 def can_open_editor() -> bool:
     return stdin_is_interactive() and sys.stdout.isatty()
 
 
-def quick_capture(settings: Settings, daily: bool, workspace: str) -> str | None:
-    destination = ("today's log" if daily else settings.default_collection) + " · " + workspace
+def quick_capture(settings: Settings, daily: bool, workspace: str, when: date | None = None) -> str | None:
+    if daily:
+        destination = f"daily log · {(when or date.today()).isoformat()} · {workspace}"
+    else:
+        destination = settings.default_collection + " · " + workspace
     return QuickCapture(destination, settings.theme).run()
 
 
@@ -215,7 +227,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     capture = sub.add_parser("capture", help="Capture text, read piped stdin, or open a small editor")
     capture.add_argument("text", nargs="*")
-    capture.add_argument("--daily", action="store_true", help="Append to today's log")
+    capture.add_argument("--daily", action="store_true", help="Append to a daily log (today, or --date)")
+    capture.add_argument("--date", type=calendar_date_argument, metavar="DATE",
+                         help="Daily log date (YYYY-MM-DD, today, or yesterday); requires --daily")
     add_encoding_options(capture)
     listing = sub.add_parser("list", help="Find notes")
     listing.add_argument("query", nargs="?", default="")
@@ -229,6 +243,9 @@ def build_parser() -> argparse.ArgumentParser:
         add_encoding_options(update)
     opening = sub.add_parser('open', help='Open a note in the terminal editor')
     opening.add_argument('id', metavar='NOTE', help=NOTE_HELP)
+    daily = sub.add_parser("daily", help="Open a daily log in the terminal editor")
+    daily.add_argument("--date", type=calendar_date_argument, metavar="DATE",
+                       help="Log date (YYYY-MM-DD, today, or yesterday); default today")
     actions = sub.add_parser('actions', help='List local actions')
     actions.add_argument("--json", action="store_true", help="Print action names and steps as JSON")
     action = sub.add_parser('run', help='Run a named local action on a note')
@@ -255,6 +272,8 @@ def build_parser() -> argparse.ArgumentParser:
     tasks.add_argument("--due", type=due_argument, metavar="DATE",
                        help="Only tasks due on or before DATE (YYYY-MM-DD or today)")
     tasks.add_argument("--json", action="store_true", help="Print tasks as JSON")
+    stats = sub.add_parser("stats", help="Print workspace counts without note bodies")
+    stats.add_argument("--json", action="store_true", help="Print counts as JSON")
     finish = sub.add_parser("done", help="Check off a task listed by jotline tasks")
     finish.add_argument("task", metavar="NOTE:LINE", help="The reference printed by jotline tasks")
     finish.add_argument("--undo", action="store_true", help="Mark the task as not done again")
@@ -313,17 +332,20 @@ def read_note_here(run: Invocation, note_id: str):
 
 def run_capture(run: Invocation) -> None:
     args, vault, settings = run.args, run.vault, run.settings
-    if args.daily and vault.has_key() and vault.daily(settings.daily_template, run.workspace).locked:
+    if args.date is not None and not args.daily:
+        run.parser.error("--date is only used with --daily")
+    when = args.date or date.today()
+    if args.daily and vault.has_key() and vault.daily(settings.daily_template, run.workspace, when=when).locked:
         unlock_vault(vault)
     body = input_text(args, run.encoding, run.errors)
     if not body.strip() and not args.text and can_open_editor():
-        body = quick_capture(settings, args.daily, run.workspace)
+        body = quick_capture(settings, args.daily, run.workspace, when=when if args.daily else None)
         if body is None:
             run.parser.exit(1, "jotline: Nothing captured\n")
     if not body.strip():
         run.parser.error("Provide text or pipe text to jotline capture")
     if args.daily:
-        note = vault.append_daily(body, settings.daily_template, run.workspace)
+        note = vault.append_daily(body, settings.daily_template, run.workspace, when=when)
     else:
         note = save_new_note(run, body)
     print(note.id)
@@ -516,6 +538,17 @@ def run_encryption(run: Invocation) -> None:
         print("Encryption is not set up")
 
 
+def run_stats(run: Invocation) -> None:
+    data = run.vault.stats(run.workspace)
+    if run.args.json:
+        print(json.dumps(data, ensure_ascii=True))
+    else:
+        for key in ("workspace", "notes", "inbox", "inbox_captures", "daily_logs",
+                    "open_tasks", "tagged", "starred"):
+            print(f"{key}\t{data[key]}")
+    report_warnings(run.vault)
+
+
 def run_workspaces(run: Invocation) -> None:
     names = sorted(run.vault.workspaces() | set(run.settings.workspace_names) | {run.workspace})
     if run.args.json:
@@ -547,7 +580,17 @@ def run_doctor(run: Invocation) -> None:
 
 
 def run_app(run: Invocation) -> None:
-    initial_note = read_note_here(run, run.args.id) if run.args.command == 'open' else None
+    if run.args.command == "daily":
+        when = run.args.date or date.today()
+        note = run.vault.daily(run.settings.daily_template, run.workspace, when=when)
+        if note.locked:
+            unlock_vault(run.vault)
+            note = run.vault.daily(run.settings.daily_template, run.workspace, when=when)
+        initial_note = note
+    elif run.args.command == "open":
+        initial_note = read_note_here(run, run.args.id)
+    else:
+        initial_note = None
     Jotline(run.vault, workspace=run.workspace, initial_note=initial_note).run()
 
 
@@ -555,12 +598,13 @@ COMMANDS = {
     "capture": run_capture, "import": run_import, "backup": run_backup,
     "append": run_append, "prepend": run_append, "actions": run_actions, "run": run_action,
     "list": run_list, "tag": run_tag, "export": run_export, "tasks": run_tasks, "done": run_done,
+    "stats": run_stats, "daily": run_app,
     "encrypt": run_sealing, "decrypt": run_sealing, "encryption": run_encryption,
     "workspaces": run_workspaces, "tags": run_tags, "doctor": run_doctor,
     "open": run_app, None: run_app,
 }
 # Commands that only read must not turn a mistyped path into a new vault.
-READ_ONLY_COMMANDS = {"list", "actions", "export", "workspaces", "tags", "tasks", "doctor"}
+READ_ONLY_COMMANDS = {"list", "actions", "export", "workspaces", "tags", "tasks", "doctor", "stats"}
 
 
 def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Invocation:

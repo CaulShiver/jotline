@@ -160,8 +160,9 @@ The first line becomes the title. Your words save automatically.
 ## A simple rhythm
 - Capture loose thoughts in the inbox.
 - Ctrl+D opens today's log: observations, decisions, and next steps.
-- Keep a useful idea in its own note. Ctrl+P → Insert note link connects it.
-- Review the inbox regularly. Move useful notes to projects, areas, or resources.
+- Ctrl+P → Previous/next daily log, or Open daily log by date, moves through other days.
+- Keep a useful idea in its own note. Select it and Ctrl+P → Extract selection to new note.
+- Review the inbox with Ctrl+P → Process next inbox note. Move useful notes to projects, areas, or resources.
 - Archive what is finished. Trash is reversible; move a note back to restore it.
 
 ## Make it yours
@@ -205,7 +206,8 @@ Links inserted by Jotline use stable IDs, so changing titles is safe.
 Ctrl+P → New note from template starts a meeting, project, journal, or saved template.
 Save this note as a template keeps a reusable copy; use {{date}}, {{time}}, {{workspace}}.
 Copy template source to new note preserves placeholders for customization.
-Ctrl+, → Keyboard shortcuts includes optional Markdown formatting and preview keys.
+Ctrl+, → Keyboard shortcuts includes optional Markdown formatting, preview,
+previous/next daily log, extract selection, and process-inbox keys.
 Ctrl+P → History of this note lets you inspect and restore a saved version as a new note.
 Browse saved note history includes externally deleted notes in this workspace.
 Back up vault now saves a local ZIP of notes, settings, and templates.
@@ -220,7 +222,7 @@ Ctrl+Q flushes edits before quitting. Use it before closing the terminal.
 REVIEW = """# Weekly review
 
 ## Clear the inbox
-- [ ] Read unprocessed captures (Ctrl+P → Show inbox).
+- [ ] Read unprocessed captures (Ctrl+P → Process next inbox note).
 - [ ] Turn actionable thoughts into a concrete next step.
 - [ ] Move active work to projects and ongoing responsibilities to areas.
 - [ ] Keep reference material in resources; archive what is finished.
