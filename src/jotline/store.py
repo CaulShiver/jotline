@@ -41,6 +41,7 @@ from .limits import (
     MAX_SCAN_ENTRIES,
     MAX_SETTINGS_BYTES,
 )
+from .links import LINK, NoteConnections, connect_note, wiki_link_targets
 from .search import compile_query
 from .tasks import gather
 
@@ -49,7 +50,6 @@ COLLECTIONS = ("inbox", "projects", "areas", "resources", "archive", "trash")
 CONFLICT_MESSAGE = "This note changed outside Jotline. Save a recovery copy to preserve your changes."
 OTHER_WORKSPACE = "Note is in another workspace; pass --workspace NAME"
 
-LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|([^\[\]]*))?\]\]")
 TAG = re.compile(r"(?<![\w#])#([\w][\w/-]*)", re.UNICODE)
 
 
@@ -186,7 +186,10 @@ class Note:
 
     @property
     def links(self) -> set[str]:
-        return self._derived(LINK, "links")
+        values, warning = wiki_link_targets(self.body)
+        if warning and warning not in self.derived_warnings:
+            self.derived_warnings.append(warning)
+        return values
 
 
 def wiki_link(note: Note) -> str:
@@ -618,17 +621,25 @@ class Vault:
             return note.starred and note.collection != "trash"
         return note.collection == collection
 
-    def backlinks(self, target: Note, *, notes: list[Note] | None = None) -> list[Note]:
-        targets = {target.id, target.title, target.heading}
-        matches = []
+    def workspace_notes(self, workspace: str, *, notes: list[Note] | None = None) -> list[Note]:
+        """Notes in one workspace, excluding trash. Collects derived-link warnings."""
+        found = []
         for note in (self.notes() if notes is None else notes):
-            if note.id == target.id or note.collection == "trash" or note.workspace != target.workspace:
+            if note.collection == "trash" or note.workspace != workspace:
                 continue
-            linked = targets.intersection(note.links)
             self._collect_derived_warnings(note)
-            if linked:
-                matches.append(note)
-        return matches
+            found.append(note)
+        return found
+
+    def connections(self, target: Note, *, notes: list[Note] | None = None,
+                    body: str | None = None) -> NoteConnections:
+        peers = self.workspace_notes(target.workspace, notes=notes)
+        return connect_note(target, peers, body=body)
+
+    def backlinks(self, target: Note, *, notes: list[Note] | None = None) -> list[Note]:
+        peers = self.workspace_notes(target.workspace, notes=notes)
+        by_id = {note.id: note for note in peers}
+        return [by_id[item.note_id] for item in connect_note(target, peers).incoming if item.note_id]
 
     def search(self, query: str = "", collection: str = "all", workspace: str | None = None,
                *, notes: list[Note] | None = None) -> list[Note]:

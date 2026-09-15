@@ -18,8 +18,10 @@ from rich.text import Text
 
 from .action_ui import ActionWorkflows
 from .commands import Command
+from .connect_ui import Connections, ConnectionsBar
 from .encryption_ui import Encryption
 from .import_ui import RecoveryImport
+from .links import wiki_link_at, wiki_target_from_href
 from .markdown_editor import JOTLINE_THEME, MarkdownEditor
 from .modal import Palette, TextPrompt
 from .navigation import Views
@@ -116,6 +118,10 @@ class Jotline(App):
         self._live_preview_ratio: float | None = None
         self._live_preview_lock = asyncio.Lock()
         self._live_preview_cursor_row: int | None = None
+        self._link_notes = None
+        self._link_workspace = ""
+        self._incoming = []
+        self._incoming_for = ""
         self.command_registry = self.build_command_registry()
 
     def editor(self) -> MarkdownEditor:
@@ -156,7 +162,7 @@ class Jotline(App):
                     yield Button("More", id="md-more", tooltip="All Markdown formats, including tables and code blocks")
                     yield Button("Preview", id="md-preview", tooltip="Preview Markdown; Esc returns to writing")
                 yield MarkdownEditor("", soft_wrap=True, tab_behavior="focus", show_line_numbers=False, id="editor")
-                yield Static("", id="connections", markup=False)
+                yield ConnectionsBar("", id="connections", markup=False)
                 yield Static("Ready · local Markdown", id="status", markup=False)
             with VerticalScroll(id="live-preview", classes="hidden"):
                 yield Markdown("", open_links=False, id="live-markdown")
@@ -444,6 +450,7 @@ class Jotline(App):
         if self.is_running:
             if self.capture_current_buffer():
                 self.offer_completion()
+                self.connections()
             self.schedule_live_preview()
 
     @on(TextArea.SelectionChanged, "#editor")
@@ -469,10 +476,13 @@ class Jotline(App):
         details = f"{message}  ·  {len(self.current.body.split())} words"
         if self.inbox_capture_count:
             details += f"  ·  {self.inbox_capture_count} inbox"
-        if not self.compact_layout:
+        if self.compact_layout:
+            details += f"  ·  {self.connection_counts()}"
+        else:
             details += f"  ·  {self.current.collection}  ·  {self.workspace}"
             details += "  ·  encrypted" if self.current.encrypted else ""
             details += "  ·  " + " ".join("#" + tag for tag in tags) if tags else ""
+
         self.query_one("#status", Static).update(details)
         self.query_one("#note-heading", Static).update(Text(self.current.title + " / " + self.current.collection))
 
@@ -504,12 +514,6 @@ class Jotline(App):
     def autosave(self) -> None:
         if self.is_running and self.dirty:
             self.save_current()
-
-    def connections(self, notes=None) -> None:
-        backlinks = self.vault.backlinks(self.current, notes=notes)
-        summary = " · ".join(n.title for n in backlinks[:3])
-        self.query_one("#connections", Static).update(
-            f"← {len(backlinks)} backlinks" + (f"  {summary}" if summary else self.shortcut_text("  ·  ctrl+p → Insert note link")))
 
     def new_note(self, body: str = "") -> Note:
         note = self.vault.new(body, workspace=self.workspace)
@@ -895,9 +899,6 @@ class Jotline(App):
             Command("find", "Find within current note", lambda: self.push_screen(FindInNote())),
             Command("refresh", "Refresh vault from disk", self.refresh_vault),
             Command("star", "Toggle star on this note", self.toggle_star),
-            Command("link", "Insert note link", lambda: self.select_related_note("link")),
-            Command("follow", "Follow a link in this note", lambda: self.select_related_note("follow")),
-            Command("backlinks", "Open a backlink", lambda: self.select_related_note("backlinks")),
             Command("task", "Toggle task on current line", self.toggle_task),
             Command("copy", "Copy note to clipboard (terminal OSC 52)", self.copy_current_note),
             Command("recovery", "Save recovery copy", self.save_recovery_copy),
@@ -927,6 +928,7 @@ class Jotline(App):
         commands.extend(self.action_workflow_commands(Command))
         commands.extend(self.review_commands(Command))
         commands.extend(self.encryption_commands(Command))
+        commands.extend(self.connect_commands(Command))
         commands.extend([
             Command('resolve-conflict', 'Review external change and recover draft', self.show_recovery_dialog),
             Command('import-library', 'Import notes from file, folder or Drafts export', self.import_library),
@@ -1001,30 +1003,20 @@ class Jotline(App):
         except (OSError, ValueError) as error:
             self.notify(str(error), severity="error")
 
-    def select_related_note(self, mode: str) -> None:
-        self.capture_current_buffer()
-        if mode == "backlinks":
-            notes = self.vault.backlinks(self.current)
-        else:
-            notes = self.vault.search(workspace=self.workspace)
-            if mode == "follow":
-                links = self.current.links
-                notes = [note for note in notes if note.id in links or note.title in links or note.heading in links]
-            else:
-                notes = [note for note in notes if note.id != self.current.id]
-        if not notes:
-            self.notify("No matching notes yet.")
+    @on(Markdown.LinkClicked, "#live-markdown")
+    def follow_live_preview_link(self, event: Markdown.LinkClicked) -> None:
+        event.stop()
+        if target := wiki_target_from_href(event.href):
+            self.follow_wiki_target(target)
+
+    @on(events.Click, "#editor")
+    def follow_editor_click(self, event: events.Click) -> None:
+        if not event.ctrl:
             return
-
-        def picked(note_id: str | None) -> None:
-            if note_id and mode == "link":
-                note = next(note for note in notes if note.id == note_id)
-                self.editor().insert(wiki_link(note))
-                self.editor().focus()
-            elif note_id:
-                self.load_id(note_id)
-
-        self.push_screen(Palette(self.note_choices(notes), "Choose a note"), picked)
+        editor = self.editor()
+        if link := wiki_link_at(editor.text, *editor.cursor_location):
+            event.stop()
+            self.follow_wiki_target(link.target)
 
     def open_generated_note(self, body: str) -> None:
         if self.save_current():
@@ -1033,4 +1025,4 @@ class Jotline(App):
             self.save_current()
 
 
-_bind_capabilities(Jotline, Encryption, Review, RecoveryImport, ActionWorkflows, Views, Workflows)
+_bind_capabilities(Jotline, Encryption, Review, RecoveryImport, ActionWorkflows, Views, Workflows, Connections)

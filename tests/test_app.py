@@ -87,8 +87,9 @@ async def test_link_insertion_and_backlink_navigation(tmp_path):
         source_id = app.current.id
         app.command('follow')
         await pilot.pause()
-        await pilot.press('enter')
-        await pilot.pause()
+        if app.current.id != target.id:
+            await pilot.press('enter')
+            await pilot.pause()
         assert app.current.id == target.id
         app.command('backlinks')
         await pilot.pause()
@@ -105,7 +106,9 @@ async def test_compact_terminal_hides_chrome_and_keeps_writing_space(tmp_path):
         assert app.query_one('#hint', Static).has_class('hidden')
         assert app.query_one('#connections', Static).has_class('hidden')
         assert app.query_one(Footer).has_class('compact-footer')
-        assert 'default' not in str(app.query_one('#status', Static).render())
+        status = str(app.query_one('#status', Static).render())
+        assert 'default' not in status
+        assert '←0' in status and '→0' in status
         assert app.query_one(TextArea).has_focus
 
 

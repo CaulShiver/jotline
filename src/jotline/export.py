@@ -17,8 +17,8 @@ import tempfile
 import time
 from uuid import uuid4
 
-from .store import LINK
-from .tasks import CODE_SPAN, TASK, fenced_pairs
+from .links import rewrite_wiki_links, wiki_href
+from .tasks import TASK, fenced_pairs
 
 FORMATS = ("markdown", "html", "docx", "pdf")
 FORMAT_NAMES = {"markdown": "Markdown", "html": "HTML", "docx": "Word", "pdf": "PDF"}
@@ -69,23 +69,14 @@ def format_for(requested: str | None, output: Path | None) -> str:
     return "markdown"
 
 
-def printable_markdown(body: str, titles: dict[str, str] | None = None) -> str:
-    """Show checkboxes as ☐/☒ and wiki links as their labels, leaving fenced code alone."""
+def printable_markdown(body: str, titles: dict[str, str] | None = None,
+                       *, followable: bool = False) -> str:
+    """Show checkboxes as ☐/☒ and wiki links as their labels, leaving fenced code alone.
+
+    When followable, wiki links become ``[label](jotline:target)`` so preview
+    can open the note without contacting a server. Exports keep plain labels.
+    """
     titles = titles or {}
-
-    def link_titles(text: str) -> str:
-        return LINK.sub(lambda link: link[2] or titles.get(link[1], link[1]), text)
-
-    def outside_code_spans(text: str) -> str:
-        if "[[" not in text:
-            return text
-        # `[[x]]` inside backticks is documentation of the syntax, not a link.
-        pieces, last = [], 0
-        for span in CODE_SPAN.finditer(text):
-            pieces.append(link_titles(text[last:span.start()]) + span[0])
-            last = span.end()
-        pieces.append(link_titles(text[last:]))
-        return "".join(pieces)
 
     pairs, fenced = fenced_pairs(body)
     result = []
@@ -94,9 +85,16 @@ def printable_markdown(body: str, titles: dict[str, str] | None = None) -> str:
             if task := TASK.fullmatch(content):
                 # ☒ has no emoji form, unlike ☑, so both boxes print in the text font.
                 content = task["lead"][:-1] + ("☐ " if task["mark"] == " " else "☒ ") + task["text"]
-            content = outside_code_spans(content)
         result.append(content + ending)
-    return "".join(result)
+    rendered = "".join(result)
+
+    def replace(link, match):
+        label = link.label or titles.get(link.target, link.target)
+        if followable:
+            return f"[{label}]({wiki_href(link.target)})"
+        return label
+
+    return rewrite_wiki_links(rendered, replace)
 
 
 def render_html(title: str, body: str, titles: dict[str, str] | None = None) -> str:

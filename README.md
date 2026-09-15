@@ -54,7 +54,7 @@ uv run pytest
 
 1. **Capture.** `Ctrl+N` starts a thought. No required title, folder, or tags.
 2. **Log.** `Ctrl+D` opens today's page. Mix observations with Markdown tasks: `- [ ] Follow up`. Previous/next daily log and **Open daily log by date** in the palette flip days; missing days use your daily template.
-3. **Connect.** Keep durable ideas in their own notes. Select a passage and run **Extract selection to new note** to leave a `[[link]]` behind.
+3. **Connect.** Keep durable ideas in their own notes. Select a passage and run **Extract selection to new note** to leave a `[[link]]` behind. Alt+K (or Show connections) lists who links here and where this note points. Follow a `[[link]]` or create the missing note.
 4. **Review.** **Process next inbox note** opens the oldest capture (daily logs stay out of that queue). File it with Move to collection; the next capture opens. **Start weekly review** is a checklist when you want one.
 
 These are optional practices, not a compulsory system. An inbox and search are enough to start.
@@ -81,12 +81,13 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 | `Ctrl+D` | Today's daily log |
 | `Ctrl+F` | Search across notes |
 | `Ctrl+B` | Toggle quiet focus mode |
+| `Alt+K` | Show incoming and outgoing connections |
 | `Ctrl+S` | Save immediately |
 | `Ctrl+Q` | Save and quit |
 | `Tab` / `Shift+Tab` | Move between controls |
 | `Escape` | Close palette / return to writing |
 
-The palette also offers previous/next daily logs, opening a log by date, extracting a selection into a linked note, processing the next inbox capture, star, move, restore from trash, task toggle, link insertion/navigation, backlinks, recovery copies, and a writing guide. Type words to narrow commands, use arrows to choose, then Enter. Standard text selection, undo, and redo are provided by the editor. Clipboard copy uses OSC 52 and depends on your terminal's permissions and support. Previous daily, next daily, open-by-date, extract, and process-inbox start without shortcuts; assign them in **Ctrl+, → Keyboard shortcuts**.
+The palette also offers previous/next daily logs, opening a log by date, extracting a selection into a linked note, processing the next inbox capture, star, move, restore from trash, task toggle, link insertion/navigation, connections with context snippets, recovery copies, and a writing guide. Type words to narrow commands, use arrows to choose, then Enter. Standard text selection, undo, and redo are provided by the editor. Clipboard copy uses OSC 52 and depends on your terminal's permissions and support. Previous daily, next daily, open-by-date, extract, and process-inbox start without shortcuts; assign them in **Ctrl+, → Keyboard shortcuts**.
 
 ## Markdown editing
 
@@ -189,7 +190,7 @@ shell captures or external changes while retaining the current editor buffer.
 
 ![Find within a note](docs/find.svg)
 
-Inserted links use `[[stable-id|Readable title]]`. Renaming a heading does not break these links. Manually entered `[[Exact title]]` links also work, but ambiguous titles can match several notes. Use **Follow a link in this note** and **Open a backlink** in the palette.
+Inserted links use `[[stable-id|Readable title]]`. Renaming a heading does not break these links. Manually entered `[[Exact title]]` links also work, but ambiguous titles can match several notes. **Alt+K** (or **Show connections**) lists incoming and outgoing notes with the line that contains each link. **Follow a link** opens the `[[link]]` under the cursor; a missing target can create a note and rewrite the typed title to a stable ID. Click a link in preview, or Ctrl+click one in the editor. `[[links]]` inside fenced code or code spans are examples, not connections. `jotline backlinks NOTE` prints the same graph for scripts.
 
 ## Use it from your shell
 
@@ -210,6 +211,7 @@ jotline export NOTE_ID > note.md
 jotline export last > note.md
 jotline export last --output plan.docx
 jotline tasks
+jotline backlinks last
 jotline path
 jotline --vault ~/Notes/Jotline
 ```
@@ -226,7 +228,7 @@ Captures, append/prepend and imports read UTF-8. For text in another encoding,
 pass `--encoding NAME` (for example `latin-1` or `cp1252`), or `--replace-invalid`
 to keep going and substitute the undecodable bytes.
 
-`list`, `tags`, `workspaces`, `actions`, `tasks`, `stats` and `doctor` accept `--json` for
+`list`, `tags`, `workspaces`, `actions`, `tasks`, `stats`, `backlinks` and `doctor` accept `--json` for
 scripts. Warnings still go to stderr, so stdout stays valid JSON. `jotline stats`
 prints workspace counts (notes, inbox captures, open tasks, tags) without note bodies.
 
@@ -529,8 +531,9 @@ reopen it after editing. Notes stay plain Markdown on disk.
 
 Preview supports notes up to 256 KiB to keep rendering responsive. Larger notes
 remain editable and saveable. Images, raw HTML, and interactive task checkboxes
-are not rendered as browser content. Preview links do not open files or browsers;
-use **Follow a link** for Jotline's `[[note links]]`.
+are not rendered as browser content. Preview links do not open files or browsers.
+Click a `[[note link]]` in preview to open it; use **Follow a link** from the
+editor, or **Alt+K** to see every connection.
 
 ## More writing and review tools
 

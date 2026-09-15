@@ -14,6 +14,14 @@
   skipped). Filing that note with Move to collection opens the next. The status
   line shows how many captures remain. `jotline stats` (and `--json`) prints
   workspace counts without note bodies.
+- Connections are a first-class loop: Alt+K (or Ctrl+P → Show connections)
+  lists incoming and outgoing notes with the line that contains each link.
+  Follow opens the `[[link]]` under the cursor; a missing target can create a
+  note and rewrite the typed `[[title]]` to a stable `[[id|title]]`. Click a
+  link in preview, or Ctrl+click one in the editor. Compact terminals keep
+  `←N →N` on the status line when the connections bar is hidden.
+  `jotline backlinks NOTE [--json]` prints the same graph. Wiki links inside
+  fenced code or inline code spans no longer count as connections.
 
 ## 0.9.5 — 2026-09-15
 

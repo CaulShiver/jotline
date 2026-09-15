@@ -265,6 +265,7 @@ BASH_CASES = [
     ("jotline cap", {"capture"}),
     ("jotline dai", {"daily"}),
     ("jotline sta", {"stats"}),
+    ("jotline backl", {"backlinks"}),
     ("jotline --vault VAULT tag ab", {"abcd1234"}),
     ("jotline --vault VAULT tag abcd1234 wo", {"work"}),
     ("jotline --vault=VAULT export ", {"abcd1234", "last"}),
@@ -327,6 +328,7 @@ def test_zsh_completion(completion_env, line, expected):
 
 FISH_CASES = [
     ("jotline cap", {"capture"}),
+    ("jotline backl", {"backlinks"}),
     ("jotline --vault VAULT tag ab", {"abcd1234"}),
     ("jotline --vault VAULT tag abcd1234 wo", {"work"}),
     ("jotline --vault=VAULT export abcd", {"abcd1234"}),

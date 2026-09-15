@@ -17,12 +17,17 @@ the writing core remains offline.
 ## Next priorities
 
 1. Validate the release with newcomers on Linux, macOS and Windows. Measure
-   whether they can install, capture, find, process and recover a note unaided.
+   whether they can install, capture, find, connect, process and recover a note
+   unaided.
 2. Establish native terminal and assistive-technology coverage using
    [the terminal checklist](docs/terminal-testing.md).
 3. Improve performance using representative synthetic vault benchmarks before
    introducing indexing or storage complexity.
 4. Expand community recipes and migration fixtures based on real user workflows.
+
+Connecting notes is a visible loop (connections panel, follow, and
+create-from-broken-`[[link]]`). Attachments, unlinked mentions, and a graph
+view stay parked until that panel is used daily.
 
 External executable actions, regex search, dictation, AI and plugin APIs need
 separate designs and evidence of user demand. They are not required to capture

@@ -388,7 +388,8 @@ async def test_preview_shows_checkboxes_and_link_titles(tmp_path):
         await pilot.pause()
         assert isinstance(app.screen, MarkdownPreview)
         source = app.screen.body
-        assert '☐ open' in source and '☒ done' in source and 'See Target note' in source
+        assert '☐ open' in source and '☒ done' in source
+        assert f'See [Target note](jotline:{target.id})' in source
         assert app.screen.query_one(Markdown)
 
 

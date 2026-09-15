@@ -199,7 +199,9 @@ Appearance and editor settings are shared across this vault.
 Ctrl+P → Toggle task checks or unchecks the current line.
 Ctrl+B hides the sidebar. Ctrl+O finds a note by title.
 Ctrl+F searches this workspace (except trash). Multiple words narrow results.
-Ctrl+P → Follow a link or Open a backlink moves between connected notes.
+Alt+K shows incoming and outgoing connections, with the line that contains each link.
+Ctrl+P → Follow a link opens the [[link]] under the cursor. Broken links can create a note.
+Click a link in preview, or Ctrl+click one in the editor.
 Links inserted by Jotline use stable IDs, so changing titles is safe.
 
 ## Templates and history

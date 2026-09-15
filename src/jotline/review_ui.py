@@ -120,7 +120,7 @@ class Review:
             return {}
 
     def preview_markdown(self, body: str) -> str:
-        return printable_markdown(body, self.note_titles() if "[[" in body else {})
+        return printable_markdown(body, self.note_titles() if "[[" in body else {}, followable=True)
 
     def action_preview(self) -> None:
         self.capture_current_buffer()

@@ -10,6 +10,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Input, Label, Markdown, Static, Switch, TextArea
 from rich.text import Text
 
+from .links import wiki_target_from_href
 from .limits import EDIT_LIMIT_BYTES
 from .markdown_editor import MarkdownEditor
 from .modal import Modal
@@ -41,6 +42,13 @@ class MarkdownPreview(Modal[None]):
 
     def on_mount(self) -> None:
         self.query_one(VerticalScroll).focus()
+
+    @on(Markdown.LinkClicked)
+    def follow_preview_link(self, event: Markdown.LinkClicked) -> None:
+        event.stop()
+        if target := wiki_target_from_href(event.href):
+            self.dismiss(None)
+            self.app.follow_wiki_target(target)
 
     @on(Button.Pressed, "#close-preview")
     def action_done(self) -> None:
