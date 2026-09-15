@@ -1,5 +1,18 @@
 # Release verification
 
+## 0.9.4
+
+- Complete locked suite on Linux/Python 3.12: **552 passed, 30 platform-specific skips**,
+  including the compact-terminal action-builder footer test and packaging checks
+  that install docs name the current wheel.
+- Fresh 0.9.4 installed-wheel application smoke and POSIX PTY smoke passed.
+- Release identity verified: `v0.9.4`. `uv build --clear` produced
+  `jotline-0.9.4-py3-none-any.whl` and `jotline-0.9.4.tar.gz`.
+- Locked dependency resolution and `git diff --check` passed.
+- The `v0.9.3` tag still exists without GitHub Release assets. This version is
+  the publishable replacement. The tag workflow continues to gate publication
+  on Linux/macOS/Windows Python 3.11–3.13.
+
 ## 0.9.3
 
 - Complete locked suite on Linux/Python 3.12: **372 passed, 3 platform-specific skips**,
