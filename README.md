@@ -671,7 +671,7 @@ detection. Recipes execute only these built-in steps; there is no shell evaluati
 
 ## Status
 
-Version 0.9.5 is an early release. It offers a one-liner install on Linux, macOS,
+Version 0.9.6 is an early release. It offers a one-liner install on Linux, macOS,
 and Windows, Markdown source editing, rendered preview, configurable local
 actions, and guided import/recovery workflows. See
 [CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,

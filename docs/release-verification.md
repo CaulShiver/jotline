@@ -1,5 +1,12 @@
 # Release verification
 
+## 0.9.6
+
+- Same locked suite as 0.9.5. The `v0.9.5` package job failed because
+  `twine==6.1.0` rejected Metadata-Version 2.5. Local `uvx twine==7.0.0 check`
+  passed on the built wheel and sdist. The release workflow now uses Twine 7.
+- `v0.9.5` is not moved. This is a new patch tag.
+
 ## 0.9.5
 
 - Complete locked suite on Linux/Python 3.12: **562 passed, 30 platform-specific skips**,

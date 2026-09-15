@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.9.6 — 2026-09-15
+
+- The `v0.9.5` tag never uploaded GitHub Release assets or PyPI files.
+  Hatchling now emits Metadata-Version 2.5; the release job still ran
+  `twine==6.1.0`, which rejects that version. The check now uses Twine 7.
+  The rest of 0.9.5 is unchanged.
+
 ## 0.9.5 — 2026-09-15
 
 - Daily logs can move through days: Previous daily log, Next daily log, and Open

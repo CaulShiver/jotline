@@ -7,7 +7,7 @@ need to hunt a wheel filename. Prefer `uv tool` or pipx when they are on PATH.
 Examples:
   python3 install.py
   python3 install.py --from-dir dist
-  python3 install.py --tag v0.9.5 --force
+  python3 install.py --tag v0.9.6 --force
   python3 install.py --encryption
 """
 from __future__ import annotations
@@ -38,7 +38,7 @@ SUPPORTED = "Linux, macOS, and Windows"
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--from-dir", type=Path, help="Install from a local dist directory instead of GitHub")
-    parser.add_argument("--tag", help="Install this release tag instead of latest, for example v0.9.5")
+    parser.add_argument("--tag", help="Install this release tag instead of latest, for example v0.9.6")
     parser.add_argument("--force", action="store_true", help="Reinstall if Jotline is already present")
     parser.add_argument("--encryption", action="store_true", help="Also install the optional cryptography extra")
     parser.add_argument("--installer", choices=("uv", "pipx", "pip"),

@@ -27,7 +27,7 @@ jobs:
           python -m pip install uv==0.12.10
           uv build --clear
           python scripts/release_metadata.py --checksums
-          uvx twine==6.1.0 check dist/*.whl dist/*.tar.gz
+          uvx twine==7.0.0 check dist/*.whl dist/*.tar.gz
       - name: Smoke-test the exact release wheel through the public installer
         run: |
           uv venv /tmp/jotline-release-smoke
