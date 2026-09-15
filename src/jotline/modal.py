@@ -43,10 +43,12 @@ class Palette(Modal[str | None]):
     #commands { height: 1fr; min-height: 3; border: none; }
     """
 
-    def __init__(self, choices: list[tuple[str, str]], title: str = "Run a command"):
+    def __init__(self, choices: list[tuple[str, str]], title: str = "Run a command",
+                 *, everyday: frozenset[str] | None = None):
         super().__init__()
         self.choices = choices
         self.heading = title
+        self.everyday = everyday
         self.filtered = choices
 
     def compose(self) -> ComposeResult:
@@ -63,13 +65,25 @@ class Palette(Modal[str | None]):
 
     def filter(self, query: str) -> None:
         terms = query.casefold().split()
-        self.filtered = [(key, label) for key, label in self.choices if all(t in label.casefold() for t in terms)]
+        pool = self.choices
+        if not terms and self.everyday is not None:
+            pool = [(key, label) for key, label in self.choices if key in self.everyday]
+        self.filtered = [(key, label) for key, label in pool if all(t in label.casefold() for t in terms)]
         options = self.query_one(OptionList)
         options.clear_options()
         options.add_options([Option(Text(label), id=key) for key, label in self.filtered])
         count = self.query_one("#command-count", Static)
-        count.update(f"{len(self.filtered)} result" + ("" if len(self.filtered) == 1 else "s")
-                     if self.filtered else "No matching commands · adjust the filter or press Esc")
+        hidden = 0 if self.everyday is None else len(self.choices) - len(pool)
+        if self.filtered:
+            count.update(f"{len(self.filtered)} result" + ("" if len(self.filtered) == 1 else "s")
+                         + (f" · type to see {hidden} more" if hidden else ""))
+        else:
+            count.update("No matching commands · adjust the filter or press Esc")
+        help_text = self.query_one("#palette-help", Static)
+        if hidden:
+            help_text.update("Everyday commands · type to see format, move, export, encryption")
+        else:
+            help_text.update("Type to filter · ↑↓ choose · Enter run · Esc cancel")
         if self.filtered:
             options.highlighted = 0
 

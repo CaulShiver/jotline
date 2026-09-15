@@ -111,16 +111,17 @@ class Workflows:
     """Insert, arrange, and bulk-edit notes. Bound onto Jotline; not inherited."""
 
     def workflow_commands(self, Command):
-        return [Command(*item) for item in [
-            ('recent', 'Recent notes', self.show_recent),
-            ('previous', 'Previous note', self.previous_note),
-            ('extract', 'Extract selection to new note', self.action_extract_note, 'extract_note'),
-            ('insert-template', 'Insert template at cursor', self.insert_template),
-            ('insert-note', 'Insert note text at cursor', self.insert_note),
-            ('arrange-lines', 'Arrange lines', lambda: self.arrange(False)),
-            ('arrange-paragraphs', 'Arrange paragraphs', lambda: self.arrange(True)),
-            ('bulk', 'Select notes for bulk operations', self.select_bulk),
-        ]]
+        return [
+            Command('recent', 'Recent notes', self.show_recent, group='everyday'),
+            Command('previous', 'Previous note', self.previous_note, group='everyday'),
+            Command('extract', 'Extract selection to new note', self.action_extract_note, 'extract_note',
+                    group='everyday'),
+            Command('insert-template', 'Insert template at cursor', self.insert_template),
+            Command('insert-note', 'Insert note text at cursor', self.insert_note),
+            Command('arrange-lines', 'Arrange lines', lambda: self.arrange(False)),
+            Command('arrange-paragraphs', 'Arrange paragraphs', lambda: self.arrange(True)),
+            Command('bulk', 'Select notes for bulk operations', self.select_bulk),
+        ]
 
     def insert_editor_text(self, body) -> bool:
         """Replace the selection, or insert at the cursor, as one undo step within the size limit."""

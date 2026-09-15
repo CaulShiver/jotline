@@ -105,15 +105,15 @@ class Views:
     """Saved-view ownership. Bound onto Jotline; not inherited."""
 
     def navigation_commands(self, Command):
-        return [Command('collections', 'Browse collections', self.browse_collections),
+        return [Command('collections', 'Browse collections', self.browse_collections, group='everyday'),
                 Command('save-view', 'Save current search as a view', self.save_view_prompt),
-                Command('views', 'Open saved view', self.choose_view),
+                Command('views', 'Open saved view', self.choose_view, group='everyday'),
                 Command('delete-view', 'Delete saved view', lambda: self.choose_view(delete=True)),
-                Command('clear-view', 'Clear view and search', self.clear_view),
+                Command('clear-view', 'Clear view and search', self.clear_view, group='everyday'),
                 Command('manage-views', 'Manage saved views · edit, rename, duplicate', self.manage_views),
-                Command('filters', 'Edit search filters and sort', self.edit_filters),
+                Command('filters', 'Edit search filters and sort', self.edit_filters, group='everyday'),
                 Command('update-view', 'Update active saved view from current filters', self.update_active_view),
-                Command('walkthrough', 'Quick start walkthrough', self.show_walkthrough)]
+                Command('walkthrough', 'Quick start walkthrough', self.show_walkthrough, group='everyday')]
 
     def current_view(self):
         return dict(workspace=self.workspace, query=self.query_one('#search', Input).value,
