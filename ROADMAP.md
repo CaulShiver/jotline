@@ -23,8 +23,9 @@ the writing core remains offline.
    unaided.
 2. Establish native terminal and assistive-technology coverage using
    [the terminal checklist](docs/terminal-testing.md).
-3. Improve performance using representative synthetic vault benchmarks before
-   introducing indexing or storage complexity.
+3. Measure search with [synthetic vault benchmarks](docs/vault-scale.md) before
+   introducing indexing. In-memory scan still meets the bar; doctor, conflicts,
+   and backups remain the durability product.
 4. Expand community recipes and migration fixtures based on real user workflows.
 
 Connecting notes is a visible loop (connections panel, follow, and

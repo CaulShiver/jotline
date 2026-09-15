@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import sys
 
-from . import __version__
+from . import __version__, history
 from .action_history import run_recorded_action
 from .actions import ActionCommitError, preview_action
 from .app import Jotline
@@ -289,6 +289,10 @@ def build_parser() -> argparse.ArgumentParser:
     encryption = sub.add_parser("encryption", help="Set up encryption, change its passphrase, or show status")
     encryption.add_argument("action", choices=("status", "setup", "passphrase"))
     sub.add_parser("backup", help="Back up notes, settings and templates to a local ZIP")
+    backups = sub.add_parser("backups", help="List local ZIP backups and verify they open")
+    backups.add_argument("--json", action="store_true", help="Print backup names and validity as JSON")
+    recoveries = sub.add_parser("recoveries", help="List inbox copies saved after an external change")
+    recoveries.add_argument("--json", action="store_true", help="Print recovery copies as JSON")
     sub.add_parser("path", help="Print the vault path")
     doctor = sub.add_parser("doctor", help="Check the vault, runtime and local Jotline state")
     doctor.add_argument("--json", action="store_true", help="Print machine-readable diagnostics")
@@ -399,6 +403,41 @@ def run_import(run: Invocation) -> None:
 
 def run_backup(run: Invocation) -> None:
     print(terminal_text(run.vault.backup()))
+
+
+def run_backups(run: Invocation) -> None:
+    archives = history.list_archives(run.vault)
+    if run.args.json:
+        print(json.dumps([
+            dict(name=archive.name, size=archive.size, valid=archive.valid, reason=archive.reason)
+            for archive in archives
+        ], ensure_ascii=True))
+    elif not archives:
+        print("No local ZIP backups yet. Run jotline backup.")
+    else:
+        for archive in archives:
+            status = "ok" if archive.valid else "invalid"
+            detail = archive.name if archive.valid else f"{archive.name} ({archive.reason})"
+            print(f"{status}\t{terminal_text(detail)}")
+    if any(not archive.valid for archive in archives):
+        raise SystemExit(1)
+    report_warnings(run.vault)
+
+
+def run_recoveries(run: Invocation) -> None:
+    copies = [note for note in run.vault.recoveries() if note.workspace == run.workspace]
+    if run.args.json:
+        print(json.dumps([
+            dict(id=note.id, title=note.title, collection=note.collection,
+                 recovery_of=note.recovery_of, created=note.created)
+            for note in copies
+        ], ensure_ascii=True))
+    elif not copies:
+        print("No recovery copies in this workspace.")
+    else:
+        for note in copies:
+            print(f"{note.id}\t{note.recovery_of}\t{terminal_text(note.title)}")
+    report_warnings(run.vault)
 
 
 def run_append(run: Invocation) -> None:
@@ -638,6 +677,7 @@ def run_app(run: Invocation) -> None:
 
 COMMANDS = {
     "capture": run_capture, "import": run_import, "backup": run_backup,
+    "backups": run_backups, "recoveries": run_recoveries,
     "append": run_append, "prepend": run_append, "actions": run_actions, "run": run_action,
     "list": run_list, "tag": run_tag, "export": run_export, "backlinks": run_backlinks,
     "tasks": run_tasks, "done": run_done, "stats": run_stats, "daily": run_app,
@@ -646,7 +686,8 @@ COMMANDS = {
     "open": run_app, None: run_app,
 }
 # Commands that only read must not turn a mistyped path into a new vault.
-READ_ONLY_COMMANDS = {"list", "actions", "export", "workspaces", "tags", "tasks", "doctor", "stats", "backlinks"}
+READ_ONLY_COMMANDS = {"list", "actions", "export", "workspaces", "tags", "tasks", "doctor",
+                      "stats", "backlinks", "backups", "recoveries"}
 
 
 def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Invocation:

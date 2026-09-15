@@ -152,6 +152,8 @@ class Note:
     original: str | None = None
     workspace: str = "default"
     encrypted: bool = False
+    # Note ID this inbox copy was preserved from after an external change.
+    recovery_of: str | None = None
     # The encrypted text while encrypted notes are locked; the body is empty then.
     sealed: str | None = field(default=None, repr=False)
     derived_warnings: list[str] = field(default_factory=list, repr=False, compare=False)
@@ -270,7 +272,8 @@ class Vault:
             header = body[body.index("\n") + 1:boundary.start()]
             for line in header.splitlines():
                 key, sep, value = line.partition(": ")
-                if sep and key in {"collection", "created", "updated", "starred", "workspace", "encrypted"}:
+                if sep and key in {"collection", "created", "updated", "starred", "workspace",
+                                   "encrypted", "recovery_of"}:
                     try:
                         meta[key] = json.loads(value)
                     except RecursionError:
@@ -284,6 +287,10 @@ class Vault:
             raise ValueError("Invalid starred value")
         if not isinstance(meta.get("encrypted", False), bool):
             raise ValueError("Invalid encrypted value")
+        if meta.get("recovery_of") is not None:
+            if not isinstance(meta["recovery_of"], str):
+                raise ValueError("Invalid recovery source")
+            validate_note_id(meta["recovery_of"])
         validate_workspace(meta.get("workspace", "default"))
         if meta.get("encrypted"):
             if not is_sealed(body):
@@ -379,6 +386,8 @@ class Vault:
                 "updated": stamp, "starred": note.starred, "workspace": note.workspace}
         if note.encrypted:
             meta["encrypted"] = True
+        if note.recovery_of:
+            meta["recovery_of"] = validate_note_id(note.recovery_of)
         stored = note.sealed if note.locked else self.cipher.seal(note.id, note.body) if note.encrypted else note.body
         raw = "---\njotline: 1\n" + "\n".join(f"{k}: {json.dumps(v)}" for k, v in meta.items()) + "\n---\n" + stored
         if len(raw.encode("utf-8")) > MAX_NOTE_BYTES:
@@ -481,7 +490,8 @@ class Vault:
             if note.locked and previous.sealed != note.sealed:
                 raise ValueError(LOCKED)
             if all(getattr(previous, key) == getattr(note, key)
-                   for key in ("body", "collection", "created", "starred", "workspace", "encrypted")):
+                   for key in ("body", "collection", "created", "starred", "workspace",
+                               "encrypted", "recovery_of")):
                 return
         elif note.locked:
             raise ValueError(LOCKED)
@@ -783,10 +793,16 @@ class Vault:
             self._save_locked(note, directory)
             return note
 
+    def recoveries(self, *, notes: list[Note] | None = None) -> list[Note]:
+        """Inbox copies saved after an external change or a manual recovery."""
+        snapshot = self.notes() if notes is None else notes
+        return [note for note in snapshot if note.recovery_of]
+
     def recovery(self, note: Note) -> Note:
         if note.locked:
             raise ValueError(LOCKED)
-        recovered = replace(note, id=uuid4().hex, original=None, created=now(), collection="inbox")
+        recovered = replace(note, id=uuid4().hex, original=None, created=now(), collection="inbox",
+                            recovery_of=note.recovery_of or note.id)
         self.save(recovered)
         return recovered
 

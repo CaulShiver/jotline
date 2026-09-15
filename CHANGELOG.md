@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Synthetic vault benchmarks (`scripts/vault_bench.py`, `docs/vault-scale.md`)
+  time search and backlinks. They stay under the published bar, so search is
+  still an in-memory scan — no index. `jotline doctor` now reports recovery
+  copies, displaced conflict files, backup freshness, and scan budget, and
+  warns when notes exist without a recent valid ZIP. `jotline backups` lists
+  and verifies archives; `jotline recoveries` lists inbox copies saved after
+  an external change. Those copies keep the original draft and store
+  `recovery_of` in the note header. Commands → Check vault health and Open a
+  recovery copy expose the same recovery tools in the app.
+
 ## 0.9.6 — 2026-09-15
 
 - The `v0.9.5` tag never uploaded GitHub Release assets or PyPI files.

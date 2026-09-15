@@ -213,6 +213,7 @@ previous/next daily log, extract selection, and process-inbox keys.
 Ctrl+P → History of this note lets you inspect and restore a saved version as a new note.
 Browse saved note history includes externally deleted notes in this workspace.
 Back up vault now saves a local ZIP of notes, settings, and templates.
+Check vault health and Open a recovery copy surface doctor warnings and copies saved after an external change.
 
 ## Your files
 Everything stays in your local vault as readable Markdown.

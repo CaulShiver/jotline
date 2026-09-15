@@ -1,0 +1,164 @@
+from datetime import datetime
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+from textual.widgets import TextArea
+
+from jotline.app import Jotline, Palette
+from jotline.bench import CI_BUDGET_SECONDS, CI_NOTE_COUNT, measure_vault, populate_synthetic_vault, verdict
+from jotline.cli_doctor import doctor_report
+from jotline.history import DISPLACED_PREFIX, STALE_BACKUP_SECONDS
+from jotline.recovery_ui import HealthScreen
+from jotline.store import Vault
+
+
+def run_cli(vault: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        [sys.executable, "-m", "jotline", "--vault", str(vault), *args],
+        capture_output=True, check=False, timeout=30)
+
+
+def test_recovery_copy_keeps_body_and_records_source(tmp_path):
+    vault = Vault(tmp_path)
+    note = vault.new("# Idea\n\nKeep this draft exactly.")
+    vault.save(note)
+    recovered = vault.recovery(note)
+    stored = vault.read(recovered.id)
+    assert stored.body == "# Idea\n\nKeep this draft exactly."
+    assert stored.recovery_of == note.id
+    assert stored.collection == "inbox"
+    assert stored.id != note.id
+    assert [copy.id for copy in vault.recoveries()] == [recovered.id]
+    reloaded = Vault(tmp_path).read(recovered.id)
+    assert reloaded.recovery_of == note.id
+
+
+def test_recovery_of_a_recovery_copy_keeps_the_original_source(tmp_path):
+    vault = Vault(tmp_path)
+    note = vault.new("draft")
+    vault.save(note)
+    first = vault.recovery(note)
+    second = vault.recovery(first)
+    assert second.recovery_of == note.id
+
+
+def test_doctor_and_cli_list_recovery_copies(tmp_path):
+    vault = Vault(tmp_path)
+    note = vault.new("keep me")
+    vault.save(note)
+    recovered = vault.recovery(note)
+    listed = run_cli(tmp_path, "recoveries")
+    assert listed.returncode == 0, listed.stderr.decode()
+    assert recovered.id.encode() in listed.stdout
+    assert note.id.encode() in listed.stdout
+    payload = json.loads(run_cli(tmp_path, "recoveries", "--json").stdout)
+    assert payload[0]["recovery_of"] == note.id
+    report = doctor_report(vault, "")
+    assert report["ancillary"]["recoveries"]["count"] == 1
+    assert recovered.id in report["ancillary"]["recoveries"]["ids"]
+
+
+def test_doctor_warns_about_displaced_conflict_files(tmp_path):
+    vault = Vault(tmp_path)
+    leftover = tmp_path / (DISPLACED_PREFIX + "abcd")
+    leftover.write_text("original body")
+    report = doctor_report(vault, "")
+    assert report["ancillary"]["displaced"]["count"] == 1
+    assert leftover.name in report["ancillary"]["displaced"]["files"]
+    assert any("displaced" in item for item in report["warnings"])
+    doctor = run_cli(tmp_path, "doctor")
+    assert doctor.returncode == 1
+    assert leftover.name.encode() in doctor.stderr
+
+
+def test_doctor_warns_when_notes_exist_without_a_valid_backup(tmp_path, monkeypatch):
+    vault = Vault(tmp_path)
+    note = vault.new("needs a backup")
+    vault.save(note)
+    for path in (tmp_path / ".jotline-backups").glob("*.zip"):
+        path.unlink()
+    report = doctor_report(vault, "")
+    assert any("no valid local ZIP" in item for item in report["warnings"])
+
+
+def test_doctor_warns_when_the_newest_backup_is_stale(tmp_path):
+    vault = Vault(tmp_path)
+    note = vault.new("aging backup")
+    vault.save(note)
+    archive = next((tmp_path / ".jotline-backups").glob("*.zip"))
+    stale = time.time() - STALE_BACKUP_SECONDS - 60
+    os.utime(archive, (stale, stale))
+    report = doctor_report(vault, "")
+    assert any("newest valid archive is from" in item for item in report["warnings"])
+    when = datetime.fromtimestamp(stale).date().isoformat()
+    assert any(when in item for item in report["warnings"])
+
+
+def test_backups_lists_and_fails_on_invalid_zips(tmp_path):
+    vault = Vault(tmp_path)
+    note = vault.new("backed up")
+    vault.save(note)
+    healthy = run_cli(tmp_path, "backups")
+    assert healthy.returncode == 0, healthy.stderr.decode()
+    assert b"ok\t" in healthy.stdout
+    broken = tmp_path / ".jotline-backups" / "manual-20260912T000000000000-abcdef12.zip"
+    broken.write_text("not a zip")
+    listed = run_cli(tmp_path, "backups")
+    assert listed.returncode == 1
+    assert b"invalid\t" in listed.stdout
+    payload = json.loads(run_cli(tmp_path, "backups", "--json").stdout)
+    names = {item["name"] for item in payload}
+    assert broken.name in names
+    assert any(item["name"] == broken.name and item["valid"] is False for item in payload)
+
+
+def test_empty_vault_doctor_does_not_demand_a_backup(tmp_path):
+    healthy = run_cli(tmp_path, "doctor")
+    assert healthy.returncode == 0, healthy.stderr.decode()
+    assert b"Recovery copies: 0" in healthy.stdout
+    assert b"Last valid backup: none" in healthy.stdout
+    assert b"Warnings: 0" in healthy.stdout
+
+
+def test_ci_synthetic_vault_stays_under_the_search_bar(tmp_path):
+    vault = Vault(tmp_path)
+    hub = populate_synthetic_vault(vault, CI_NOTE_COUNT, body_words=12)
+    timings = measure_vault(vault, hub)
+    assert timings[0].hits == CI_NOTE_COUNT
+    assert timings[1].hits == len([n for n in vault.notes() if "unique-token-beta" in n.body])
+    assert timings[2].hits >= CI_NOTE_COUNT // 3 - 1
+    slowest = max(item.seconds for item in timings)
+    assert slowest <= CI_BUDGET_SECONDS, (timings, verdict(CI_NOTE_COUNT, timings))
+    assert "Do not add an index" in verdict(500, [
+        type(timings[0])(item.label, 0.01, item.hits) for item in timings])
+    assert "missed the 1.00s bar" in verdict(2000, [
+        type(timings[0])(item.label, 1.5, item.hits) for item in timings])
+
+
+async def test_health_and_recovery_copy_commands(tmp_path):
+    vault = Vault(tmp_path)
+    note = vault.new("# Keep\n\nDraft text")
+    vault.save(note)
+    recovered = vault.recovery(note)
+    app = Jotline(vault)
+    async with app.run_test() as pilot:
+        app.command("doctor")
+        await pilot.pause()
+        assert isinstance(app.screen, HealthScreen)
+        text = app.screen.query_one("#health-text", TextArea).text
+        assert "Recovery copies: 1" in text
+        assert "Last valid backup:" in text
+        await pilot.press("escape")
+        app.command("recoveries")
+        await pilot.pause()
+        assert isinstance(app.screen, Palette)
+        assert app.screen.heading == "Recovery copies"
+        assert recovered.id in dict(app.screen.choices)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.current.id == recovered.id
+        assert app.editor().text == "# Keep\n\nDraft text"
