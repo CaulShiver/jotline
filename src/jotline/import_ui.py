@@ -5,7 +5,7 @@ from rich.text import Text
 from textual import on
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
-from textual.widgets import Button, Label, Static
+from textual.widgets import Button, Input, Label, Static
 
 from .importing import preview_import, apply_import
 from .modal import Modal, TextPrompt

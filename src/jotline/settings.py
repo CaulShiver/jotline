@@ -145,12 +145,20 @@ class Settings:
     def __post_init__(self) -> None:
         views = {}
         for name, view in dict(self.saved_views).items():
-            views[name] = view if isinstance(view, SavedView) else SavedView.from_raw(view)
+            try:
+                views[name] = view if isinstance(view, SavedView) else SavedView.from_raw(view)
+            except (TypeError, ValueError):
+                views[name] = view
         self.saved_views = views
         steps = {}
         for name, raw_steps in dict(self.actions).items():
-            steps[name] = [step if isinstance(step, ActionStep) else ActionStep.from_raw(step)
-                           for step in raw_steps]
+            converted = []
+            try:
+                for step in raw_steps:
+                    converted.append(step if isinstance(step, ActionStep) else ActionStep.from_raw(step))
+            except (TypeError, ValueError):
+                converted = list(raw_steps)
+            steps[name] = converted
         self.actions = steps
 
     @property
@@ -165,7 +173,8 @@ class Settings:
                 continue
             value = getattr(self, item.name)
             if item.name == "saved_views":
-                data[item.name] = {name: asdict(view) for name, view in value.items()}
+                data[item.name] = {name: asdict(view) if isinstance(view, SavedView) else view
+                                   for name, view in value.items()}
             elif item.name == "actions":
                 data[item.name] = action_dicts(value)
             else:

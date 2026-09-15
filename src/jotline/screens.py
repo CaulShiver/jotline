@@ -195,7 +195,7 @@ class FindInNote(Modal[None]):
                 status.update("Not replaced · note size limit exceeded")
                 return
             body, count = pattern.subn(lambda match: replacement, editor.text)
-            if count and not editor.replace_checked(body):
+            if count and not editor.replace_checked(body, limit=EDIT_LIMIT_BYTES):
                 status.update("Not replaced · note size limit exceeded")
                 return
         else:
@@ -203,7 +203,7 @@ class FindInNote(Modal[None]):
                 self.show_match(initial=True)
             if not pattern.fullmatch(editor.selected_text):
                 return
-            if not editor.insert_checked(replacement):
+            if not editor.insert_checked(replacement, limit=EDIT_LIMIT_BYTES):
                 status.update("Not replaced · note size limit exceeded")
                 return
             count = 1
