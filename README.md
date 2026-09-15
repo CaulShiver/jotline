@@ -16,14 +16,14 @@ run one of these commands in its download folder. Git is not required.
 With [uv](https://docs.astral.sh/uv/):
 
 ```sh
-uv tool install ./jotline-0.9.3-py3-none-any.whl
+uv tool install ./jotline-0.9.4-py3-none-any.whl
 jotline
 ```
 
 Or with pipx:
 
 ```sh
-pipx install ./jotline-0.9.3-py3-none-any.whl
+pipx install ./jotline-0.9.4-py3-none-any.whl
 jotline
 ```
 
@@ -637,7 +637,7 @@ detection. Recipes execute only these built-in steps; there is no shell evaluati
 
 ## Status
 
-Version 0.9.3 is an early release. It offers Markdown source editing, rendered
+Version 0.9.4 is an early release. It offers Markdown source editing, rendered
 preview, configurable local actions, and guided import/recovery workflows. See
 [CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,
 cloud sync, plugins, dictation and system-wide capture hotkeys remain future work.

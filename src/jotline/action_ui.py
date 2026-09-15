@@ -49,11 +49,13 @@ class ActionEditor(Modal[tuple | None]):
     CSS = '''
     ActionEditor { align: center middle; background: $background 80%; }
     #action-editor { width: 90; max-width: 98%; height: 95%; border: round $accent; padding: 1; background: $surface; }
+    #action-editor-scroll { height: 1fr; }
     #recipe-steps { height: 7; min-height: 3; }
     #step-value { height: 6; min-height: 3; }
     #action-editor Horizontal { height: auto; width: 1fr; }
     #action-editor Button { min-width: 8; margin-right: 1; }
     #action-editor Static { height: auto; }
+    #action-editor-buttons { height: auto; margin-top: 1; }
     '''
 
     def __init__(self, vault, note, *, name='', steps=None, selection='', unavailable_names=()):
@@ -64,24 +66,25 @@ class ActionEditor(Modal[tuple | None]):
         self.steps = deepcopy(steps or [{'type': 'strip'}])
 
     def compose(self):
-        with VerticalScroll(id='action-editor'):
+        with Vertical(id='action-editor'):
             yield Label('Action builder · Ctrl+S save · Esc cancel')
-            yield Input(self.recipe_name, placeholder='Name: lowercase letters, numbers, hyphens', id='recipe-name')
-            yield Static('1. Select a step. 2. Choose its operation and value. 3. Apply step, then preview or save.')
-            yield OptionList(id='recipe-steps')
-            yield Select([(STEP_LABELS[key], key) for key in STEP_TYPES], allow_blank=False, id='step-type')
-            yield Static('Template: use {{body}}, {{selection}}, {{title}}, {{date}} or {{template:meeting}}.\nAppend: enter the target note ID from this workspace. Other steps need no value.')
-            yield TextArea('', id='step-value')
-            yield Button('Choose append target by title', id='step-target')
-            with Horizontal():
-                yield Button('Apply step', id='step-apply')
-                yield Button('Add step', id='step-add')
-                yield Button('Remove', id='step-remove')
-            with Horizontal():
-                yield Button('Up', id='step-up')
-                yield Button('Down', id='step-down')
-            yield Static('Preview never changes notes or clipboard. Running an action may change the source note; completed external effects cannot be undone together.')
-            with Horizontal():
+            with VerticalScroll(id='action-editor-scroll'):
+                yield Input(self.recipe_name, placeholder='Name: lowercase letters, numbers, hyphens', id='recipe-name')
+                yield Static('1. Select a step. 2. Choose its operation and value. 3. Apply step, then preview or save.')
+                yield OptionList(id='recipe-steps')
+                yield Select([(STEP_LABELS[key], key) for key in STEP_TYPES], allow_blank=False, id='step-type')
+                yield Static('Template: use {{body}}, {{selection}}, {{title}}, {{date}} or {{template:meeting}}.\nAppend: enter the target note ID from this workspace. Other steps need no value.')
+                yield TextArea('', id='step-value')
+                yield Button('Choose append target by title', id='step-target')
+                with Horizontal():
+                    yield Button('Apply step', id='step-apply')
+                    yield Button('Add step', id='step-add')
+                    yield Button('Remove', id='step-remove')
+                with Horizontal():
+                    yield Button('Up', id='step-up')
+                    yield Button('Down', id='step-down')
+                yield Static('Preview never changes notes or clipboard. Running an action may change the source note; completed external effects cannot be undone together.')
+            with Horizontal(id='action-editor-buttons'):
                 yield Button('Preview', id='recipe-preview')
                 yield Button('Save recipe', variant='primary', id='recipe-save')
                 yield Button('Cancel', id='recipe-cancel')

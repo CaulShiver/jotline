@@ -28,6 +28,22 @@ def test_build_backend_and_runtime_dependency_bounds_are_explicit():
     assert data["tool"]["pytest"]["ini_options"]["asyncio_default_fixture_loop_scope"] == "function"
 
 
+def test_ci_gives_pytest_eight_minutes():
+    workflow = (ROOT / ".github/workflows/test.yml").read_text()
+
+    assert "      - name: Run tests\n        timeout-minutes: 8\n" in workflow
+    assert "timeout-minutes: 15" in workflow
+
+
+def test_install_docs_advertise_the_current_wheel():
+    wheel = f"jotline-{jotline.__version__}-py3-none-any.whl"
+    leftover = re.compile(r"jotline-0\.\d+\.\d+-py3-none-any\.whl")
+    for path in (ROOT / "README.md", ROOT / "docs/install.md", ROOT / "docs/release-notes.md"):
+        text = path.read_text()
+        assert wheel in text, path.name
+        assert leftover.findall(text.replace(wheel, "")) == []
+
+
 def test_ci_lower_bound_pair_matches_pytest_asyncio_floor():
     workflow = (ROOT / ".github/workflows/test.yml").read_text()
 

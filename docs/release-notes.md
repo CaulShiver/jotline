@@ -1,23 +1,22 @@
-Jotline 0.9.3 fixes how the command line adds text to existing notes and makes
-its error messages readable.
+Jotline 0.9.4 is the first published wheel after 0.9.2. The `v0.9.3` tag exists
+but never uploaded GitHub Release assets: Windows Python 3.11 failed the action
+builder keyboard test on a 60×20 terminal.
 
-- `jotline append` and `jotline prepend` now put the text on its own line.
-  Previously `jotline append NOTE_ID "more"` joined the text straight onto the
-  last line, merging words and creating false tags such as `#ideaappended`. One
-  line break is added only where the text would run into the note, in the
-  note's own newline style (LF, CRLF or CR); text that already starts or ends
-  with a newline is not doubled. Local actions that append to a note are
-  unchanged.
-- A missing note now reads `No note with ID …; run jotline list to find IDs`,
-  a missing import file no longer shows `[Errno 2]` or `[WinError 2]`, and
-  non-UTF-8 input names its source instead of printing a Python codec error.
+- Preview, Save, and Cancel in the action builder stay on screen on short
+  terminals. Tab still reaches every field; the footer no longer sits one row
+  below the viewport.
+- `jotline append` and `jotline prepend` put the text on its own line. Pass
+  `--no-newline` for the previous exact join.
+- Markdown source editing, toolbar, live preview, tasks, HTML/Word/PDF export,
+  optional note encryption, and Omarchy theme follow-along. Settings opens with
+  Ctrl+, (F1 still works). macOS import accepts `/tmp` and `$TMPDIR`.
 
-**Behavior change:** scripts that relied on the exact join can pass
-`--no-newline` to keep it.
+**Behavior change:** scripts that relied on append/prepend joining onto the last
+character can pass `--no-newline`.
 
-Download `jotline-0.9.3-py3-none-any.whl` and install it with
-`uv tool install ./jotline-0.9.3-py3-none-any.whl` or
-`pipx install ./jotline-0.9.3-py3-none-any.whl`. Python 3.11+ is required; Git is not.
+Download `jotline-0.9.4-py3-none-any.whl` and install it with
+`uv tool install ./jotline-0.9.4-py3-none-any.whl` or
+`pipx install ./jotline-0.9.4-py3-none-any.whl`. Python 3.11+ is required; Git is not.
 For an existing installation add `--force`. `SHA256SUMS` covers both packages.
 
 Run `jotline backup` before upgrading. Existing notes and settings remain

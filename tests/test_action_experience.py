@@ -211,6 +211,24 @@ def test_quote_recipe_prefixes_every_line_and_preserves_endings(tmp_path, body, 
     assert quoted in effects[0]
 
 
+def _on_screen(widget, size):
+    region = widget.region
+    return 0 <= region.y < size[1] and region.bottom <= size[1]
+
+
+@pytest.mark.asyncio
+async def test_builder_actions_stay_on_screen_in_compact_terminal(tmp_path):
+    vault = Vault(tmp_path)
+    source = saved(vault, 'one')
+    app = App()
+    async with app.run_test(size=(60, 20)) as pilot:
+        app.push_screen(ActionEditor(vault, source))
+        await pilot.pause()
+        assert _on_screen(app.screen.query_one('#recipe-preview'), (60, 20))
+        assert _on_screen(app.screen.query_one('#recipe-save'), (60, 20))
+        assert _on_screen(app.screen.query_one('#recipe-cancel'), (60, 20))
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize('size', [(60, 20), (80, 24)])
 async def test_builder_keyboard_only_preview_close_save(tmp_path, size):
@@ -236,6 +254,7 @@ async def test_builder_keyboard_only_preview_close_save(tmp_path, size):
                 break
         assert app.focused.id == 'recipe-preview', seen
         assert {'step-type', 'step-value', 'step-target', 'step-add'} <= seen
+        await pilot.pause()
         region = app.focused.region
         assert 0 <= region.y < size[1] and region.bottom <= size[1]
         await pilot.press('enter')

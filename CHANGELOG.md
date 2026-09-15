@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.9.4 — 2026-09-15
+
+- GitHub Release assets for the `v0.9.3` tag were never uploaded: Windows
+  Python 3.11 failed `test_builder_keyboard_only_preview_close_save` on a 60×20
+  terminal because Preview sat one row below the screen. The action builder now
+  pins Preview, Save, and Cancel below the form, matching Settings.
+- The test job allows eight minutes for pytest. A slow PDF converter on
+  Ubuntu/Python 3.12 previously finished the suite in 299s and still failed the
+  five-minute step timeout.
 - Settings opens with Ctrl+, so it works on Mac keyboards that do not send
   F-keys without Fn. F1 still opens Settings where function keys work.
 - On macOS, import and recipe files under `/tmp` or `$TMPDIR` (`/var/folders`)
@@ -105,6 +114,7 @@
 - CLI errors are plain language: a missing note reads "No note with ID …", a
   missing file no longer shows `[Errno 2]`, and non-UTF-8 input names its source
   instead of printing a Python codec error.
+- Tagged as `v0.9.3`; the release workflow did not publish wheels. Install 0.9.4.
 
 ## 0.9.2 — 2026-09-12
 
