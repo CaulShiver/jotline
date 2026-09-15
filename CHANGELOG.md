@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.9.5 — 2026-09-15
+
 - Daily logs can move through days: Previous daily log, Next daily log, and Open
   daily log by date (`YYYY-MM-DD`, `today`, or `yesterday`) in the command
   palette. Missing days use the daily template, as today already did. Optional
@@ -29,9 +31,6 @@
   Hyprland, GNOME, KDE, and clipboard-pipe snippets with this install's
   `jotline` path. No dictation, share sheet, or cloud. Windows and macOS keep
   `jotline capture` and pipe-in.
-
-## 0.9.5 — 2026-09-15
-
 - Install no longer requires hunting a wheel filename. A tagged GitHub Release
   attaches the wheel, source archive, `SHA256SUMS`, `install.py`, and
   `install.ps1`. Linux and macOS use

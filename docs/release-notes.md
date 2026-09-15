@@ -3,6 +3,10 @@ The `v0.9.3` tag never uploaded GitHub Release assets; 0.9.4 fixed the Windows
 Python 3.11 action-builder gate but was not tagged. 0.9.5 keeps Windows and
 attaches the wheel, source archive, checksums, and installers.
 
+This tag also includes dated daily logs, extract-to-note, inbox processing,
+visible note connections, and Linux desktop capture (`jotline desktop install`,
+`jotline desktop launch`, and `jotline desktop recipe`).
+
 - Linux / macOS: `curl -fsSL https://github.com/CaulShiver/jotline/releases/latest/download/install.py | python3`
 - Windows: `irm https://github.com/CaulShiver/jotline/releases/latest/download/install.ps1 | iex`
 - PyPI: `uv tool install jotline` or `pipx install jotline` after this tag
