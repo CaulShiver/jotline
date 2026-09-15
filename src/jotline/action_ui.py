@@ -213,7 +213,7 @@ class ActionWorkflows:
     """Local action recipes. Bound onto Jotline; not inherited."""
 
     def action_workflow_commands(self, Command):
-        return [Command('actions', 'Run local action', self.choose_action),
+        return [Command('actions', 'Run local action', self.choose_action, group='everyday'),
                 Command('save-action', 'Save action recipe from this note', self.save_action_prompt),
                 Command('delete-action', 'Delete local action', lambda: self.choose_action(delete=True)),
                 Command('action-builder', 'Create action with step-by-step builder', self.create_action_recipe),

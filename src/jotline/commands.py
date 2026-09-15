@@ -15,3 +15,4 @@ class Command:
     label: str
     handler: Callable[[], None]
     hotkey_action: str | None = None
+    group: str = "more"

@@ -18,13 +18,14 @@ class Review:
     """Task list and export. Bound onto Jotline; not inherited."""
 
     def review_commands(self, Command):
-        return [Command(*item) for item in [
-            ("tasks", "Open tasks across notes", self.show_tasks),
-            ("process-inbox", "Process next inbox note", self.action_process_inbox, "process_inbox"),
-            ("export-html", "Export note as HTML…", lambda: self.prompt_export("html")),
-            ("export-docx", "Export note as Word document…", lambda: self.prompt_export("docx")),
-            ("export-pdf", "Export note as PDF…", lambda: self.prompt_export("pdf")),
-        ]]
+        return [
+            Command("tasks", "Open tasks across notes", self.show_tasks, group="everyday"),
+            Command("process-inbox", "Process next inbox note", self.action_process_inbox, "process_inbox",
+                    group="everyday"),
+            Command("export-html", "Export note as HTML…", lambda: self.prompt_export("html")),
+            Command("export-docx", "Export note as Word document…", lambda: self.prompt_export("docx")),
+            Command("export-pdf", "Export note as PDF…", lambda: self.prompt_export("pdf")),
+        ]
 
     def action_process_inbox(self) -> None:
         if not self.save_current(explicit=True):

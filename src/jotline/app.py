@@ -321,14 +321,44 @@ class Jotline(App):
         self.query_one("#collection", Static).update(label)
         empty = self.query_one("#empty-notes", Static)
         empty.set_class(bool(notes), "hidden")
-        empty.update(self.shortcut_text(
-            "No matches. Adjust search or use Filters; Clear view and search resets filters."
-            if self.query_one("#search", Input).value else
-            "Nothing here yet. Ctrl+N captures a new note. Collections shows your other notes."))
-        self.query_one("#brand", Static).update(self.shortcut_text(
-            f"›_ jotline     /     {self.workspace}     ·     ctrl+w workspaces · ctrl+t tags"))
+        empty.update(self.empty_notes_message())
+        brand = f"›_ jotline / {self.workspace}"
+        if not self.compact_layout:
+            brand += "     ·     ctrl+w workspaces · ctrl+t tags"
+        self.query_one("#brand", Static).update(self.shortcut_text(brand))
         self.connections(notes=snapshot)
         self.notify_storage_warnings()
+
+    def empty_notes_message(self) -> str:
+        query = self.query_one("#search", Input).value
+        compact = self.compact_layout
+        if query:
+            return self.shortcut_text(
+                "No matches. Change the search or Filters."
+                if compact else
+                "No matches. Adjust search or use Filters; Clear view and search resets filters.")
+        collection = self.collection
+        if collection == "inbox":
+            text = "Inbox is empty. Keep typing — this page is already a note."
+            if not compact:
+                text += " Ctrl+N starts another."
+        elif collection == "trash":
+            text = "Trash is empty."
+            if not compact:
+                text += " Deleted notes land here until you restore them."
+        elif collection == "starred":
+            text = "No starred notes."
+            if not compact:
+                text += " Star one from Ctrl+P."
+        elif collection == "all":
+            text = "Nothing in this vault yet. Type to capture."
+        elif collection in {"projects", "areas", "resources", "archive"}:
+            text = f"No {collection} notes yet."
+            if not compact:
+                text += f" Move one here from Ctrl+P → Move note to {collection}."
+        else:
+            text = "Nothing here yet. Ctrl+N captures a new note."
+        return self.shortcut_text(text)
 
     @on(Button.Pressed, "#nav-collections")
     def navigation_collections(self):
@@ -872,42 +902,50 @@ class Jotline(App):
             self.notify("Vault refreshed from disk.")
 
     def action_commands(self) -> None:
-        self.push_screen(Palette(self.command_choices(), "Run a command"), self.command)
+        everyday = frozenset(command.key for command in self.command_registry.values()
+                             if command.group == "everyday")
+        self.push_screen(Palette(self.command_choices(), "Run a command", everyday=everyday), self.command)
 
     def build_command_registry(self) -> dict[str, Command]:
         commands = [
             Command("templates", "New note from template", self.action_templates),
             Command("save-template", "Save this note as a template", self.prompt_save_template),
             Command("template-source", "Copy template source to new note", lambda: self.action_templates(source=True)),
-            Command("history", "History of this note", lambda: self.show_history(self.current.id)),
+            Command("history", "History of this note", lambda: self.show_history(self.current.id),
+                    group="everyday"),
             Command("browse-history", "Browse saved note history", self.browse_history),
-            Command("backup", "Back up vault now", self.action_backup),
-            Command("doctor", "Check vault health", self.action_doctor),
-            Command("recoveries", "Open a recovery copy", self.action_recoveries),
-            Command("preview", "Preview rendered Markdown", self.action_preview, "preview"),
+            Command("backup", "Back up vault now", self.action_backup, group="everyday"),
+            Command("doctor", "Check vault health", self.action_doctor, group="everyday"),
+            Command("recoveries", "Open a recovery copy", self.action_recoveries, group="everyday"),
+            Command("preview", "Preview rendered Markdown", self.action_preview, "preview", group="everyday"),
             Command("live-preview", "Toggle side-by-side Markdown preview", self.action_live_preview, "live_preview"),
             Command("outline", "Jump to heading", self.action_outline, "outline"),
-            Command("tags", "Browse tags", self.action_tags, "tags"),
+            Command("tags", "Browse tags", self.action_tags, "tags", group="everyday"),
             Command("add-tags", "Add tags to this note", self.prompt_add_tags),
-            Command("workspaces", "Switch workspace", self.action_workspaces, "workspaces"),
+            Command("workspaces", "Switch workspace", self.action_workspaces, "workspaces", group="everyday"),
             Command("new-workspace", "Create workspace", self.prompt_new_workspace),
             Command("move-workspace", "Move note to workspace", self.prompt_move_workspace),
-            Command("settings", "Settings · appearance, editor, hotkeys · Ctrl+,", self.action_settings),
-            Command("new", "New thought", self.action_new, "new"),
-            Command("daily", "Open today's daily log", self.action_daily, "daily"),
+            Command("settings", "Settings · appearance, editor, hotkeys · Ctrl+,", self.action_settings,
+                    group="everyday"),
+            Command("new", "New thought", self.action_new, "new", group="everyday"),
+            Command("daily", "Open today's daily log", self.action_daily, "daily", group="everyday"),
             Command("daily-previous", "Previous daily log", self.action_daily_previous, "daily_previous"),
             Command("daily-next", "Next daily log", self.action_daily_next, "daily_next"),
             Command("daily-date", "Open daily log by date", self.action_daily_date, "daily_date"),
-            Command("open", "Open a note", self.action_open_note, "open_note"),
-            Command("focus", "Toggle focus mode", self.action_focus_mode, "focus_mode"),
-            Command("find", "Find within current note", lambda: self.push_screen(FindInNote())),
-            Command("refresh", "Refresh vault from disk", self.refresh_vault),
-            Command("star", "Toggle star on this note", self.toggle_star),
-            Command("task", "Toggle task on current line", self.toggle_task),
-            Command("copy", "Copy note to clipboard (terminal OSC 52)", self.copy_current_note),
-            Command("recovery", "Save recovery copy", self.save_recovery_copy),
-            Command("review", "Start weekly review", lambda: self.open_generated_note(REVIEW)),
-            Command("help", "Open writing and workflow guide", lambda: self.open_generated_note(GUIDE)),
+            Command("open", "Open a note", self.action_open_note, "open_note", group="everyday"),
+            Command("focus", "Toggle focus mode", self.action_focus_mode, "focus_mode", group="everyday"),
+            Command("find", "Find within current note", lambda: self.push_screen(FindInNote()),
+                    group="everyday"),
+            Command("refresh", "Refresh vault from disk", self.refresh_vault, group="everyday"),
+            Command("star", "Toggle star on this note", self.toggle_star, group="everyday"),
+            Command("task", "Toggle task on current line", self.toggle_task, group="everyday"),
+            Command("copy", "Copy note to clipboard (terminal OSC 52)", self.copy_current_note,
+                    group="everyday"),
+            Command("recovery", "Save recovery copy", self.save_recovery_copy, group="everyday"),
+            Command("review", "Start weekly review", lambda: self.open_generated_note(REVIEW),
+                    group="everyday"),
+            Command("help", "Open writing and workflow guide", lambda: self.open_generated_note(GUIDE),
+                    group="everyday"),
         ]
         commands.extend(Command("format:" + style, "Format " + label,
                                 lambda style=style: self.action_format_markdown(style), "format_" + style)

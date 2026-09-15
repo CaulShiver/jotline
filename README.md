@@ -62,8 +62,9 @@ These are optional practices, not a compulsory system. An inbox and search are e
 The sidebar offers **Collections**, **Views**, **Filters**, **Actions**, **Import**,
 and **Quick start**. The optional walkthrough opens without creating a note or
 replacing your writing. On narrow terminals, Ctrl+F reveals the sidebar; Escape
-returns to writing. Empty lists explain how to find other notes or adjust filters.
-All features also remain available from Ctrl+P. See [navigation and saved
+returns to writing. Empty lists explain how to capture, star, or move a note,
+and stay short on 80×24 terminals. Ctrl+P opens everyday commands first; type
+to reach format, move, export, and encryption. See [navigation and saved
 views](docs/navigation.md).
 
 The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingstarted/), [GTD's capture and reflection](https://gettingthingsdone.com/what-is-gtd/), [Bullet Journal's daily rapid logging](https://bulletjournal.com/pages/how-to-bullet-journal), [Zettelkasten's connected ideas](https://zettelkasten.de/overview/), and [PARA's organization by use](https://fortelabs.com/blog/para/). Jotline is independent of these products and authors.
@@ -87,69 +88,25 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 | `Tab` / `Shift+Tab` | Move between controls |
 | `Escape` | Close palette / return to writing |
 
-The palette also offers previous/next daily logs, opening a log by date, extracting a selection into a linked note, processing the next inbox capture, star, move, restore from trash, task toggle, link insertion/navigation, connections with context snippets, recovery copies, and a writing guide. Type words to narrow commands, use arrows to choose, then Enter. Standard text selection, undo, and redo are provided by the editor. Clipboard copy uses OSC 52 and depends on your terminal's permissions and support. Previous daily, next daily, open-by-date, extract, and process-inbox start without shortcuts; assign them in **Ctrl+, → Keyboard shortcuts**.
+The palette opens on everyday capture, find, and recover commands. Type to
+reach format, move, export, encryption, daily-log navigation, extract, and
+inbox processing. Arrows choose; Enter runs; Esc cancels. Clipboard copy uses
+OSC 52 and depends on your terminal. Previous daily, next daily, open-by-date,
+extract, and process-inbox start without shortcuts; assign them in
+**Ctrl+, → Keyboard shortcuts**.
 
 ## Markdown editing
 
-The editor colours Markdown as you type: headings, bold, italic, strikethrough,
-inline and fenced code, links, `[[note links]]`, tags, lists, tasks, quotes,
-rules and tables. Code inside a fence is shown as code, not formatted. Notes stay
-plain `.md` files.
-
-Enter continues a bullet (`- `), numbered (`1. ` becomes `2. `), task (`- [ ] `)
-or quote (`> `) line. Press Enter on an empty item to end the list.
-
-Select text with the mouse or Shift + arrow keys, then click **Bold**, **Italic**,
-**H**, **List**, **Task**, **Link**, or **Code** above the editor. **More** opens
-all formats, and **Preview** shows the rendered note. The toolbar scrolls in
-narrow windows and hides in focus mode. Selections keep Markdown's theme colours
-over a tinted background; the cursor also uses the active theme's accent.
-
-On Omarchy, select **Ctrl+, → Appearance → Omarchy (follow desktop)** to follow your
-desktop palette, including its cursor and selection background. Changes refresh
-within about a second, including in quick capture, without restarting or losing
-your selection. Markdown keeps its syntax foreground colors while selected.
-Jotline reads `omarchy/current/theme/colors.toml` under the XDG state directory
-(`~/.local/state` by default), with support for older config-directory layouts.
-Missing or invalid palettes keep the last good colors (Jotline colors on first
-launch). Choose any other theme to stop following Omarchy.
-
-You can also open **Format** in the sidebar for the Markdown menu, or **Ctrl+P →
-Format …**. Each command toggles, so running it again removes the formatting:
-
-| Command | Result |
-| --- | --- |
-| Format bold / italic / strikethrough / inline code | `**text**`, `*text*`, `~~text~~`, `` `text` `` around the selection, or a selected placeholder |
-| Format heading, heading level 1–6 | `#` to `######` on the current or selected lines; a different level replaces the old one |
-| Format bullet / numbered / task list, blockquote | `- `, `1. 2. 3.`, `- [ ] `, `> ` on each selected line |
-| Format indent lines / outdent lines | Two spaces in or out, for nested lists |
-| Format code block | Wraps the selected lines in a fence long enough for any backticks inside |
-| Format link / image | `[text](url)` or `![alt text](path)`; a selected URL becomes the target |
-| Format table · insert or tidy | Inserts a table, or lines up the columns of the table under the cursor (alignment colons kept) |
-| Format horizontal rule | `---` on its own line |
-
-**Preview rendered Markdown** opens a full-screen preview. **Toggle side-by-side
-Markdown preview** keeps a live preview beside the editor that follows your
-typing and cursor; it needs a terminal wider than 80 columns, and below that the
-full preview opens instead. Both previews show checkboxes as ☐/☒ and note links
-as note titles, and neither opens links or loads images. **Jump to heading**
-lists the note's headings for quick navigation.
-
-Every formatting command, both previews and the heading outline can have its own
-key in **Ctrl+, → Keyboard shortcuts**; they start unassigned. **Ctrl+, → Editor** turns
-Markdown highlighting or list continuation off.
+The editor colours Markdown as you type. Enter continues lists. A toolbar above
+the editor formats the selection; it hides in focus mode. Type **format** in
+Ctrl+P for the rest, including heading levels, tables, and preview. Details:
+[Markdown editing](docs/markdown.md). Omarchy desktop follow:
+[Omarchy](docs/omarchy.md).
 
 ## Move or delete with the mouse
 
-Right-click a note in the sidebar to open its action menu. Choose **Move to
-collection…**, **Move to workspace…**, or **Delete · Move to Trash**. The menu
-acts on the clicked note, even when another note is open. Pending editor changes
-are saved before a move; a failed save leaves the note in place.
-
-In Trash, right-click and choose **Restore to Inbox**. Daily logs can move between
-collections but stay in their original workspace. Create workspaces with Ctrl+W.
-Click outside the menu or press Escape to cancel. You can also focus a sidebar
-note and press **Shift+F10** to open the menu, then use arrows and Enter.
+Right-click a sidebar note, or focus it and press Shift+F10, to move or trash
+it. [Note list menu](docs/note-menu.md) has the full sequence.
 
 ## Make it yours
 
@@ -157,11 +114,8 @@ Open **Ctrl+P → Settings**. Change preferences with Tab, arrows, and Space; ch
 **Save** (or Ctrl+S) to apply them. Escape cancels. **Use defaults** fills the form
 with the original settings; nothing changes until you save.
 
-- **Twenty-two themes:** Jotline, Nord, Gruvbox, Dracula, Tokyo Night, Monokai,
-  Flexoki, Catppuccin Mocha/Latte/Frappé/Macchiato, Rosé Pine/Moon/Dawn,
-  Solarized dark/light, Textual dark/light, Atom One dark/light, and ANSI
-  dark/light. For a light background, try Catppuccin Latte, Rosé Pine Dawn,
-  Solarized light, Textual light, Atom One light, or ANSI light.
+- **Themes:** twenty-two built-in palettes, plus optional Omarchy desktop follow
+  on Linux. See [Omarchy](docs/omarchy.md).
 - **Editor:** line numbers, wrapping, current-line highlighting, Markdown
   highlighting, and list continuation on Enter.
 - **Layout:** sidebar width, writing hints, and starting in focus mode.

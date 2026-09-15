@@ -29,9 +29,11 @@ class Connections:
 
     def connect_commands(self, Command):
         return [
-            Command("link", "Insert note link", lambda: self.select_related_note("link")),
-            Command("follow", "Follow a link in this note", self.action_follow),
-            Command("backlinks", "Show connections", self.action_backlinks, "backlinks"),
+            Command("link", "Insert note link", lambda: self.select_related_note("link"),
+                    group="everyday"),
+            Command("follow", "Follow a link in this note", self.action_follow, group="everyday"),
+            Command("backlinks", "Show connections", self.action_backlinks, "backlinks",
+                    group="everyday"),
         ]
 
     def cached_workspace_notes(self, notes=None, *, refresh: bool = False):

@@ -11,6 +11,12 @@
   an external change. Those copies keep the original draft and store
   `recovery_of` in the note header. Commands → Check vault health and Open a
   recovery copy expose the same recovery tools in the app.
+- The command palette opens on everyday capture, find, and recover commands.
+  Type to reach format, move, export, and encryption. Empty inbox, trash,
+  starred, and PARA lists say what to do next, and stay short on 80×24
+  terminals. Markdown, Omarchy, and the note-list menu moved out of the README
+  into `docs/markdown.md`, `docs/omarchy.md`, and `docs/note-menu.md`. There is
+  still no second Vim editor.
 
 ## 0.9.6 — 2026-09-15
 
