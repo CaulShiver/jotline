@@ -31,6 +31,7 @@ the writing core remains offline.
    introducing indexing. In-memory scan still meets the bar; doctor, conflicts,
    and backups remain the durability product.
 4. Expand community recipes and migration fixtures based on real user workflows.
+   Start from `examples/actions/`; do not add a plugin SDK.
 
 Connecting notes is a visible loop (connections panel, follow, and
 create-from-broken-`[[link]]`). Attachments, unlinked mentions, and a graph

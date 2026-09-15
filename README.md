@@ -584,7 +584,8 @@ storing note bodies or template values. Logs are limited to 256 KiB in
 action; inspect its history before retrying.
 
 See the [action builder and sharing guide](docs/actions.md) and
-[community recipes](examples/actions/README.md). You can also define actions
+[community recipes](examples/actions/README.md) (`starter-recipes.json` for
+copy/export, `inbox-process.json` for filing). You can also define actions
 directly as JSON:
 
 Write a JSON step list in a note and choose **Save action recipe from this note**,

@@ -28,55 +28,9 @@
 - Documented Git and Syncthing recipes for the vault folder. `jotline sync`
   and **How to sync this vault with Git or Syncthing** print the path, ignore
   rules, and the existing recovery dialog. There is no Jotline cloud.
-
-## 0.9.6 — 2026-09-15
-
-- The `v0.9.5` tag never uploaded GitHub Release assets or PyPI files.
-  Hatchling now emits Metadata-Version 2.5; the release job still ran
-  `twine==6.1.0`, which rejects that version. The check now uses Twine 7.
-  The rest of 0.9.5 is unchanged.
-
-## 0.9.5 — 2026-09-15
-
-- Daily logs can move through days: Previous daily log, Next daily log, and Open
-  daily log by date (`YYYY-MM-DD`, `today`, or `yesterday`) in the command
-  palette. Missing days use the daily template, as today already did. Optional
-  shortcuts start unassigned. `jotline daily` opens today's log in the app;
-  `jotline daily --date yesterday` opens another day. `jotline capture --daily --date`
-  appends to that log.
-- **Extract selection to new note** saves the selection as an inbox note and
-  replaces it with a `[[id|title]]` link, as one undo step.
-- **Process next inbox note** opens the oldest inbox capture (daily logs are
-  skipped). Filing that note with Move to collection opens the next. The status
-  line shows how many captures remain. `jotline stats` (and `--json`) prints
-  workspace counts without note bodies.
-- Connections are a first-class loop: Alt+K (or Ctrl+P → Show connections)
-  lists incoming and outgoing notes with the line that contains each link.
-  Follow opens the `[[link]]` under the cursor; a missing target can create a
-  note and rewrite the typed `[[title]]` to a stable `[[id|title]]`. Click a
-  link in preview, or Ctrl+click one in the editor. Compact terminals keep
-  `←N →N` on the status line when the connections bar is hidden.
-  `jotline backlinks NOTE [--json]` prints the same graph. Wiki links inside
-  fenced code or inline code spans no longer count as connections. Typing `[[`
-  to complete a note link no longer offers the note you are already in.
-- Linux desktop capture is a shipped feature: `jotline desktop install` writes
-  an XDG `jotline capture` desktop entry, `jotline desktop launch` opens the
-  capture editor in a terminal, and `jotline desktop recipe` prints Omarchy,
-  Hyprland, GNOME, KDE, and clipboard-pipe snippets with this install's
-  `jotline` path. No dictation, share sheet, or cloud. Windows and macOS keep
-  `jotline capture` and pipe-in.
-- Install no longer requires hunting a wheel filename. A tagged GitHub Release
-  attaches the wheel, source archive, `SHA256SUMS`, `install.py`, and
-  `install.ps1`. Linux and macOS use
-  `curl …/install.py | python3`; Windows PowerShell uses
-  `irm …/install.ps1 | iex`. The installer verifies SHA-256 before installing
-  with uv, pipx, or pip.
-- `uv tool install jotline` / `pipx install jotline` are the PyPI commands. The
-  tag workflow publishes to PyPI with Trusted Publishing after the GitHub
-  assets exist. Linux, macOS, and Windows remain the supported-OS contract;
-  Windows is not dropped to make a tag publishable.
-- CI installs the built wheel through `scripts/install.py` on Linux, macOS, and
-  Windows before a tag can publish.
+- Grew `examples/actions` from real capture and inbox workflows: copy/export
+  recipes that keep the source, plus filing recipes that append and archive.
+  Still no plugin SDK, shell steps, or network actions.
 
 ## 0.9.4 — 2026-09-15
 
