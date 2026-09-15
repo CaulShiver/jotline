@@ -49,4 +49,6 @@ The versioned format is:
 
 Only `template` and `append` accept a string `value`. Template values accept `{{body}}`, `{{selection}}`, `{{title}}`, `{{date}}`, `{{workspace}}`, and existing template includes. Recipes allow 1–16 steps and settings allow 128 actions. Names use lowercase letters, digits, hyphens or underscores, up to 48 characters. File import is bounded and rejects symlinks, special files, unknown operations and malformed fields.
 
-See [community examples](../examples/actions/README.md) for ready-to-import recipes and contribution guidance.
+See [community examples](../examples/actions/README.md) for capture-preserving
+copy/export recipes and inbox filing recipes. They use only built-in steps; there
+is no plugin SDK. Replace `TARGET_NOTE_ID` before running an append recipe.

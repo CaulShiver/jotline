@@ -1,0 +1,21 @@
+{
+  "format": "jotline-actions",
+  "version": 1,
+  "actions": {
+    "file-to-project": [
+      {"type": "strip"},
+      {"type": "append", "value": "TARGET_NOTE_ID"},
+      {"type": "archive"}
+    ],
+    "trim-and-archive": [
+      {"type": "strip"},
+      {"type": "archive"}
+    ],
+    "quote-into-log": [
+      {"type": "quote"},
+      {"type": "template", "value": "## Captured {{date}}\n\n{{body}}"},
+      {"type": "append", "value": "TARGET_NOTE_ID"},
+      {"type": "restore"}
+    ]
+  }
+}

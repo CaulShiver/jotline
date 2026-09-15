@@ -3,38 +3,43 @@
   "version": 1,
   "actions": {
     "clean-copy": [
-      {
-        "type": "strip"
-      },
-      {
-        "type": "copy"
-      },
-      {
-        "type": "restore"
-      }
-    ],
-    "meeting-note": [
-      {
-        "type": "template",
-        "value": "{{template:meeting}}"
-      },
-      {
-        "type": "export"
-      },
-      {
-        "type": "restore"
-      }
+      {"type": "strip"},
+      {"type": "copy"},
+      {"type": "restore"}
     ],
     "quote-copy": [
+      {"type": "quote"},
+      {"type": "copy"},
+      {"type": "restore"}
+    ],
+    "share-selection": [
+      {"type": "template", "value": "{{selection}}"},
+      {"type": "copy"},
+      {"type": "restore"}
+    ],
+    "meeting-note": [
+      {"type": "template", "value": "{{template:meeting}}"},
+      {"type": "export"},
+      {"type": "restore"}
+    ],
+    "task-from-capture": [
+      {"type": "strip"},
+      {"type": "template", "value": "- [ ] {{body}}"},
+      {"type": "export"},
+      {"type": "restore"}
+    ],
+    "dated-journal": [
+      {"type": "template", "value": "# {{date}}\n\n{{body}}"},
+      {"type": "export"},
+      {"type": "restore"}
+    ],
+    "weekly-review-seed": [
       {
-        "type": "quote"
+        "type": "template",
+        "value": "# Weekly review — {{date}}\n\n## Clear the inbox\n- [ ] Read unprocessed captures\n- [ ] Move work to projects or areas\n- [ ] Archive what is finished\n\n## Next week\n- [ ] \n"
       },
-      {
-        "type": "copy"
-      },
-      {
-        "type": "restore"
-      }
+      {"type": "export"},
+      {"type": "restore"}
     ]
   }
 }

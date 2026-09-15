@@ -28,6 +28,9 @@
 - Documented Git and Syncthing recipes for the vault folder. `jotline sync`
   and **How to sync this vault with Git or Syncthing** print the path, ignore
   rules, and the existing recovery dialog. There is no Jotline cloud.
+- Grew `examples/actions` from real capture and inbox workflows: copy/export
+  recipes that keep the source, plus filing recipes that append and archive.
+  Still no plugin SDK, shell steps, or network actions.
 
 ## 0.9.6 — 2026-09-15
 
