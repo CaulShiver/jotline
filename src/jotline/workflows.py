@@ -8,6 +8,7 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.widgets import Input, Label, OptionList, SelectionList, Static
 
+from .accessibility import named
 from .limits import EDIT_LIMIT_BYTES
 from .markdown_editor import MarkdownEditor
 from .modal import Modal, Palette, TextPrompt
@@ -43,7 +44,7 @@ class Arrange(Modal[str | None]):
         with Vertical(id='arrange-panel'):
             yield Label('Arrange paragraphs' if self.separator == '\n\n' else 'Arrange lines')
             yield Static('↑↓ select · Alt+↑↓ move · Ctrl+D duplicate · Ctrl+S apply · Esc cancel')
-            yield OptionList(id='arrange-items')
+            yield named(OptionList(id='arrange-items'), 'Items to rearrange')
 
     def on_mount(self):
         self.refresh_items(0)
@@ -90,7 +91,8 @@ class SelectNotes(Modal[list[str] | None]):
         with Vertical(id='bulk-panel'):
             yield Label('Select notes · Space toggles · Ctrl+S choose operation · Esc cancel')
             yield Static('0 selected', id='bulk-count')
-            yield SelectionList(*[(Text(label), key) for key, label in self.choices], id='bulk-items')
+            yield named(SelectionList(*[(Text(label), key) for key, label in self.choices], id='bulk-items'),
+                        'Notes to include in the bulk operation')
 
     def on_mount(self):
         self.query_one(SelectionList).focus()

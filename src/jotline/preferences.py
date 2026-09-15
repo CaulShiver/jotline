@@ -45,14 +45,16 @@ class Preferences(Modal[Settings | None]):
                 yield Label('Appearance', classes='pref-section')
                 yield Label('Theme', classes='pref-label')
                 yield Select([('Omarchy (follow desktop)' if t == 'omarchy' else t.replace('-', ' ').title(), t)
-                              for t in THEMES], value=s.theme, allow_blank=False, id='pref-theme')
+                              for t in THEMES], value=s.theme, allow_blank=False, id='pref-theme',
+                             tooltip='Color theme')
                 for name, title, options in (
                     ('sort_order', 'Sort notes (stars stay first)', [('Last edited', 'updated'), ('Newest created', 'created'), ('Title A–Z', 'title')]),
                     ('startup', 'When Jotline opens', [('Blank thought', 'new'), ("Today’s daily log", 'daily')]),
                     ('default_collection', 'New thoughts go to', [(c.title(), c) for c in DEFAULT_COLLECTIONS]),
                 ):
                     yield Label(title, classes='pref-label')
-                    yield Select(options, value=getattr(s, name), allow_blank=False, id='pref-' + name)
+                    yield Select(options, value=getattr(s, name), allow_blank=False, id='pref-' + name,
+                                 tooltip=title)
                 yield Label('Editor and layout', classes='pref-section')
                 for name, title in (('line_numbers', 'Line numbers'), ('soft_wrap', 'Wrap long lines'),
                                     ('highlight_line', 'Highlight current line'),
@@ -62,11 +64,13 @@ class Preferences(Modal[Settings | None]):
                                     ('show_hints', 'Show writing hints')):
                     with Horizontal(classes='pref-toggle'):
                         yield Label(title)
-                        yield Switch(getattr(s, name), id='pref-' + name)
+                        yield Switch(getattr(s, name), id='pref-' + name, tooltip=title)
                 yield Label('Sidebar width · 22–60 columns', classes='pref-label')
-                yield Input(str(s.sidebar_width), type='integer', id='pref-sidebar_width')
+                yield Input(str(s.sidebar_width), type='integer', id='pref-sidebar_width',
+                            tooltip='Sidebar width in columns')
                 yield Label('Autosave interval · 0.2–5 seconds', classes='pref-label')
-                yield Input(str(s.autosave_seconds), type='number', id='pref-autosave_seconds')
+                yield Input(str(s.autosave_seconds), type='number', id='pref-autosave_seconds',
+                            tooltip='Autosave interval in seconds')
                 yield Label('Keyboard shortcuts', classes='pref-section')
                 yield Static('Use ctrl+letter, alt+letter, or f2–f12. Editing keys are reserved. '
                              'Leave optional Markdown shortcuts blank to keep them unassigned. '
@@ -74,11 +78,13 @@ class Preferences(Modal[Settings | None]):
                 hotkeys = s.effective_hotkeys
                 for action, (default, label) in HOTKEY_ACTIONS.items():
                     yield Label(label, classes='pref-label')
-                    yield Input(hotkeys[action], placeholder='Unassigned' if not default else '', id='hotkey-' + action)
+                    yield Input(hotkeys[action], placeholder='Unassigned' if not default else '',
+                                id='hotkey-' + action, tooltip=label)
                 yield Button('Reset hotkeys', id='reset-hotkeys')
                 yield Label('Daily template', classes='pref-section')
                 yield Label('Daily template · {{date}} becomes today’s date; existing logs stay unchanged', classes='pref-label')
-                yield TextArea(s.daily_template, tab_behavior='focus', id='daily-template')
+                yield TextArea(s.daily_template, tab_behavior='focus', id='daily-template',
+                               tooltip='Daily log template. {{date}} becomes today’s date.')
             yield Static('', id='preferences-error', markup=False)
             with Horizontal(id='preferences-buttons'):
                 yield Button('Save', variant='primary', id='save-preferences')

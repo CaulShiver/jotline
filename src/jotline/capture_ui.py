@@ -35,7 +35,9 @@ class QuickCapture(App[str | None]):
 
     def compose(self) -> ComposeResult:
         yield Static("›_ jotline  ·  " + self.destination, id="capture-title", markup=False)
-        yield TextArea("", soft_wrap=True, tab_behavior="focus", id="capture-editor")
+        editor = TextArea("", soft_wrap=True, tab_behavior="focus", id="capture-editor")
+        editor.tooltip = "Quick capture editor. Ctrl+S saves. Esc cancels."
+        yield editor
         yield Static(HINT, id="capture-hint", markup=False)
 
     def on_mount(self) -> None:

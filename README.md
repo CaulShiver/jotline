@@ -90,10 +90,11 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 
 The palette opens on everyday capture, find, and recover commands. Type to
 reach format, move, export, encryption, daily-log navigation, extract, and
-inbox processing. Arrows choose; Enter runs; Esc cancels. Clipboard copy uses
-OSC 52 and depends on your terminal. Previous daily, next daily, open-by-date,
-extract, and process-inbox start without shortcuts; assign them in
-**Ctrl+, → Keyboard shortcuts**.
+inbox processing. Arrows choose; Enter runs; Esc cancels. Clipboard copy is an
+OSC 52 *request* and depends on your terminal. Type **Clipboard, IME, and
+screen-reader notes** for Terminal.app, Windows Terminal, and Orca limits.
+Previous daily, next daily, open-by-date, extract, and process-inbox start
+without shortcuts; assign them in **Ctrl+, → Keyboard shortcuts**.
 
 ## Markdown editing
 
@@ -637,8 +638,10 @@ actions, and guided import/recovery workflows. See
 [CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,
 cloud sync, plugins and dictation remain future work.
 Automated cross-platform checks and a POSIX terminal smoke test complement the
-[native terminal and accessibility checklist](docs/terminal-testing.md);
-clipboard, IME and screen-reader compatibility still needs hands-on verification.
+[native terminal and accessibility checklist](docs/terminal-testing.md).
+Clipboard copy is an OSC 52 request (the terminal must allow it). IME composition
+and screen readers need filled [native reports](docs/terminal-reports/) for 1.0;
+headless tests only prove control names and Unicode round-trip.
 See [Release verification](docs/release-verification.md) for the local test results
 and the limits of that coverage.
 

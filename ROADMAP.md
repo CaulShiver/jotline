@@ -22,7 +22,11 @@ the writing core remains offline.
    whether they can install, capture, find, connect, process and recover a note
    unaided.
 2. Establish native terminal and assistive-technology coverage using
-   [the terminal checklist](docs/terminal-testing.md).
+   [the terminal checklist](docs/terminal-testing.md). VoiceOver on
+   Terminal.app, NVDA or Narrator on Windows Terminal, and Orca on Linux are a
+   **1.0 ship criterion**. The headless pass in
+   [docs/terminal-reports/](docs/terminal-reports/) is toward that gate, not a
+   substitute. Clipboard copy remains an OSC 52 request.
 3. Measure search with [synthetic vault benchmarks](docs/vault-scale.md) before
    introducing indexing. In-memory scan still meets the bar; doctor, conflicts,
    and backups remain the durability product.

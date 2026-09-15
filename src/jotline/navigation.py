@@ -31,18 +31,23 @@ class ViewEditor(Modal[tuple[str, dict] | None]):
             yield Label('Filter notes' if self.filters else 'Edit saved view' if self.original else 'Save a view')
             if not self.filters:
                 yield Label('Name · lowercase letters, numbers, - or _')
-                yield Input(self.view_name, placeholder='weekly-review', id='view-name')
+                yield Input(self.view_name, placeholder='weekly-review', id='view-name',
+                            tooltip='Saved view name')
             yield Label('Search · words, #tags, -excluded, updated-before:YYYY-MM-DD')
-            yield Input(self.view['query'], id='view-query')
+            yield Input(self.view['query'], id='view-query', placeholder='words or #tags',
+                        tooltip='Search words, #tags, or date filters')
             yield Label('Collection')
             yield Select([(x.title(), x) for x in VIEW_COLLECTIONS],
-                         value=self.view['collection'], allow_blank=False, id='view-collection')
+                         value=self.view['collection'], allow_blank=False, id='view-collection',
+                         tooltip='Collection to show')
             yield Label('Sort')
             yield Select([(x.title(), x) for x in SORT_ORDERS],
-                         value=self.view['sort'], allow_blank=False, id='view-sort')
+                         value=self.view['sort'], allow_blank=False, id='view-sort',
+                         tooltip='Sort order')
             yield Label('Theme')
             yield Select([('Use settings theme', '')] + [(x, x) for x in THEMES],
-                         value=self.view['theme'], allow_blank=False, id='view-theme')
+                         value=self.view['theme'], allow_blank=False, id='view-theme',
+                         tooltip='Theme for this view')
             yield Static('', id='view-error', markup=False)
             with Horizontal(id='view-buttons'):
                 yield Button('Apply' if self.filters else 'Save', variant='primary', id='view-save')
