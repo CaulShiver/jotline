@@ -4,6 +4,7 @@ from importlib.resources import files
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import sys
@@ -293,7 +294,7 @@ def test_launch_falls_back_to_current_tty_or_explains_pipe(monkeypatch):
     monkeypatch.setattr(desktop.shutil, "which", lambda name: None)
     plan = desktop.launch_plan(["/opt/jotline/bin/jotline", "capture"], in_terminal=True)
     assert plan == desktop.LaunchPlan("exec", ["/opt/jotline/bin/jotline", "capture"])
-    with pytest.raises(ValueError, match="wl-paste"):
+    with pytest.raises(ValueError, match="pipe text: " + re.escape(desktop.clipboard_pipe())):
         desktop.launch_plan(["jotline", "capture"], in_terminal=False)
 
 
@@ -314,16 +315,17 @@ def test_execute_launch_spawns_detached_and_execs(monkeypatch):
     assert executed == [("jotline", ["jotline", "capture"])]
 
 
-def test_capture_command_uses_injected_jotline(monkeypatch):
+def test_capture_command_uses_injected_jotline(monkeypatch, tmp_path):
     monkeypatch.setattr(desktop, "jotline_command", lambda: ["/opt/jotline/bin/jotline"])
-    args = Namespace(vault="/tmp/notes", workspace="work", daily=True)
+    vault = tmp_path / "notes"
+    args = Namespace(vault=str(vault), workspace="work", daily=True)
     assert desktop.capture_command(args) == [
-        "/opt/jotline/bin/jotline", "--vault", "/tmp/notes",
+        "/opt/jotline/bin/jotline", "--vault", str(vault.expanduser()),
         "--workspace", "work", "capture", "--daily",
     ]
-    args = Namespace(vault="/tmp/notes", workspace=None, daily=False)
+    args = Namespace(vault=str(vault), workspace=None, daily=False)
     assert desktop.capture_command(args) == [
-        "/opt/jotline/bin/jotline", "--vault", "/tmp/notes", "capture",
+        "/opt/jotline/bin/jotline", "--vault", str(vault.expanduser()), "capture",
     ]
 
 
