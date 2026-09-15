@@ -47,6 +47,7 @@ async def test_toolbar_more_and_preview_preserve_selection(tmp_path):
         await pilot.press('escape')
         assert editor.selection == selection
         await pilot.click('#md-italic')
+        await pilot.pause()
         assert editor.text == '# Heading\n\n*word*'
         assert editor.has_focus
 

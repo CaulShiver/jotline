@@ -806,6 +806,7 @@ class Jotline(App):
         if result == "tidied":
             self.notify("Table tidied.")
         self.capture_current_buffer()
+        editor.focus()
         self.call_after_refresh(editor.focus)
 
     def select_editor_match(self, query: str, *, reverse: bool = False,
