@@ -21,7 +21,8 @@
   link in preview, or Ctrl+click one in the editor. Compact terminals keep
   `←N →N` on the status line when the connections bar is hidden.
   `jotline backlinks NOTE [--json]` prints the same graph. Wiki links inside
-  fenced code or inline code spans no longer count as connections.
+  fenced code or inline code spans no longer count as connections. Typing `[[`
+  to complete a note link no longer offers the note you are already in.
 
 ## 0.9.5 — 2026-09-15
 

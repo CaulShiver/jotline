@@ -200,6 +200,7 @@ async def test_autocomplete_link_and_snippet_cancel(tmp_path):
     Templates(tmp_path).save('snippet', 'expanded')
     app = Jotline(vault)
     async with app.run_test() as pilot:
+        app.autosave_timer.stop()
         editor = app.query_one('#editor', TextArea)
 
         async def wait_for_palette():
@@ -211,6 +212,9 @@ async def test_autocomplete_link_and_snippet_cancel(tmp_path):
 
         await pilot.press('[', '[')
         await wait_for_palette()
+        assert app.screen.heading == 'Complete note link'
+        assert note.id in {key for key, _ in app.screen.choices}
+        assert app.current.id not in {key for key, _ in app.screen.choices}
         await pilot.press('enter')
         await pilot.pause()
         assert editor.text == f'[[{note.id}|Linked]]'

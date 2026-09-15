@@ -211,7 +211,9 @@ class Workflows:
         original = editor.text
         try:
             if trigger == '[[':
-                choices = self.note_choices(self.vault.search(workspace=self.workspace))
+                notes = [note for note in self.vault.search(workspace=self.workspace)
+                         if note.id != self.current.id]
+                choices = self.note_choices(notes)
             else:
                 choices = [(name, name) for name in Templates(self.vault.path).names()]
         except (ValueError, OSError) as error:
