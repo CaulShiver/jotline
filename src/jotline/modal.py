@@ -54,7 +54,8 @@ class Palette(Modal[str | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="palette"):
             yield Label(self.heading, id="palette-title")
-            yield Input(placeholder="Type to filter…", id="command-query")
+            yield Input(placeholder="Type to filter…", id="command-query",
+                        tooltip="Filter commands by name")
             yield Static("Type to filter · ↑↓ choose · Enter run · Esc cancel", id="palette-help")
             yield Static("", id="command-count", markup=False)
             yield OptionList(id="commands")
@@ -133,7 +134,8 @@ class TextPrompt(Modal[str | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="text-prompt"):
             yield Label(self.heading)
-            yield Input(self.value, placeholder=self.placeholder, password=self.password, id="prompt-value")
+            yield Input(self.value, placeholder=self.placeholder, password=self.password, id="prompt-value",
+                        tooltip=self.heading)
             yield Static("Enter to apply · Esc to cancel")
 
     def on_mount(self) -> None:

@@ -29,10 +29,14 @@ class RecoveryScreen(Modal[str | None]):
             yield Label('This note changed outside Jotline')
             with VerticalScroll(id='recovery-scroll'):
                 yield Label('Your on-screen draft (unsaved)')
-                yield TextArea(self.local_body[:COMPARE_LIMIT], read_only=True, id='recovery-local')
+                local = TextArea(self.local_body[:COMPARE_LIMIT], read_only=True, id='recovery-local')
+                local.tooltip = 'Your unsaved on-screen draft'
+                yield local
                 yield Label('External version on disk' if self.external_body is not None
                             else 'External version unavailable: ' + self.external_error, markup=False)
-                yield TextArea((self.external_body or '')[:COMPARE_LIMIT], read_only=True, id='recovery-external')
+                external = TextArea((self.external_body or '')[:COMPARE_LIMIT], read_only=True, id='recovery-external')
+                external.tooltip = 'External version of this note on disk'
+                yield external
                 if len(self.local_body) > COMPARE_LIMIT or len(self.external_body or '') > COMPARE_LIMIT:
                     yield Label(f'Comparison limited to {COMPARE_LIMIT:,} characters. The full draft will be preserved.')
                 yield Label('Both save options first create a separate inbox recovery copy of your full draft. '

@@ -9,6 +9,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Input, Label, OptionList, Select, Static, TextArea
 
+from .accessibility import named
 from .action_history import ActionHistory, format_history, run_recorded_action as run_action
 from .action_recipes import merge_recipes, read_recipes, write_recipes
 from .actions import ActionCommitError, BUILTIN_ACTIONS, MAX_STEPS, STEP_TYPES, preview_action, truncate_preview, validate_actions
@@ -39,7 +40,7 @@ class ActionReport(Modal):
     def compose(self):
         with Vertical(id='action-report'):
             yield Label(self.title_text)
-            yield TextArea(self.report, read_only=True)
+            yield TextArea(self.report, read_only=True, tooltip=self.title_text)
             yield Button('Close', id='report-close')
 
     @on(Button.Pressed, '#report-close')
@@ -72,12 +73,14 @@ class ActionEditor(Modal[tuple | None]):
         with Vertical(id='action-editor'):
             yield Label('Action builder · Ctrl+S save · Esc cancel')
             with VerticalScroll(id='action-editor-scroll'):
-                yield Input(self.recipe_name, placeholder='Name: lowercase letters, numbers, hyphens', id='recipe-name')
+                yield Input(self.recipe_name, placeholder='Name: lowercase letters, numbers, hyphens',
+                            id='recipe-name', tooltip='Action name')
                 yield Static('1. Select a step. 2. Choose its operation and value. 3. Apply step, then preview or save.')
-                yield OptionList(id='recipe-steps')
-                yield Select([(STEP_LABELS[key], key) for key in STEP_TYPES], allow_blank=False, id='step-type')
+                yield named(OptionList(id='recipe-steps'), 'Recipe steps')
+                yield Select([(STEP_LABELS[key], key) for key in STEP_TYPES], allow_blank=False, id='step-type',
+                             tooltip='Step operation')
                 yield Static('Template: use {{body}}, {{selection}}, {{title}}, {{date}} or {{template:meeting}}.\nAppend: enter the target note ID from this workspace. Other steps need no value.')
-                yield TextArea('', id='step-value')
+                yield TextArea('', id='step-value', tooltip='Template text or append target note ID')
                 yield Button('Choose append target by title', id='step-target')
                 with Horizontal():
                     yield Button('Apply step', id='step-apply')

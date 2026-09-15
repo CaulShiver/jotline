@@ -17,6 +17,14 @@
   terminals. Markdown, Omarchy, and the note-list menu moved out of the README
   into `docs/markdown.md`, `docs/omarchy.md`, and `docs/note-menu.md`. There is
   still no second Vim editor.
+- Accessibility is a ship criterion, not a help-wanted afterthought. Interactive
+  controls on the writing screen, Settings, views, find, recovery, capture, the
+  action builder, history, arrange, and bulk select now carry labels or tooltips.
+  Copy wording is an OSC 52 *request*, never a success claim. `Ctrl+P → Clipboard,
+  IME, and screen-reader notes` explains the limits. Native VoiceOver, NVDA, and
+  Orca reports remain required for 1.0; fill the templates in
+  `docs/terminal-reports/`. Headless Linux coverage is recorded there and does
+  not close issues #2 or #3.
 
 ## 0.9.6 — 2026-09-15
 

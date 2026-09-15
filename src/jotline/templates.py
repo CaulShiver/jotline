@@ -220,6 +220,13 @@ Everything stays in your local vault as readable Markdown.
 Use `jotline capture` to send text from the shell, and `jotline export` to
 write a note without metadata. No account, telemetry, or cloud service.
 Ctrl+Q flushes edits before quitting. Use it before closing the terminal.
+
+## Clipboard and accessibility
+Ctrl+P → Copy note sends an OSC 52 *request*. The terminal decides whether the
+system clipboard changes; Jotline will not claim that it did. Ctrl+P →
+Clipboard, IME, and screen-reader notes explains Terminal.app, Windows Terminal,
+and Orca limits. Native reports in docs/terminal-reports/ are a 1.0 ship
+criterion.
 """
 
 REVIEW = """# Weekly review

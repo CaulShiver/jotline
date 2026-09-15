@@ -16,6 +16,7 @@ from textual.widgets import Button, Footer, Input, Markdown, OptionList, Static,
 from textual.widgets.option_list import Option
 from rich.text import Text
 
+from .accessibility import A11Y_NOTES, COPY_REQUEST
 from .action_ui import ActionWorkflows
 from .cli_doctor import doctor_report, format_doctor
 from .commands import Command
@@ -25,7 +26,7 @@ from .import_ui import RecoveryImport
 from .links import wiki_link_at, wiki_target_from_href
 from .markdown_editor import JOTLINE_THEME, MarkdownEditor
 from .modal import Palette, TextPrompt
-from .navigation import Views
+from .navigation import Views, Walkthrough
 from .note_menu import NoteList, NoteMenu
 from .omarchy import OmarchySync
 from .preferences import Preferences
@@ -145,9 +146,12 @@ class Jotline(App):
                 with Horizontal(classes="navigation-row"):
                     yield Button("Import", id="nav-import")
                 yield Static("INBOX", id="collection", markup=False)
-                yield Input(placeholder="Search words or #tags", id="search")
+                yield Input(placeholder="Search words or #tags", id="search",
+                            tooltip="Search this workspace by words or #tags")
                 yield Static("", id="empty-notes", markup=False)
-                yield NoteList(id="notes")
+                notes = NoteList(id="notes")
+                notes.tooltip = "Notes in the current collection"
+                yield notes
             with Vertical(id="writing"):
                 yield Static(self.current.title + " / " + self.current.collection, id="note-heading")
                 with HorizontalScroll(id="markdown-toolbar"):
@@ -163,9 +167,15 @@ class Jotline(App):
                         yield Button(label, id="md-" + style, classes="markdown-format", tooltip=hint)
                     yield Button("More", id="md-more", tooltip="All Markdown formats, including tables and code blocks")
                     yield Button("Preview", id="md-preview", tooltip="Preview Markdown; Esc returns to writing")
-                yield MarkdownEditor("", soft_wrap=True, tab_behavior="focus", show_line_numbers=False, id="editor")
-                yield ConnectionsBar("", id="connections", markup=False)
-                yield Static("Ready · local Markdown", id="status", markup=False)
+                editor = MarkdownEditor("", soft_wrap=True, tab_behavior="focus", show_line_numbers=False, id="editor")
+                editor.tooltip = "Note editor. Start typing to capture. Text saves automatically."
+                yield editor
+                connections = ConnectionsBar("", id="connections", markup=False)
+                connections.tooltip = "Incoming and outgoing note links"
+                yield connections
+                status = Static("Ready · local Markdown", id="status", markup=False)
+                status.tooltip = "Save status, word count, and collection"
+                yield status
             with VerticalScroll(id="live-preview", classes="hidden"):
                 yield Markdown("", open_links=False, id="live-markdown")
         yield Static("Capture first. Make sense of it later.   ctrl+p commands · ctrl+d daily log", id="hint")
@@ -939,8 +949,9 @@ class Jotline(App):
             Command("refresh", "Refresh vault from disk", self.refresh_vault, group="everyday"),
             Command("star", "Toggle star on this note", self.toggle_star, group="everyday"),
             Command("task", "Toggle task on current line", self.toggle_task, group="everyday"),
-            Command("copy", "Copy note to clipboard (terminal OSC 52)", self.copy_current_note,
+            Command("copy", "Copy note to clipboard (terminal OSC 52 request)", self.copy_current_note,
                     group="everyday"),
+            Command("accessibility", "Clipboard, IME, and screen-reader notes", self.show_accessibility_notes),
             Command("recovery", "Save recovery copy", self.save_recovery_copy, group="everyday"),
             Command("review", "Start weekly review", lambda: self.open_generated_note(REVIEW),
                     group="everyday"),
@@ -1028,9 +1039,12 @@ class Jotline(App):
             self.dirty = True
             self.save_current()
 
+    def show_accessibility_notes(self) -> None:
+        self.push_screen(Walkthrough(self.shortcut_text(A11Y_NOTES)))
+
     def copy_current_note(self) -> None:
         self.copy_to_clipboard(self.editor().text)
-        self.notify("Copy requested. Your terminal must allow OSC 52 clipboard access.")
+        self.notify(COPY_REQUEST)
 
     def toggle_task(self) -> None:
         self.editor().toggle_task_line()

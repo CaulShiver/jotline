@@ -65,3 +65,13 @@ The release runs automated tests and installed-wheel smoke checks on Linux,
 macOS and Windows. Local headless and POSIX PTY checks can validate rendering
 startup, keyboard input and note persistence, but cannot certify native emulator,
 clipboard, screen-reader or IME behavior. Those require the checks above.
+
+## 1.0 ship criterion
+
+1.0 needs one filled native report for each of Terminal.app (VoiceOver + IME +
+clipboard), Windows Terminal (NVDA or Narrator + IME + clipboard), and a Linux
+terminal with Orca. Templates live in [terminal-reports/](terminal-reports/).
+The headless Linux pass in that folder is **toward** 1.0, not a substitute.
+Issues [#2](https://github.com/CaulShiver/jotline/issues/2) and
+[#3](https://github.com/CaulShiver/jotline/issues/3) stay open until those
+reports exist. Do not close them from CI or Pilot tests.

@@ -74,7 +74,8 @@ class RevisionPreview(Modal[bool]):
         with Vertical(id="revision-panel"):
             yield Static("Saved version · " + self.note.title, markup=False)
             yield Static("Restore creates a separate inbox note and keeps the original.")
-            yield TextArea(self.note.body, read_only=True, soft_wrap=False, id="revision-text")
+            yield TextArea(self.note.body, read_only=True, soft_wrap=False, id="revision-text",
+                           tooltip="Saved version of this note")
             with Horizontal(id="revision-buttons"):
                 yield Button("Restore as new note", variant="primary", id="restore-revision")
                 yield Button("Cancel", id="cancel-revision")
@@ -110,10 +111,10 @@ class FindInNote(Modal[None]):
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="find-panel"):
             yield Label("Find within this note", id="find-title")
-            yield Input(placeholder="Type text to find…", id="find-query")
-            yield Input(placeholder="Replace with…", id="replace-value")
+            yield Input(placeholder="Type text to find…", id="find-query", tooltip="Find text in this note")
+            yield Input(placeholder="Replace with…", id="replace-value", tooltip="Replacement text")
             yield Label("Match case")
-            yield Switch(False, id="find-case")
+            yield Switch(False, id="find-case", tooltip="Match case")
             with Horizontal(id="replace-buttons"):
                 yield Button("Replace", id="replace-one")
                 yield Button("Replace all", id="replace-all")
