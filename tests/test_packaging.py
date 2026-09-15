@@ -25,6 +25,10 @@ def test_build_backend_and_runtime_dependency_bounds_are_explicit():
     assert data["project"]["dependencies"] == ["textual>=8.2.8,<9"]
     assert data["project"]["optional-dependencies"]["dev"] == ["pytest>=8.2", "pytest-asyncio>=0.24"]
     assert data["project"]["urls"]["Repository"] == "https://github.com/CaulShiver/jotline"
+    assert data["project"]["urls"]["Documentation"] == "https://github.com/CaulShiver/jotline/blob/main/docs/install.md"
+    assert "Operating System :: Microsoft :: Windows" in data["project"]["classifiers"]
+    assert "Operating System :: POSIX :: Linux" in data["project"]["classifiers"]
+    assert "Operating System :: MacOS :: MacOS X" in data["project"]["classifiers"]
     assert data["tool"]["pytest"]["ini_options"]["asyncio_default_fixture_loop_scope"] == "function"
 
 
@@ -35,13 +39,28 @@ def test_ci_gives_pytest_eight_minutes():
     assert "timeout-minutes: 15" in workflow
 
 
-def test_install_docs_advertise_the_current_wheel():
+def test_install_docs_lead_with_a_one_liner_and_name_the_current_wheel_for_checksums():
     wheel = f"jotline-{jotline.__version__}-py3-none-any.whl"
     leftover = re.compile(r"jotline-0\.\d+\.\d+-py3-none-any\.whl")
-    for path in (ROOT / "README.md", ROOT / "docs/install.md", ROOT / "docs/release-notes.md"):
+    readme = (ROOT / "README.md").read_text()
+    install_section = readme.split("## The everyday loop", 1)[0]
+    assert "releases/latest/download/install.py" in install_section
+    assert "uv tool install jotline" in install_section
+    assert "irm https://github.com/CaulShiver/jotline/releases/latest/download/install.ps1" in install_section
+    assert wheel not in install_section
+    assert leftover.findall(readme.replace(wheel, "")) == []
+    for path in (ROOT / "docs/install.md", ROOT / "docs/release-notes.md"):
         text = path.read_text()
         assert wheel in text, path.name
         assert leftover.findall(text.replace(wheel, "")) == []
+
+
+def test_supported_os_contract_keeps_windows():
+    platforms = (ROOT / "docs/platforms.md").read_text()
+    assert "Linux, macOS, and Windows" in platforms
+    assert "Windows is a supported platform" in platforms
+    workflow = (ROOT / ".github/workflows/test.yml").read_text()
+    assert "os: [ubuntu-latest, macos-latest, windows-latest]" in workflow
 
 
 def test_ci_lower_bound_pair_matches_pytest_asyncio_floor():
@@ -51,6 +70,8 @@ def test_ci_lower_bound_pair_matches_pytest_asyncio_floor():
     assert "'pytest-asyncio==0.24.0'" in workflow
     assert "'pytest==8.0.0'" not in workflow
     assert "/tmp/jotline-lower-bound/bin/python -m pytest -q tests/test_cli_redteam.py tests/test_packaging.py" in workflow
+    assert "uv venv .smoke-venv --python '${{ matrix.python }}'" in workflow
+    assert "python scripts/install.py --from-dir dist --python \"$smoke_python\" --installer pip" in workflow
     assert "uv venv .lower-bound" not in workflow
     assert "tests/test_storage_redteam.py tests/test_cli_redteam.py" not in workflow
 

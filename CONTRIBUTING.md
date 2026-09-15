@@ -11,8 +11,8 @@ Install with `uv sync --extra dev`. Before opening a pull request, run the locke
 suite with `uv run --locked pytest -q`. CI also checks an unlocked latest resolve
 with `uv lock --upgrade --dry-run`, a direct lower-bound environment, and a clean
 installed-wheel smoke run. For local release checks, build with `uv build --clear`
-and run `scripts/smoke_install.py` from a fresh venv containing the built wheel and
-its dependencies.
+and run `python scripts/install.py --from-dir dist --installer pip` into a fresh
+venv, then `python -I scripts/smoke_install.py` from that environment.
 
 CI runs the complete suite and installed-wheel CLI/TUI smoke checks on Linux,
 macOS, and Windows with Python 3.11–3.13. POSIX-only filesystem cases are marked
@@ -48,8 +48,24 @@ Update the package version, main README, [CHANGELOG.md](CHANGELOG.md), and
 `python scripts/release_metadata.py --checksums` checks package names and writes
 SHA-256 checksums after `uv build --clear`.
 
-Push a matching `vX.Y.Z` tag to start the release workflow. It runs the complete
-cross-platform test and wheel-smoke matrix before publishing the wheel, source
-archive, and checksums to GitHub Releases. The tag must match the single-sourced
-package version. A failed verification job prevents publication. Never move an
-already-published tag; fix the issue and release a new patch version.
+Push an annotated matching `vX.Y.Z` tag to start the release workflow. It runs
+the complete Linux/macOS/Windows test and installer-smoke matrix, then publishes
+the wheel, source archive, checksums, and `install.py` / `install.ps1` to GitHub
+Releases. A later job uploads the wheel and sdist to PyPI with Trusted
+Publishing. The tag must match the single-sourced package version. A failed
+verification job prevents publication. Never move an already-published tag; fix
+the issue and release a new patch version. Do not drop Windows from the matrix
+to make a tag publishable.
+
+Before the first PyPI upload, add a pending publisher at
+https://pypi.org/manage/account/publishing/ :
+
+- PyPI project name: `jotline`
+- Owner: `CaulShiver`
+- Repository: `jotline`
+- Workflow name: `release.yml`
+- Environment name: `pypi`
+
+The GitHub Release with assets is the install path that does not wait on that
+one-time PyPI click. After it succeeds, `uv tool install jotline` works on
+Linux, macOS, and Windows.

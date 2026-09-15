@@ -1,27 +1,21 @@
-Jotline 0.9.4 is the first published wheel after 0.9.2. The `v0.9.3` tag exists
-but never uploaded GitHub Release assets: Windows Python 3.11 failed the action
-builder keyboard test on a 60×20 terminal.
+Jotline 0.9.5 is the first release you can install without hunting a wheel.
+The `v0.9.3` tag never uploaded GitHub Release assets; 0.9.4 fixed the Windows
+Python 3.11 action-builder gate but was not tagged. 0.9.5 keeps Windows and
+attaches the wheel, source archive, checksums, and installers.
 
-- Preview, Save, and Cancel in the action builder stay on screen on short
-  terminals. Tab still reaches every field; the footer no longer sits one row
-  below the viewport.
-- `jotline append` and `jotline prepend` put the text on its own line. Pass
-  `--no-newline` for the previous exact join.
-- Markdown source editing, toolbar, live preview, tasks, HTML/Word/PDF export,
-  optional note encryption, and Omarchy theme follow-along. Settings opens with
-  Ctrl+, (F1 still works). macOS import accepts `/tmp` and `$TMPDIR`.
+- Linux / macOS: `curl -fsSL https://github.com/CaulShiver/jotline/releases/latest/download/install.py | python3`
+- Windows: `irm https://github.com/CaulShiver/jotline/releases/latest/download/install.ps1 | iex`
+- PyPI: `uv tool install jotline` or `pipx install jotline` after this tag
+  publishes. Python 3.11+ is required; Git is not.
 
-**Behavior change:** scripts that relied on append/prepend joining onto the last
-character can pass `--no-newline`.
-
-Download `jotline-0.9.4-py3-none-any.whl` and install it with
-`uv tool install ./jotline-0.9.4-py3-none-any.whl` or
-`pipx install ./jotline-0.9.4-py3-none-any.whl`. Python 3.11+ is required; Git is not.
-For an existing installation add `--force`. `SHA256SUMS` covers both packages.
+Download `jotline-0.9.5-py3-none-any.whl` only if you want to verify
+`SHA256SUMS` by hand, then `uv tool install ./jotline-0.9.5-py3-none-any.whl`
+or `pipx install ./jotline-0.9.5-py3-none-any.whl`. For an existing
+installation add `--force`.
 
 Run `jotline backup` before upgrading. Existing notes and settings remain
-readable; no storage format changed. See the README, changelog and install guide
-for full details.
+readable; no storage format changed. See the README, changelog, install guide,
+and [supported platforms](platforms.md).
 
 Publication is gated on the Linux/macOS/Windows Python 3.11–3.13 test and
 installed-wheel smoke matrix. Native clipboard, IME and screen-reader behavior

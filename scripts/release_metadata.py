@@ -4,6 +4,10 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import shutil
+
+
+RELEASE_SCRIPTS = ('install.py', 'install.ps1')
 
 
 def main():
@@ -18,10 +22,20 @@ def main():
         parser.error(f'Tag {tag!r} does not match package version {version!r}')
     if args.checksums:
         distribution = root / 'dist'
-        packages = sorted([*distribution.glob('*.whl'), *distribution.glob('*.tar.gz')])
-        expected = {f'jotline-{version}-py3-none-any.whl', f'jotline-{version}.tar.gz'}
+        for name in RELEASE_SCRIPTS:
+            shutil.copy2(root / 'scripts' / name, distribution / name)
+        packages = sorted([
+            *distribution.glob('*.whl'),
+            *distribution.glob('*.tar.gz'),
+            *(distribution / name for name in RELEASE_SCRIPTS),
+        ])
+        expected = {
+            f'jotline-{version}-py3-none-any.whl',
+            f'jotline-{version}.tar.gz',
+            *RELEASE_SCRIPTS,
+        }
         if {path.name for path in packages} != expected:
-            parser.error('Build exactly the current wheel and source distribution before publishing')
+            parser.error('Build exactly the current wheel, source distribution and installers before publishing')
         checksums = ''.join(f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n'
                             for path in packages)
         (distribution / 'SHA256SUMS').write_text(checksums, encoding='utf-8')

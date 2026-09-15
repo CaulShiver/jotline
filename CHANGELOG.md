@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.9.5 — 2026-09-15
+
+- Install no longer requires hunting a wheel filename. A tagged GitHub Release
+  attaches the wheel, source archive, `SHA256SUMS`, `install.py`, and
+  `install.ps1`. Linux and macOS use
+  `curl …/install.py | python3`; Windows PowerShell uses
+  `irm …/install.ps1 | iex`. The installer verifies SHA-256 before installing
+  with uv, pipx, or pip.
+- `uv tool install jotline` / `pipx install jotline` are the PyPI commands. The
+  tag workflow publishes to PyPI with Trusted Publishing after the GitHub
+  assets exist. Linux, macOS, and Windows remain the supported-OS contract;
+  Windows is not dropped to make a tag publishable.
+- CI installs the built wheel through `scripts/install.py` on Linux, macOS, and
+  Windows before a tag can publish.
+
 ## 0.9.4 — 2026-09-15
 
 - GitHub Release assets for the `v0.9.3` tag were never uploaded: Windows

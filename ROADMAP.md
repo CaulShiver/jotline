@@ -11,7 +11,8 @@ the writing core remains offline.
 - Edit, rename and duplicate saved configurations.
 - Resolve save conflicts while preserving both versions.
 - Preview folder and Drafts imports, then report exactly what was imported.
-- Install a versioned package without Git and share reproducible bug reports.
+- Install with a one-liner or PyPI (`uv tool install jotline`) without Git or
+  hunting a GitHub wheel. Linux, macOS, and Windows stay in the contract.
 
 ## Next priorities
 

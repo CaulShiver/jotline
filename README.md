@@ -8,30 +8,37 @@ Jotline opens to a blank page. Start typing; your writing saves automatically to
 
 ## Install
 
-Requires Python 3.11+ and a terminal with Unicode and color support on Linux,
-macOS, or Windows. Windows runs natively; WSL is optional. Download the wheel from
-the [latest release](https://github.com/CaulShiver/jotline/releases/latest), then
-run one of these commands in its download folder. Git is not required.
+Linux, macOS, and Windows. Python 3.11+. Git is not required. Windows runs
+natively; WSL is optional. The same package is published for every supported OS.
 
-With [uv](https://docs.astral.sh/uv/):
+Linux / macOS:
 
 ```sh
-uv tool install ./jotline-0.9.4-py3-none-any.whl
+curl -fsSL https://github.com/CaulShiver/jotline/releases/latest/download/install.py | python3
 jotline
 ```
 
-Or with pipx:
+Windows (PowerShell):
 
-```sh
-pipx install ./jotline-0.9.4-py3-none-any.whl
+```powershell
+irm https://github.com/CaulShiver/jotline/releases/latest/download/install.ps1 | iex
 jotline
 ```
 
-To update, download the new wheel and repeat your install command with `--force`.
+From PyPI, once the tagged release is on the index:
+
+```sh
+uv tool install jotline
+# or: pipx install jotline
+jotline
+```
+
+To update, re-run the installer with `--force` (or `uv tool install --force jotline`).
 Run `jotline backup` first. Uninstall with `uv tool uninstall jotline` or
 `pipx uninstall jotline`; your vault remains on disk. See the
-[install, update and rollback guide](docs/install.md) for PATH help, plain Python
-installation, and checksums.
+[install, update and rollback guide](docs/install.md) for checksums, pip, and
+the encryption extra, and [supported platforms](docs/platforms.md) for the OS
+contract.
 
 For development (requires Git):
 
@@ -637,8 +644,9 @@ detection. Recipes execute only these built-in steps; there is no shell evaluati
 
 ## Status
 
-Version 0.9.4 is an early release. It offers Markdown source editing, rendered
-preview, configurable local actions, and guided import/recovery workflows. See
+Version 0.9.5 is an early release. It offers a one-liner install on Linux, macOS,
+and Windows, Markdown source editing, rendered preview, configurable local
+actions, and guided import/recovery workflows. See
 [CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,
 cloud sync, plugins, dictation and system-wide capture hotkeys remain future work.
 Automated cross-platform checks and a POSIX terminal smoke test complement the

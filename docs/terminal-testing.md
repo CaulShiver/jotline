@@ -43,10 +43,21 @@ Use a disposable vault: `jotline --vault PATH_TO_EMPTY_TEST_FOLDER`.
 
 ## Newcomer task study
 
-Give a person the install link and these tasks, without teaching shortcuts:
-install, capture an idea, find it, append it to a project using an action, and
-recover a conflicted edit. Record completion, time, help required, and the
-person's description of any confusion. Use findings to prioritize UI changes.
+Give a person the install one-liner from the README (not a wheel filename) and
+these tasks, without teaching shortcuts: install, capture an idea, find it,
+append it to a project using an action, and recover a conflicted edit. Record
+completion, time, help required, and the person's description of any confusion.
+Use findings to prioritize UI changes.
+
+Automated coverage of that path:
+
+- Installer: `tests/test_install.py` plus CI smoke through `scripts/install.py`
+  on Linux, macOS, and Windows.
+- Open-to-first-keystroke, find, append-to-project, recover:
+  `tests/test_newcomer_flow.py`. Jotline still opens on a blank page (`startup`
+  defaults to `new`); typing does not require a title or a wizard.
+
+Human runs are still required for PATH/shell, Windows Terminal, and clipboard/IME.
 
 ## Current verification limits
 

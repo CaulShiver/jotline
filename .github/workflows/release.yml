@@ -7,12 +7,10 @@ permissions:
 jobs:
   verify:
     uses: ./.github/workflows/test.yml
-  publish:
+  package:
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,14 +27,66 @@ jobs:
           python -m pip install uv==0.12.10
           uv build --clear
           python scripts/release_metadata.py --checksums
-      - name: Smoke-test the exact release wheel
+          uvx twine==6.1.0 check dist/*.whl dist/*.tar.gz
+      - name: Smoke-test the exact release wheel through the public installer
         run: |
           uv venv /tmp/jotline-release-smoke
-          uv pip install --python /tmp/jotline-release-smoke/bin/python --strict dist/*.whl
+          python scripts/install.py --from-dir dist --python /tmp/jotline-release-smoke/bin/python --installer pip
           /tmp/jotline-release-smoke/bin/python -I scripts/smoke_install.py
           /tmp/jotline-release-smoke/bin/python -I scripts/smoke_pty.py
-      - name: Publish verified release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-dist
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS
+            dist/install.py
+            dist/install.ps1
+          if-no-files-found: error
+  github-release:
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-dist
+          path: dist
+      - name: Publish GitHub Release assets
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" dist/*.whl dist/*.tar.gz dist/SHA256SUMS --verify-tag --title "Jotline $RELEASE_TAG" --notes-file docs/release-notes.md
+        run: |
+          assets=(dist/*.whl dist/*.tar.gz dist/SHA256SUMS dist/install.py dist/install.ps1)
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --title "Jotline $RELEASE_TAG" --notes-file docs/release-notes.md
+          fi
+  pypi:
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/jotline/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-dist
+          path: dist
+      - name: Stage PyPI packages only
+        run: |
+          mkdir pypi-dist
+          cp dist/*.whl dist/*.tar.gz pypi-dist/
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: pypi-dist

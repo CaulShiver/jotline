@@ -1,5 +1,21 @@
 # Release verification
 
+## 0.9.5
+
+- Complete locked suite on Linux/Python 3.12: **562 passed, 30 platform-specific skips**,
+  including installer checksum/one-liner tests, the supported-OS contract, and
+  the newcomer open-type-find-process-recover path.
+- `uv build --clear` produced `jotline-0.9.5-py3-none-any.whl` and
+  `jotline-0.9.5.tar.gz`. `scripts/release_metadata.py --checksums` copied
+  `install.py` and `install.ps1` and wrote `SHA256SUMS` covering all four
+  artifacts.
+- `scripts/install.py --from-dir dist` installed that wheel into a clean venv
+  and `jotline --version` reported `0.9.5`.
+- Locked dependency resolution and `git diff --check` passed.
+- Publication still gates on Linux/macOS/Windows Python 3.11–3.13. The tag
+  workflow attaches GitHub Release assets, then publishes the wheel and sdist
+  to PyPI via Trusted Publishing. Windows stays in the matrix.
+
 ## 0.9.4
 
 - Complete locked suite on Linux/Python 3.12: **552 passed, 30 platform-specific skips**,

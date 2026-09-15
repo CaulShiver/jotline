@@ -53,7 +53,10 @@ jobs:
       - name: Build distributions
         timeout-minutes: 3
         run: uv build --clear
-      - name: Install and exercise the built wheel in a clean venv
+      - name: Checksum packages and copy installers
+        timeout-minutes: 2
+        run: python scripts/release_metadata.py --checksums
+      - name: Install and exercise the built wheel through the public installer
         timeout-minutes: 4
         run: |
           uv venv .smoke-venv --python '${{ matrix.python }}'
@@ -62,5 +65,5 @@ jobs:
           else
             smoke_python=.smoke-venv/bin/python
           fi
-          uv pip install --python "$smoke_python" --strict dist/*.whl
+          python scripts/install.py --from-dir dist --python "$smoke_python" --installer pip
           "$smoke_python" -I scripts/smoke_install.py

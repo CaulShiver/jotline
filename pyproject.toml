@@ -35,6 +35,8 @@ dependencies = ["textual>=8.2.8,<9"]
 Homepage = "https://github.com/CaulShiver/jotline"
 Repository = "https://github.com/CaulShiver/jotline"
 Issues = "https://github.com/CaulShiver/jotline/issues"
+Changelog = "https://github.com/CaulShiver/jotline/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/CaulShiver/jotline/blob/main/docs/install.md"
 
 [project.scripts]
 jotline = "jotline.cli:main"
