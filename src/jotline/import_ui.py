@@ -70,6 +70,7 @@ class RecoveryImport:
             try:
                 recovered = self.vault.recovery(self.current)
             except (OSError, ValueError) as problem:
+                self.dirty = True
                 self.notify('Recovery copy could not be saved. Your draft remains on screen. ' + str(problem),
                             severity='error', timeout=12)
                 return

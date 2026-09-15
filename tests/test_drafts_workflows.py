@@ -5,7 +5,7 @@ import sys
 
 import pytest
 from textual.widgets import Input, TextArea, SelectionList
-from jotline.app import Jotline
+from jotline.app import Jotline, Palette
 from jotline.workflows import Arrange, SelectNotes
 from jotline.markdown_editor import headings
 from jotline.settings import Settings
@@ -201,16 +201,26 @@ async def test_autocomplete_link_and_snippet_cancel(tmp_path):
     app = Jotline(vault)
     async with app.run_test() as pilot:
         editor = app.query_one('#editor', TextArea)
+
+        async def wait_for_palette():
+            for _ in range(20):
+                if isinstance(app.screen, Palette):
+                    return
+                await pilot.pause()
+            raise AssertionError('command palette did not open')
+
         await pilot.press('[', '[')
-        await pilot.pause()
+        await wait_for_palette()
         await pilot.press('enter')
+        await pilot.pause()
         assert editor.text == f'[[{note.id}|Linked]]'
         await pilot.press('space', ';', ';')
-        await pilot.pause()
+        await wait_for_palette()
         await pilot.press(*'snippet', 'enter')
+        await pilot.pause()
         assert editor.text.endswith(' expanded')
         await pilot.press(';', ';')
-        await pilot.pause()
+        await wait_for_palette()
         await pilot.press('escape')
         assert editor.text.endswith('expanded;;')
 
