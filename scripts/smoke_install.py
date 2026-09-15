@@ -2,6 +2,7 @@
 import asyncio
 from dataclasses import replace
 import faulthandler
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -142,6 +143,12 @@ def check(directory: str) -> None:
     captured = run(command + ['capture', 'Installed package smoke test'], 'CLI capture')
     exported = run(command + ['export', captured.stdout.strip()], 'CLI export')
     assert exported.stdout == 'Installed package smoke test'
+    desktop = run(command + ['desktop', 'status', '--json'], 'CLI desktop status')
+    report = json.loads(desktop.stdout)
+    assert report['recipes'] == ['omarchy', 'hyprland', 'gnome', 'kde', 'pipe']
+    recipe = run(command + ['desktop', 'recipe', 'hyprland'], 'CLI desktop recipe')
+    assert 'org.jotline.capture' in recipe.stdout
+    assert 'desktop launch' in recipe.stdout
     run(
         [sys.executable, '-I', str(Path(__file__).resolve()), '--tui-child', directory],
         'TUI child workflow',

@@ -13,6 +13,8 @@ the writing core remains offline.
 - Preview folder and Drafts imports, then report exactly what was imported.
 - Install with a one-liner or PyPI (`uv tool install jotline`) without Git or
   hunting a GitHub wheel. Linux, macOS, and Windows stay in the contract.
+- Bind `jotline capture` from a desktop hotkey using shipped Hyprland, GNOME,
+  KDE, and Omarchy snippets or `jotline desktop install`.
 
 ## Next priorities
 

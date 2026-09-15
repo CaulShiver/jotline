@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Jotline Capture
+Comment=Capture a thought into local Markdown
+TryExec=__TRYEXEC__
+Exec=__EXEC__
+Terminal=false
+Categories=Office;Utility;TextEditor;
+Keywords=notes;capture;markdown;jotline;
+StartupWMClass=org.jotline.capture
+StartupNotify=false
+X-Jotline-Capture=1

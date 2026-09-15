@@ -23,6 +23,12 @@
   `jotline backlinks NOTE [--json]` prints the same graph. Wiki links inside
   fenced code or inline code spans no longer count as connections. Typing `[[`
   to complete a note link no longer offers the note you are already in.
+- Linux desktop capture is a shipped feature: `jotline desktop install` writes
+  an XDG `jotline capture` desktop entry, `jotline desktop launch` opens the
+  capture editor in a terminal, and `jotline desktop recipe` prints Omarchy,
+  Hyprland, GNOME, KDE, and clipboard-pipe snippets with this install's
+  `jotline` path. No dictation, share sheet, or cloud. Windows and macOS keep
+  `jotline capture` and pipe-in.
 
 ## 0.9.5 — 2026-09-15
 

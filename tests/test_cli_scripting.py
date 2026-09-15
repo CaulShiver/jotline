@@ -279,6 +279,9 @@ BASH_CASES = [
     ("jotline capture --da", {"--daily", "--date"}),
     ("jotline capture --date ", {"today", "yesterday"}),
     ("jotline completion ", {"bash", "zsh", "fish"}),
+    ("jotline desktop rec", {"recipe"}),
+    ("jotline desktop recipe ", {"omarchy", "hyprland", "gnome", "kde", "pipe"}),
+    ("jotline desktop --j", {"--json"}),
     ("jotline --vau", {"--vault"}),
 ]
 
@@ -341,6 +344,9 @@ FISH_CASES = [
     ("jotline list --j", {"--json"}),
     ("jotline capture --da", {"--daily", "--date"}),
     ("jotline completion f", {"fish"}),
+    ("jotline desktop rec", {"recipe"}),
+    ("jotline desktop recipe h", {"hyprland"}),
+    ("jotline desktop --j", {"--json"}),
 ]
 
 
