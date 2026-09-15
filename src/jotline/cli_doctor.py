@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime
 from importlib import metadata
 import os
 from pathlib import Path
 import platform
 import stat
 import sys
+import time
 
 from . import __version__, history
 from .cli_io import default_vault, terminal_text, warning
@@ -182,6 +184,65 @@ def check_backups(vault: Vault, warnings: list[str]) -> dict[str, object]:
     return state
 
 
+def check_displaced(vault: Vault, warnings: list[str]) -> dict[str, object]:
+    names = []
+    for path in bounded_children(vault.path, "vault", MAX_SCAN_ENTRIES, warnings):
+        if path.name.startswith(history.DISPLACED_PREFIX):
+            names.append(path.name)
+            warnings.append(
+                f"conflicts: {path.name} is a displaced original from a failed save; "
+                "copy it out before deleting")
+    return {"files": names, "count": len(names)}
+
+
+def check_backup_freshness(vault: Vault, note_count: int, warnings: list[str]) -> dict[str, object]:
+    archives = history.list_archives(vault)
+    newest = history.newest_valid_archive(archives)
+    state: dict[str, object] = {
+        "archives": len(archives),
+        "valid": sum(archive.valid for archive in archives),
+        "invalid": sum(not archive.valid for archive in archives),
+        "newest": None,
+    }
+    if note_count and newest is None:
+        warnings.append("backups: no valid local ZIP; run jotline backup")
+    elif newest is not None:
+        age = max(0, time.time() - newest.modified)
+        state["newest"] = {
+            "name": newest.name,
+            "modified": newest.modified,
+            "size": newest.size,
+            "age_seconds": int(age),
+        }
+        if note_count and age > history.STALE_BACKUP_SECONDS:
+            when = datetime.fromtimestamp(newest.modified).date().isoformat()
+            warnings.append(
+                f"backups: newest valid archive is from {when}; run jotline backup")
+    return state
+
+
+def check_scan_budget(note_count: int, warnings: list[str]) -> dict[str, object]:
+    state = {
+        "notes": note_count,
+        "note_budget": MAX_SCAN_ENTRIES,
+        "bytes_budget": MAX_SCAN_BYTES,
+    }
+    if note_count >= int(MAX_SCAN_ENTRIES * 0.8):
+        warnings.append(
+            f"vault: scan used {note_count} of {MAX_SCAN_ENTRIES} note entries; "
+            "search is still in-memory and will stop before the rest")
+    return state
+
+
+def check_recoveries(vault: Vault, notes) -> dict[str, object]:
+    copies = vault.recoveries(notes=notes)
+    return {
+        "count": len(copies),
+        "ids": [note.id for note in copies[:20]],
+        "sources": sorted({note.recovery_of for note in copies if note.recovery_of})[:20],
+    }
+
+
 def doctor_report(vault: Vault, settings_warning: str, *, cli_path: str | None = None) -> dict[str, object]:
     notes = vault.notes()
     collections = Counter(note.collection for note in notes)
@@ -200,6 +261,10 @@ def doctor_report(vault: Vault, settings_warning: str, *, cli_path: str | None =
         "backups": check_backups(vault, warnings),
         "encryption": {"set_up": vault.has_key(), "encrypted_notes": sum(note.encrypted for note in notes),
                        "cryptography": distribution_version("cryptography")},
+        "recoveries": check_recoveries(vault, notes),
+        "displaced": check_displaced(vault, warnings),
+        "backup_freshness": check_backup_freshness(vault, len(notes), warnings),
+        "scan": check_scan_budget(len(notes), warnings),
     }
     if ancillary["encryption"]["encrypted_notes"] and not ancillary["encryption"]["set_up"]:
         warnings.append("encryption: encrypted notes exist but .jotline-key.json is missing; restore it from a backup")
@@ -233,20 +298,38 @@ def doctor_report(vault: Vault, settings_warning: str, *, cli_path: str | None =
     }
 
 
-def print_doctor(report: dict[str, object]) -> None:
+def format_doctor(report: dict[str, object]) -> str:
+    """Plain-text health summary for the CLI and in-app Check vault health."""
     vault = report["vault"]
     collections = vault["collections"]
-    print(f"Jotline: {terminal_text(report['jotline']['version'])}")
-    print(f"Python: {terminal_text(report['python']['version'])} ({terminal_text(report['python']['executable'])})")
-    print(f"Textual: {terminal_text(report['textual']['version'])}")
-    print("Platform: " + " ".join(terminal_text(report["platform"][key]) for key in ("system", "release", "machine")))
-    print(f"Vault: {terminal_text(vault['path'])}")
-    print(f"Writable vault: {'yes' if vault['writable'] else 'no'}")
-    print(f"Readable notes: {vault['readable_notes']}")
-    print("Collections: " + ", ".join(f"{name}={collections[name]}" for name in sorted(collections)))
+    ancillary = report["ancillary"]
+    recoveries = ancillary["recoveries"]["count"]
+    displaced = ancillary["displaced"]["count"]
+    newest = ancillary["backup_freshness"]["newest"]
+    last_backup = "none" if newest is None else newest["name"]
+    lines = [
+        f"Jotline: {report['jotline']['version']}",
+        f"Python: {report['python']['version']} ({report['python']['executable']})",
+        f"Textual: {report['textual']['version']}",
+        "Platform: " + " ".join(report["platform"][key] for key in ("system", "release", "machine")),
+        f"Vault: {vault['path']}",
+        f"Writable vault: {'yes' if vault['writable'] else 'no'}",
+        f"Readable notes: {vault['readable_notes']}",
+        f"Recovery copies: {recoveries}",
+        f"Displaced files: {displaced}",
+        f"Last valid backup: {last_backup}",
+        "Collections: " + ", ".join(f"{name}={collections[name]}" for name in sorted(collections)),
+    ]
     limits = report["limits"]
-    print(f"Limits: notes={limits['note_bytes']} bytes, settings={limits['settings_bytes']} bytes, "
-          f"lock={limits['lock_timeout_seconds']}s")
-    print(f"Warnings: {len(report['warnings'])}")
+    lines.append(
+        f"Limits: notes={limits['note_bytes']} bytes, settings={limits['settings_bytes']} bytes, "
+        f"lock={limits['lock_timeout_seconds']}s")
+    lines.append(f"Warnings: {len(report['warnings'])}")
+    return "\n".join(lines)
+
+
+def print_doctor(report: dict[str, object]) -> None:
+    for line in format_doctor(report).splitlines():
+        print(terminal_text(line))
     for item in report["warnings"]:
         warning(item)

@@ -27,12 +27,24 @@ TEMP_PREFIXES = ("jotline", "backup", "revision", "settings", "action-history", 
 STALE_TEMP = re.compile(r"\.(?:" + "|".join(TEMP_PREFIXES) + r")-[0-9a-f]{32}")
 STALE_TEMP_SECONDS = 3600
 BACKUP_NAME = re.compile(r"(?:daily-[0-9]{4}-[0-9]{2}-[0-9]{2}|manual-[0-9]{8}T[0-9]{12}-[0-9a-f]{8})\.zip")
+DISPLACED_PREFIX = ".jotline-displaced-"
+STALE_BACKUP_SECONDS = 2 * 24 * 3600
 
 
 @dataclass(frozen=True)
 class Revision:
     id: str
     saved_at: str
+
+
+@dataclass(frozen=True)
+class BackupArchive:
+    name: str
+    path: Path
+    size: int
+    modified: float
+    valid: bool
+    reason: str
 
 
 def stamp() -> str:
@@ -308,6 +320,37 @@ def _validate_backup_at(directory_fd: int | None, name: str | Path, *,
 
 def validate_backup(path: Path) -> tuple[bool, str]:
     return _validate_backup_at(None, path, require_content=path.name.startswith("daily-"))
+
+
+def list_archives(vault) -> list[BackupArchive]:
+    """Named ZIP backups with validation results. Missing folders yield an empty list."""
+    root = vault.path / ".jotline-backups"
+    archives = []
+    try:
+        entries = sorted(root.iterdir(), key=lambda path: path.name)
+    except OSError:
+        return archives
+    for index, path in enumerate(entries):
+        if index >= MAX_BACKUP_ENTRIES:
+            vault.warnings.append(
+                f"Backup listing stopped after {MAX_BACKUP_ENTRIES} entries; results are incomplete")
+            break
+        if not BACKUP_NAME.fullmatch(path.name):
+            continue
+        try:
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode):
+                continue
+            valid, reason = validate_backup(path)
+            archives.append(BackupArchive(path.name, path, info.st_size, info.st_mtime, valid, reason))
+        except OSError as error:
+            archives.append(BackupArchive(path.name, path, 0, 0.0, False, str(error)))
+    archives.sort(key=lambda archive: archive.modified, reverse=True)
+    return archives
+
+
+def newest_valid_archive(archives: list[BackupArchive]) -> BackupArchive | None:
+    return next((archive for archive in archives if archive.valid), None)
 
 
 def _reuse_daily_backup(vault, folder: int, name: str) -> bool:

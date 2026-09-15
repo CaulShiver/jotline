@@ -208,6 +208,8 @@ jotline stats
 jotline stats --json
 jotline doctor
 jotline doctor --json
+jotline backups
+jotline recoveries
 jotline import ~/Downloads/meeting.md
 jotline export NOTE_ID > note.md
 jotline export last > note.md
@@ -230,7 +232,8 @@ Captures, append/prepend and imports read UTF-8. For text in another encoding,
 pass `--encoding NAME` (for example `latin-1` or `cp1252`), or `--replace-invalid`
 to keep going and substitute the undecodable bytes.
 
-`list`, `tags`, `workspaces`, `actions`, `tasks`, `stats`, `backlinks` and `doctor` accept `--json` for
+`list`, `tags`, `workspaces`, `actions`, `tasks`, `stats`, `backlinks`, `doctor`,
+`backups` and `recoveries` accept `--json` for
 scripts. Warnings still go to stderr, so stdout stays valid JSON. `jotline stats`
 prints workspace counts (notes, inbox captures, open tasks, tags) without note bodies.
 
@@ -360,10 +363,13 @@ Shortcuts use **Control** on macOS too. If a terminal intercepts a shortcut,
 use Ctrl+, to customize it in Settings.
 
 `jotline doctor` checks the runtime, vault path, settings, lock, templates, history,
-backups, limits, and readable note counts. It prints diagnostics rather than note
-bodies, reports unsafe or broken local state, and exits nonzero when it finds a
-problem. Use `jotline doctor --json` for machine-readable output in bug reports or
-scripts. `jotline import FILE` copies a regular UTF-8 file into a new note in your
+backups, limits, recovery copies, displaced conflict files, and readable note
+counts. It prints diagnostics rather than note bodies, reports unsafe or broken
+local state, and exits nonzero when it finds a problem. Use `jotline doctor --json`
+for machine-readable output. `jotline backups` lists local ZIP archives and
+verifies they open; `jotline recoveries` lists inbox copies saved after an
+external change. Search stays an in-memory scan until a measured vault misses
+the bar in [vault scale](docs/vault-scale.md). `jotline import FILE` copies a regular UTF-8 file into a new note in your
 default collection; the original file is left untouched. Imports refuse symlinked
 files and symlinked source directories.
 
@@ -454,7 +460,7 @@ checks the entire vault.
 - Local `.md` files; no account, telemetry, hosted backend, or network requirement at runtime.
 - Small Jotline front matter with JSON-valued fields stores collection, timestamps, and starred state.
 - Atomic, fsynced saves. Normal exit saves pending edits. Abrupt termination may lose the last autosave interval (0.7 seconds by default; configurable).
-- Jotline coordinates its own writers and detects external edits before saving. It will block navigation/exit on a save failure so the buffer remains available. **Save recovery copy** preserves your buffer as a new inbox note.
+- Jotline coordinates its own writers and detects external edits before saving. It will block navigation/exit on a save failure so the buffer remains available. **Save recovery copy** preserves your buffer as a new inbox note. The copy keeps the original text and records which note it came from; **Open a recovery copy** and `jotline recoveries` list them later.
 - Trash is reversible. There is no permanent-delete command.
 - Keep a backup of your vault. Sync and encryption are up to your existing tools; simultaneous edits through an external editor or sync provider are not a collaborative editing protocol.
 - Only the source code is published to GitHub. Your notes are stored separately.

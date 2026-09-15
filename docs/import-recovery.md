@@ -62,6 +62,12 @@ complete on-screen draft.
 - **Save and open recovery copy** saves a separate inbox note and opens that copy.
 - **Keep editing** (Escape) retains the unsaved buffer without changing either file.
 
+Recovery copies keep the original draft bytes and store `recovery_of` in the
+note header. List them with Commands → **Open a recovery copy** or
+`jotline recoveries`. `jotline backups` verifies local ZIPs; `jotline doctor`
+warns when notes exist without a recent valid backup or when displaced
+`.jotline-displaced-*` files remain after a failed save.
+
 If saving the recovery copy fails, the editor keeps your unsaved text. If the
 external file disappears or moves to another workspace, Jotline opens the saved
 recovery copy and explains what happened. The success notification identifies the

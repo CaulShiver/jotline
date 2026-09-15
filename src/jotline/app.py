@@ -17,6 +17,7 @@ from textual.widgets.option_list import Option
 from rich.text import Text
 
 from .action_ui import ActionWorkflows
+from .cli_doctor import doctor_report, format_doctor
 from .commands import Command
 from .connect_ui import Connections, ConnectionsBar
 from .encryption_ui import Encryption
@@ -28,6 +29,7 @@ from .navigation import Views
 from .note_menu import NoteList, NoteMenu
 from .omarchy import OmarchySync
 from .preferences import Preferences
+from .recovery_ui import HealthScreen
 from .review_ui import Review
 from .screens import FindInNote, MarkdownPreview, RevisionPreview
 from .settings import HOTKEY_ACTIONS, Settings, VIEW_COLLECTIONS
@@ -880,6 +882,8 @@ class Jotline(App):
             Command("history", "History of this note", lambda: self.show_history(self.current.id)),
             Command("browse-history", "Browse saved note history", self.browse_history),
             Command("backup", "Back up vault now", self.action_backup),
+            Command("doctor", "Check vault health", self.action_doctor),
+            Command("recoveries", "Open a recovery copy", self.action_recoveries),
             Command("preview", "Preview rendered Markdown", self.action_preview, "preview"),
             Command("live-preview", "Toggle side-by-side Markdown preview", self.action_live_preview, "live_preview"),
             Command("outline", "Jump to heading", self.action_outline, "outline"),
@@ -999,9 +1003,29 @@ class Jotline(App):
         try:
             self.load(self.vault.recovery(self.current))
             self.refresh_notes()
-            self.notify("Saved a separate recovery copy in the inbox.")
+            self.notify("Saved a separate recovery copy in the inbox. Open a recovery copy lists them later.")
         except (OSError, ValueError) as error:
             self.notify(str(error), severity="error")
+
+    def action_doctor(self) -> None:
+        report = doctor_report(self.vault, self.settings_warning)
+        warnings = report["warnings"]
+        body = format_doctor(report)
+        if warnings:
+            body += "\n\n" + "\n".join(warnings)
+        self.push_screen(HealthScreen(body))
+
+    def action_recoveries(self) -> None:
+        copies = [note for note in self.vault.recoveries() if note.workspace == self.workspace]
+        if not copies:
+            self.notify("No recovery copies yet. They appear after an external change or Save recovery copy.")
+            return
+
+        def picked(note_id: str | None) -> None:
+            if note_id:
+                self.load_id(note_id)
+
+        self.push_screen(Palette(self.note_choices(copies), "Recovery copies"), picked)
 
     @on(Markdown.LinkClicked, "#live-markdown")
     def follow_live_preview_link(self, event: Markdown.LinkClicked) -> None:
