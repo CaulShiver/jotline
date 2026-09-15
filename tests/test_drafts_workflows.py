@@ -20,6 +20,21 @@ def saved(vault, body, workspace='default'):
     return note
 
 
+async def wait_for_command_palette(app, pilot):
+    editor = app.query_one('#editor', TextArea)
+    for _ in range(40):
+        if isinstance(app.screen, Palette):
+            return
+        await pilot.pause(0.05)
+    offset = editor.char_offset(editor.cursor_location, editor.text)
+    raise AssertionError(
+        'command palette did not open: '
+        f'screen={type(app.screen).__name__} focus={editor.has_focus} '
+        f'selected={editor.selected_text!r} '
+        f'trigger={editor.text[max(0, offset - 2):offset]!r}'
+    )
+
+
 def test_search_phrases_exclusions_fields_and_dates(tmp_path):
     vault = Vault(tmp_path)
     one = saved(vault, '# Red parachute\n#work\nBlue sky')
@@ -202,30 +217,28 @@ async def test_autocomplete_link_and_snippet_cancel(tmp_path):
     async with app.run_test() as pilot:
         editor = app.query_one('#editor', TextArea)
 
-        async def wait_for_palette():
-            for _ in range(40):
-                if isinstance(app.screen, Palette):
-                    return
-                await pilot.pause(0.05)
-            raise AssertionError('command palette did not open')
-
         async def type_trigger(trigger: str) -> None:
-            """Type [[ or ;; at the cursor, then open the same completion palette as editing."""
+            """Put [[ or ;; at the cursor, then open the same completion palette as editing."""
             editor.focus()
             await pilot.pause()
             editor.move_cursor(editor.document.end)
             await pilot.pause()
-            assert not editor.selected_text
-            for character in trigger:
-                await pilot.press(character)
-                await pilot.pause()
-            offset = editor.char_offset(editor.cursor_location, editor.text)
-            assert editor.text[max(0, offset - 2):offset] == trigger
+            assert editor.selection.is_empty
+            editor.insert(trigger)
+            await pilot.pause()
             if not isinstance(app.screen, Palette):
-                # macos-latest Pilot can drop TextArea.Changed; offer_completion is
-                # the same hook the editor uses after a real change.
+                # macos-latest Pilot can drop TextArea.Changed after a palette
+                # round-trip, and the editor may not have focus yet. Insert the
+                # trigger, collapse any leftover selection, and call the same
+                # hook the editor uses after a real change.
+                editor.focus()
+                editor.move_cursor(editor.document.end)
+                await pilot.pause()
+                offset = editor.char_offset(editor.cursor_location, editor.text)
+                assert editor.text[max(0, offset - 2):offset] == trigger
+                assert editor.selection.is_empty
                 app.offer_completion()
-            await wait_for_palette()
+            await wait_for_command_palette(app, pilot)
 
         await type_trigger('[[')
         await pilot.press('enter')
@@ -234,7 +247,7 @@ async def test_autocomplete_link_and_snippet_cancel(tmp_path):
         editor.focus()
         await pilot.pause()
         editor.move_cursor(editor.document.end)
-        await pilot.press('space')
+        editor.insert(' ')
         await type_trigger(';;')
         await pilot.press(*'snippet', 'enter')
         await pilot.pause()
@@ -242,6 +255,23 @@ async def test_autocomplete_link_and_snippet_cancel(tmp_path):
         await type_trigger(';;')
         await pilot.press('escape')
         assert editor.text.endswith('expanded;;')
+
+
+async def test_offer_completion_without_editor_focus(tmp_path):
+    Templates(tmp_path).save('snippet', 'expanded')
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test() as pilot:
+        editor = app.query_one('#editor', TextArea)
+        app.query_one('#search', Input).focus()
+        await pilot.pause()
+        assert not editor.has_focus
+        editor.insert(';;')
+        await pilot.pause()
+        if not isinstance(app.screen, Palette):
+            app.offer_completion()
+        await wait_for_command_palette(app, pilot)
+        await pilot.press('escape')
+        assert editor.text.endswith(';;')
 
 
 async def test_local_action_text_transform_undo_and_initial_note(tmp_path):

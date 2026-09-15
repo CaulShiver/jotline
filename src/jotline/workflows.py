@@ -200,9 +200,13 @@ class Workflows:
             self.notify('No previous note in this workspace')
 
     def offer_completion(self):
-        """Offer keyboard suggestions only after an editor trigger at the cursor."""
+        """Offer keyboard suggestions only after an editor trigger at the cursor.
+
+        TextArea.Changed can be delivered after a palette dismiss, when the
+        editor no longer has focus. The trigger at the cursor is the gate.
+        """
         editor = self.query_one('#editor', MarkdownEditor)
-        if not editor.has_focus or editor.selected_text:
+        if not editor.selection.is_empty:
             return
         offset = editor.char_offset(editor.cursor_location, editor.text)
         trigger = editor.text[max(0, offset - 2):offset]
@@ -231,6 +235,7 @@ class Workflows:
                 editor.move_cursor(editor.location_at(offset - 2, original))
                 editor.move_cursor(editor.location_at(offset, original), select=True)
                 self.insert_editor_text(body)
+                editor.move_cursor(editor.cursor_location)
             except (ValueError, OSError) as error:
                 self.notify(str(error), severity='error')
             editor.focus()
