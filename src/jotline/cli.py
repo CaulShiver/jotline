@@ -13,7 +13,11 @@ from .action_history import run_recorded_action
 from .actions import ActionCommitError, preview_action
 from .app import Jotline
 from .capture_ui import QuickCapture
-from .cli_doctor import doctor_report as _doctor_report, print_doctor
+from .cli_doctor import (
+    check_managed_directory,
+    doctor_report as _doctor_report,
+    print_doctor,
+)
 from .cli_io import (
     decode_input,
     default_vault,
