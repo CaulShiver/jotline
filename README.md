@@ -165,6 +165,7 @@ jotline doctor
 jotline doctor --json
 jotline backups
 jotline recoveries
+jotline sync
 jotline import ~/Downloads/meeting.md
 jotline export NOTE_ID > note.md
 jotline export last > note.md
@@ -417,7 +418,10 @@ checks the entire vault.
 - Atomic, fsynced saves. Normal exit saves pending edits. Abrupt termination may lose the last autosave interval (0.7 seconds by default; configurable).
 - Jotline coordinates its own writers and detects external edits before saving. It will block navigation/exit on a save failure so the buffer remains available. **Save recovery copy** preserves your buffer as a new inbox note. The copy keeps the original text and records which note it came from; **Open a recovery copy** and `jotline recoveries` list them later.
 - Trash is reversible. There is no permanent-delete command.
-- Keep a backup of your vault. Sync and encryption are up to your existing tools; simultaneous edits through an external editor or sync provider are not a collaborative editing protocol.
+- Keep a backup of your vault. Sync with [Git or Syncthing](docs/sync.md) using
+  the recovery dialog you already have; there is no Jotline cloud. Encryption
+  keys must not go to a public remote. Simultaneous edits through an external
+  editor or sync provider are not a collaborative editing protocol.
 - Only the source code is published to GitHub. Your notes are stored separately.
 
 On a save conflict, a comparison dialog offers **Save copy, then review external

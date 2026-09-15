@@ -246,7 +246,7 @@ class Views:
 2. Find: Ctrl+F opens search. Use words or #tags. Collections and Views above the list help organize your library; Filters changes search and sorting.
 3. Process: Ctrl+P opens commands to move, star, link, format, or run actions on a note. Shift+F10 opens a selected note's menu.
 4. Reuse: save your search as a view. Manage views lets you edit, rename, duplicate, or update it. Ctrl+D opens today's log.
-5. Recover: note history restores a separate copy. Trash keeps removed notes until you move them back. Ctrl+Q saves before quitting.
+5. Recover: note history restores a separate copy. Trash keeps removed notes until you move them back. Ctrl+Q saves before quitting. If Git or Syncthing changes a file while you still have unsaved text, the comparison dialog keeps both copies. Ctrl+P → How to sync this vault prints the recipe; there is no Jotline cloud.
 
 Ctrl+, customizes appearance and shortcuts. Esc closes this guide and returns to your text. This walkthrough never creates a note.
 ''')))

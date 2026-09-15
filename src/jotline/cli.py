@@ -40,6 +40,7 @@ from .links import connection_mark
 from .settings import Settings, action_dicts
 from .store import (OTHER_WORKSPACE, Vault, parse_calendar_date, read_regular_file, tagged_body,
                     validate_workspace)
+from .sync import sync_guide
 from .tasks import due_limit, gather, parse_reference, set_done, short_ids
 
 
@@ -296,6 +297,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("path", help="Print the vault path")
     doctor = sub.add_parser("doctor", help="Check the vault, runtime and local Jotline state")
     doctor.add_argument("--json", action="store_true", help="Print machine-readable diagnostics")
+    syncing = sub.add_parser("sync", help="Print a Git or Syncthing recipe for this vault (not a Jotline cloud)")
+    syncing.add_argument("tool", nargs="?", choices=("git", "syncthing"),
+                         help="Show only the Git or Syncthing recipe")
     importing = sub.add_parser("import", help="Import UTF-8 text, a folder, or a Drafts export")
     importing.add_argument("file", type=Path)
     import_mode = importing.add_mutually_exclusive_group()
@@ -729,6 +733,9 @@ def main() -> None:
     try:
         if args.command == "path":
             print(terminal_text(args.vault.expanduser().resolve()))
+            return
+        if args.command == "sync":
+            print(sync_guide(args.vault, args.tool).rstrip())
             return
         if args.command == "completion":
             sys.stdout.write(script(args.shell, parser))

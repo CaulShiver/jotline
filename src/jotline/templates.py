@@ -219,7 +219,9 @@ Check vault health and Open a recovery copy surface doctor warnings and copies s
 Everything stays in your local vault as readable Markdown.
 Use `jotline capture` to send text from the shell, and `jotline export` to
 write a note without metadata. No account, telemetry, or cloud service.
-Ctrl+Q flushes edits before quitting. Use it before closing the terminal.
+`jotline sync` prints a Git or Syncthing recipe that uses the same recovery
+dialog as an external editor. Ctrl+Q flushes edits before quitting. Use it
+before closing the terminal.
 
 ## Clipboard and accessibility
 Ctrl+P → Copy note sends an OSC 52 *request*. The terminal decides whether the

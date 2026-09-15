@@ -25,6 +25,9 @@
   Orca reports remain required for 1.0; fill the templates in
   `docs/terminal-reports/`. Headless Linux coverage is recorded there and does
   not close issues #2 or #3.
+- Documented Git and Syncthing recipes for the vault folder. `jotline sync`
+  and **How to sync this vault with Git or Syncthing** print the path, ignore
+  rules, and the existing recovery dialog. There is no Jotline cloud.
 
 ## 0.9.6 — 2026-09-15
 
