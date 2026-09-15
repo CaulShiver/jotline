@@ -203,10 +203,12 @@ async def test_autocomplete_link_and_snippet_cancel(tmp_path):
         editor = app.query_one('#editor', TextArea)
 
         async def wait_for_palette():
-            for _ in range(20):
+            # Slow macOS runners can take more than 20 idle ticks to deliver
+            # TextArea.Changed → offer_completion after a two-character trigger.
+            for _ in range(80):
                 if isinstance(app.screen, Palette):
                     return
-                await pilot.pause()
+                await pilot.pause(0.05)
             raise AssertionError('command palette did not open')
 
         await pilot.press('[', '[')
@@ -214,12 +216,19 @@ async def test_autocomplete_link_and_snippet_cancel(tmp_path):
         await pilot.press('enter')
         await pilot.pause()
         assert editor.text == f'[[{note.id}|Linked]]'
-        await pilot.press('space', ';', ';')
+        editor.focus()
+        await pilot.press('space')
+        await pilot.press(';')
+        await pilot.press(';')
+        assert editor.text.endswith(';;')
         await wait_for_palette()
         await pilot.press(*'snippet', 'enter')
         await pilot.pause()
         assert editor.text.endswith(' expanded')
-        await pilot.press(';', ';')
+        editor.focus()
+        await pilot.press(';')
+        await pilot.press(';')
+        assert editor.text.endswith('expanded;;')
         await wait_for_palette()
         await pilot.press('escape')
         assert editor.text.endswith('expanded;;')
