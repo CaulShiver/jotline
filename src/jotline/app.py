@@ -36,6 +36,7 @@ from .screens import FindInNote, MarkdownPreview, RevisionPreview
 from .settings import HOTKEY_ACTIONS, Settings, VIEW_COLLECTIONS
 from .store import (COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, daily_date_from_id,
                     is_daily_id, parse_calendar_date, tagged_body, validate_workspace, wiki_link)
+from .sync import sync_guide
 from .templates import GUIDE, REVIEW, Templates
 from .workflows import Workflows
 
@@ -953,6 +954,8 @@ class Jotline(App):
                     group="everyday"),
             Command("accessibility", "Clipboard, IME, and screen-reader notes", self.show_accessibility_notes),
             Command("recovery", "Save recovery copy", self.save_recovery_copy, group="everyday"),
+            Command("sync-recipe", "How to sync this vault with Git or Syncthing", self.show_sync_guide,
+                    group="everyday"),
             Command("review", "Start weekly review", lambda: self.open_generated_note(REVIEW),
                     group="everyday"),
             Command("help", "Open writing and workflow guide", lambda: self.open_generated_note(GUIDE),
@@ -1049,6 +1052,9 @@ class Jotline(App):
     def toggle_task(self) -> None:
         self.editor().toggle_task_line()
         self.capture_current_buffer()
+
+    def show_sync_guide(self) -> None:
+        self.push_screen(Walkthrough(self.shortcut_text(sync_guide(self.vault.path))))
 
     def save_recovery_copy(self) -> None:
         self.capture_current_buffer()

@@ -72,3 +72,6 @@ If saving the recovery copy fails, the editor keeps your unsaved text. If the
 external file disappears or moves to another workspace, Jotline opens the saved
 recovery copy and explains what happened. The success notification identifies the
 recovery note. **Review external change and recover draft** reopens the comparison after dismissal.
+
+The same dialog is the recovery path after Git or Syncthing replaces a file.
+See [sync this vault](sync.md). There is no Jotline cloud.
