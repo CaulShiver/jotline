@@ -18,6 +18,7 @@ async def test_mouse_selection_toolbar_format_undo_and_save(tmp_path):
         await pilot.mouse_up(editor, offset=(inset + 5, 0))
         assert editor.selected_text == 'hello'
         await pilot.click('#md-bold')
+        await pilot.pause()
         assert editor.text == '**hello** world'
         assert editor.has_focus
         await pilot.press('ctrl+z')
