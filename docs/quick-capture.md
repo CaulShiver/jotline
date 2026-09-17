@@ -84,15 +84,14 @@ Or spawn a known terminal yourself:
 System Settings → Shortcuts → Add New → Command). After install you can also
 use `gtk-launch org.jotline.capture`.
 
-## Windows and macOS
+## macOS
 
-Windows stays a supported capture platform. Bind Windows Terminal to
-`jotline capture`, or pipe the clipboard. macOS can bind a terminal hotkey the
-same way. `jotline desktop recipe pipe` prints every clipboard command.
+Windows is out of scope. On macOS, bind a terminal hotkey to `jotline capture`,
+or pipe the clipboard. `jotline desktop recipe pipe` prints the clipboard
+commands.
 
 ## Piping instead of typing
 
 Any launcher that can run a command without a terminal can still capture a
 line of text: `wl-paste | jotline capture` saves the clipboard as a note.
-On macOS use `pbpaste | jotline capture`. On Windows PowerShell:
-`powershell -NoProfile -Command "Get-Clipboard" | jotline capture`.
+On macOS use `pbpaste | jotline capture`.

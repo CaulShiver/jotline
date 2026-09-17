@@ -1,13 +1,14 @@
-"""Storage OS interface: native descriptors on Unix, pinned handles on Windows.
+"""Storage OS interface: native Unix descriptors.
 
-The Unix implementation is the os module itself so its dir_fd guarantees remain
-unchanged. Windows implements the small descriptor-relative subset used by the
-store; it never silently downgrades a pinned operation to an unprotected path.
+The implementation is the os module itself so its dir_fd guarantees remain
+unchanged. Windows is out of scope; do not add a fallback that silently
+downgrades a pinned operation to an unprotected path.
 """
 from __future__ import annotations
 
 from contextlib import contextmanager
 import errno
+import fcntl
 import os
 from pathlib import Path
 import stat
@@ -17,16 +18,7 @@ from uuid import uuid4
 
 from .limits import LOCK_TIMEOUT_SECONDS, MAX_NOTE_BYTES
 
-if os.name == "nt":
-    import msvcrt
-
-    from ._windows_fs import WindowsFS
-
-    fs = WindowsFS()
-else:
-    import fcntl
-
-    fs = os
+fs = os
 
 
 class FileSignature(NamedTuple):
@@ -40,17 +32,7 @@ class FileSignature(NamedTuple):
 
 
 def lock_file(fd: int, *, unlock: bool = False) -> None:
-    if os.name == "nt":
-        os.lseek(fd, 0, os.SEEK_SET)
-        try:
-            # Windows permits locking a byte beyond EOF, including an empty file.
-            msvcrt.locking(fd, msvcrt.LK_UNLCK if unlock else msvcrt.LK_NBLCK, 1)
-        except OSError as error:
-            if not unlock and error.errno in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
-                raise BlockingIOError(errno.EAGAIN, "Vault lock is held") from error
-            raise
-    else:
-        fcntl.flock(fd, fcntl.LOCK_UN if unlock else fcntl.LOCK_EX | fcntl.LOCK_NB)
+    fcntl.flock(fd, fcntl.LOCK_UN if unlock else fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
 def read_regular_fd(fd: int, name: str, max_bytes: int, encoding: str = "utf-8", errors: str = "strict") -> str:
@@ -247,8 +229,6 @@ def vault_lock(path: Path, timeout: float = LOCK_TIMEOUT_SECONDS):
 
 
 def file_signature(path: Path) -> FileSignature:
-    if os.name == "nt":
-        return FileSignature(*fs.file_signature(path))
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode):
         raise OSError(f"Not a regular file: {path.name}")

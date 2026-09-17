@@ -1,6 +1,6 @@
 # ›_ jotline
 
-**A little room to think.** A keyboard-first terminal app for Linux, macOS, and Windows for capturing thoughts, writing, and connecting notes. Inspired by the quick-capture spirit of Drafts, with an original terminal interface.
+**A little room to think.** A keyboard-first terminal app for Linux and macOS for capturing thoughts, writing, and connecting notes. Inspired by the quick-capture spirit of Drafts, with an original terminal interface.
 
 ![Jotline terminal workspace](docs/screenshot.svg)
 
@@ -8,20 +8,11 @@ Jotline opens to a blank page. Start typing; your writing saves automatically to
 
 ## Install
 
-Linux, macOS, and Windows. Python 3.11+. Git is not required. Windows runs
-natively; WSL is optional. The same package is published for every supported OS.
-
-Linux / macOS:
+Linux and macOS. Python 3.11+. Git is not required. Windows is out of scope.
+The same package is published for every supported OS.
 
 ```sh
 curl -fsSL https://github.com/CaulShiver/jotline/releases/latest/download/install.py | python3
-jotline
-```
-
-Windows (PowerShell):
-
-```powershell
-irm https://github.com/CaulShiver/jotline/releases/latest/download/install.ps1 | iex
 jotline
 ```
 
@@ -92,7 +83,7 @@ The palette opens on everyday capture, find, and recover commands. Type to
 reach format, move, export, encryption, daily-log navigation, extract, and
 inbox processing. Arrows choose; Enter runs; Esc cancels. Clipboard copy is an
 OSC 52 *request* and depends on your terminal. Type **Clipboard, IME, and
-screen-reader notes** for Terminal.app, Windows Terminal, and Orca limits.
+screen-reader notes** for Terminal.app and Orca limits.
 Previous daily, next daily, open-by-date, extract, and process-inbox start
 without shortcuts; assign them in **Ctrl+, → Keyboard shortcuts**.
 
@@ -300,20 +291,14 @@ Set `JOTLINE_VAULT` to use a different vault by default, or pass
 | --- | --- |
 | Linux | `$XDG_DATA_HOME/jotline/notes`, normally `~/.local/share/jotline/notes` |
 | macOS | `~/Library/Application Support/jotline/notes` |
-| Windows | `%LOCALAPPDATA%\jotline\notes` |
 
 On macOS, an explicitly set `XDG_DATA_HOME` or an existing vault at the old
 `~/.local/share/jotline/notes` location continues to be used.
-In PowerShell, set an override with `$env:JOTLINE_VAULT = 'C:\Notes'`; in a
-macOS/Linux shell, use `export JOTLINE_VAULT="$HOME/Notes"`.
+Set an override with `export JOTLINE_VAULT="$HOME/Notes"`.
 
-Use a local filesystem with hard-link support (such as NTFS on Windows or APFS
-on macOS). Windows rejects symlinks, junctions, and other reparse points inside
-storage; cloud placeholder files must be copied to a regular local vault.
-File contents are flushed before publication on every platform. Windows does
-not provide POSIX directory flushing, so metadata durability after a power loss
-depends on the filesystem. Unix permission warnings apply only on Linux/macOS;
-Windows access is controlled by the folder's ACLs.
+Use a local filesystem with hard-link support (APFS or ext4). File contents
+are flushed before publication. Unix permission warnings apply on Linux and
+macOS.
 
 Shortcuts use **Control** on macOS too. If a terminal intercepts a shortcut,
 use Ctrl+, to customize it in Settings.
@@ -637,8 +622,8 @@ detection. Recipes execute only these built-in steps; there is no shell evaluati
 
 ## Status
 
-Version 0.9.6 is an early release. It offers a one-liner install on Linux, macOS,
-and Windows, Markdown source editing, rendered preview, configurable local
+Version 0.9.7 is an early release. It offers a one-liner install on Linux and
+macOS, Markdown source editing, rendered preview, configurable local
 actions, and guided import/recovery workflows. See
 [CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,
 cloud sync, plugins and dictation remain future work.

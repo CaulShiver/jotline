@@ -10,7 +10,6 @@ particular terminal's clipboard. Record those results separately.
 | --- | --- | --- |
 | Linux | Alacritty and GNOME Terminal | Orca where supported; IBus/Fcitx input; OSC 52 policy |
 | macOS | Terminal and iTerm2 | VoiceOver, system input methods, Control shortcuts |
-| Windows | Windows Terminal / PowerShell | NVDA or Narrator, IME composition, paste behavior |
 
 These are coverage targets, not claims that every combination works. Report
 terminal, OS, Jotline, and assistive-tool versions with each result.
@@ -52,26 +51,27 @@ Use findings to prioritize UI changes.
 Automated coverage of that path:
 
 - Installer: `tests/test_install.py` plus CI smoke through `scripts/install.py`
-  on Linux, macOS, and Windows.
+  on Linux and macOS.
 - Open-to-first-keystroke, find, append-to-project, recover:
   `tests/test_newcomer_flow.py`. Jotline still opens on a blank page (`startup`
   defaults to `new`); typing does not require a title or a wizard.
 
-Human runs are still required for PATH/shell, Windows Terminal, and clipboard/IME.
+Human runs are still required for PATH/shell, Terminal.app, and clipboard/IME.
 
 ## Current verification limits
 
-The release runs automated tests and installed-wheel smoke checks on Linux,
-macOS and Windows. Local headless and POSIX PTY checks can validate rendering
+The release runs automated tests and installed-wheel smoke checks on Linux
+and macOS. Local headless and POSIX PTY checks can validate rendering
 startup, keyboard input and note persistence, but cannot certify native emulator,
 clipboard, screen-reader or IME behavior. Those require the checks above.
+Windows is out of scope.
 
 ## 1.0 ship criterion
 
 1.0 needs one filled native report for each of Terminal.app (VoiceOver + IME +
-clipboard), Windows Terminal (NVDA or Narrator + IME + clipboard), and a Linux
-terminal with Orca. Templates live in [terminal-reports/](terminal-reports/).
-The headless Linux pass in that folder is **toward** 1.0, not a substitute.
-Issues [#2](https://github.com/CaulShiver/jotline/issues/2) and
+clipboard) and a Linux terminal with Orca. Templates live in
+[terminal-reports/](terminal-reports/). The headless Linux pass in that folder
+is **toward** 1.0, not a substitute. Issues
+[#2](https://github.com/CaulShiver/jotline/issues/2) and
 [#3](https://github.com/CaulShiver/jotline/issues/3) stay open until those
 reports exist. Do not close them from CI or Pilot tests.

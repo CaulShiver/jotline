@@ -61,8 +61,8 @@ Use Syncthing when you want folder sync without Git. Jotline does not talk to
 Syncthing.
 
 1. `jotline backup`.
-2. Share `{shown}` as a Syncthing folder on each machine. Native Windows,
-   macOS, and Linux are all supported; WSL is optional.
+2. Share `{shown}` as a Syncthing folder on each machine. Linux and macOS
+   are supported.
 3. Ignore `.jotline.lock` (and `.jotline-displaced-*` if your version of
    Syncthing can ignore globs). Never share `{KEY_FILE}` to a peer you do not
    trust with every encrypted note.

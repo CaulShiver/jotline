@@ -16,8 +16,6 @@ def default_vault() -> Path:
     override = os.environ.get("JOTLINE_VAULT")
     if override:
         return Path(override)
-    if sys.platform == "win32":
-        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "jotline/notes"
     xdg_home = os.environ.get("XDG_DATA_HOME") or ""
     if not Path(xdg_home).is_absolute():
         xdg_home = ""
@@ -83,8 +81,6 @@ def encoding_name(value: str) -> str:
 
 def command_text(words: list[str], encoding: str, errors: str) -> str:
     text = " ".join(words)
-    if sys.platform == "win32":
-        return text
     return os.fsencode(text).decode(encoding, errors)
 
 

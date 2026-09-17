@@ -12,21 +12,22 @@ the writing core remains offline.
 - Resolve save conflicts while preserving both versions.
 - Preview folder and Drafts imports, then report exactly what was imported.
 - Install with a one-liner or PyPI (`uv tool install jotline`) without Git or
-  hunting a GitHub wheel. Linux, macOS, and Windows stay in the contract.
+  hunting a GitHub wheel. Linux and macOS stay in the contract; Windows is
+  out of scope.
 - Bind `jotline capture` from a desktop hotkey using shipped Hyprland, GNOME,
   KDE, and Omarchy snippets or `jotline desktop install`.
 
 ## Next priorities
 
-1. Validate the release with newcomers on Linux, macOS and Windows. Measure
+1. Validate the release with newcomers on Linux and macOS. Measure
    whether they can install, capture, find, connect, process and recover a note
    unaided.
 2. Establish native terminal and assistive-technology coverage using
    [the terminal checklist](docs/terminal-testing.md). VoiceOver on
-   Terminal.app, NVDA or Narrator on Windows Terminal, and Orca on Linux are a
-   **1.0 ship criterion**. The headless pass in
-   [docs/terminal-reports/](docs/terminal-reports/) is toward that gate, not a
-   substitute. Clipboard copy remains an OSC 52 request.
+   Terminal.app and Orca on Linux are a **1.0 ship criterion**. The headless
+   pass in [docs/terminal-reports/](docs/terminal-reports/) is toward that
+   gate, not a substitute. Clipboard copy remains an OSC 52 request. Windows
+   is out of scope.
 3. Measure search with [synthetic vault benchmarks](docs/vault-scale.md) before
    introducing indexing. In-memory scan still meets the bar; doctor, conflicts,
    and backups remain the durability product.

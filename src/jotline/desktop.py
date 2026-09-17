@@ -49,11 +49,7 @@ TERMINAL_ORDER = (
 )
 
 UNSUPPORTED = {
-    "win32": (
-        "Desktop capture packaging is for Linux (XDG). On Windows, bind "
-        "Windows Terminal to jotline capture, or pipe the clipboard: "
-        'powershell -NoProfile -Command "Get-Clipboard" | jotline capture'
-    ),
+    "win32": "Jotline supports Linux and macOS only. Windows is out of scope.",
     "darwin": (
         "Desktop capture packaging is for Linux (XDG). On macOS, bind a "
         "terminal hotkey to jotline capture, or pipe the clipboard: "
@@ -139,8 +135,6 @@ def render_recipe(name: str, command: list[str] | None = None) -> str:
 
 def clipboard_pipe(command: list[str] | None = None) -> str:
     prefix = jotline_shell(command)
-    if sys.platform == "win32":
-        return f'powershell -NoProfile -Command "Get-Clipboard" | {prefix} capture'
     if sys.platform == "darwin":
         return f"pbpaste | {prefix} capture"
     return f"wl-paste | {prefix} capture"

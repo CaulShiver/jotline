@@ -12,18 +12,18 @@ COPY_REQUEST = "Copy requested. Your terminal must allow OSC 52 clipboard access
 A11Y_NOTES = """Clipboard, input methods, and screen readers
 
 Copy sends an OSC 52 request. Jotline cannot confirm that the system clipboard
-changed. Terminal.app often blocks OSC 52. Windows Terminal and many Linux
-terminals can allow it. If copy appears to do nothing, check the terminal's
-clipboard permissions, not a Jotline setting.
+changed. Terminal.app often blocks OSC 52. Many Linux terminals can allow it.
+If copy appears to do nothing, check the terminal's clipboard permissions, not
+a Jotline setting.
 
 Input methods compose characters in the terminal. Jotline stores the Unicode it
 receives. Combining marks, CJK, Arabic, and emoji round-trip as entered. If
-composition looks wrong, check the terminal IME (IBus, Fcitx, macOS, Windows).
+composition looks wrong, check the terminal IME (IBus, Fcitx, macOS).
 
-Screen-reader announcements depend on the emulator. VoiceOver with Terminal.app,
-NVDA or Narrator with Windows Terminal, and Orca with GNOME each need a filled
-report in docs/terminal-reports/ before calling 1.0. Automated tests only prove
-that controls have names.
+Screen-reader announcements depend on the emulator. VoiceOver with Terminal.app
+and Orca with GNOME each need a filled report in docs/terminal-reports/ before
+calling 1.0. Automated tests only prove that controls have names. Windows is
+out of scope.
 
 Esc returns to writing. Ctrl+, opens Settings. Ctrl+P lists every command.
 """

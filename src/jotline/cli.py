@@ -54,35 +54,16 @@ def vault_path(value: str) -> Path:
     return Path(value)
 
 
-def windows_console_input() -> bool:
-    """Whether stdin is a real Windows console.
-
-    isatty() is also true for the NUL device, so a script run with stdin from
-    NUL would otherwise be treated as a person at a terminal and getpass would
-    wait on the console forever.
-    """
-    try:
-        # Windows-only APIs; missing on POSIX and on the NUL device.
-        import ctypes
-        import msvcrt
-
-        handle = msvcrt.get_osfhandle(sys.stdin.fileno())
-        mode = ctypes.c_uint32()
-        return bool(ctypes.windll.kernel32.GetConsoleMode(handle, ctypes.byref(mode)))
-    except (AttributeError, ImportError, OSError, ValueError):
-        return False
+WINDOWS_UNSUPPORTED = "Jotline supports Linux and macOS only. Windows is out of scope."
 
 
 def stdin_is_interactive() -> bool:
     if sys.stdin is None:
         return True
     try:
-        interactive = sys.stdin.isatty()
+        return sys.stdin.isatty()
     except ValueError:
         return False
-    if interactive and sys.platform == "win32":
-        return windows_console_input()
-    return interactive
 
 
 def input_text(args: argparse.Namespace, encoding: str, errors: str) -> str:
@@ -127,8 +108,6 @@ PASSPHRASE_NEEDED = ("This needs the passphrase for encrypted notes; run it in a
 
 
 def terminal_available() -> bool:
-    if sys.platform == "win32":
-        return stdin_is_interactive()
     try:
         with open("/dev/tty", "rb"):
             return True
@@ -198,7 +177,6 @@ def quick_capture(settings: Settings, daily: bool, workspace: str, when: date | 
 
 
 def missing_file_message(args: argparse.Namespace, error: FileNotFoundError) -> str:
-    # Windows reports a missing file without its name, so check the target itself.
     note_id = getattr(args, "id", None)
     vault = Path(args.vault).expanduser()
     if note_id and vault.is_dir() and not (vault / f"{note_id}.md").exists():
@@ -725,9 +703,8 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Invoca
 
 def main() -> None:
     if sys.platform == "win32":
-        for stream in (sys.stdout, sys.stderr):
-            if hasattr(stream, "reconfigure"):
-                stream.reconfigure(encoding="utf-8", newline="")
+        print(WINDOWS_UNSUPPORTED, file=sys.stderr)
+        raise SystemExit(2)
     parser = build_parser()
     args = parser.parse_args()
     try:

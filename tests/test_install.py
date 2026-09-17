@@ -5,7 +5,6 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -70,7 +69,7 @@ def write_checksums(directory: Path, *paths: Path) -> Path:
 def create_venv(directory: Path) -> Path:
     uv = shutil.which("uv") or str(Path.home() / ".local/bin/uv")
     subprocess.run([uv, "venv", str(directory)], check=True)
-    return directory / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    return directory / "bin/python"
 
 
 def test_checksum_parser_accepts_gnu_and_binary_markers():
@@ -163,30 +162,34 @@ def test_github_latest_one_liner_downloads_and_verifies(tmp_path):
         thread.join(timeout=5)
 
 
-def test_release_assets_include_installers_for_every_os():
+def test_release_assets_include_the_unix_installer():
     source = (ROOT / "scripts/release_metadata.py").read_text(encoding="utf-8")
     assert "install.py" in source
-    assert "install.ps1" in source
+    assert "install.ps1" not in source
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     assert "dist/install.py" in workflow
-    assert "dist/install.ps1" in workflow
+    assert "dist/install.ps1" not in workflow
     assert "dist/SHA256SUMS" in workflow
     assert "gh release create" in workflow
     assert "pypa/gh-action-pypi-publish" in workflow
     assert "id-token: write" in workflow
-    powershell = (ROOT / "scripts/install.ps1").read_text(encoding="utf-8")
-    assert "Windows is supported" in powershell
-    assert "releases/latest/download/install.py" in powershell
+    assert not (ROOT / "scripts/install.ps1").exists()
 
 
-def test_ci_installs_through_the_public_installer_on_windows_too():
+def test_ci_installs_through_the_public_installer_on_linux_and_macos():
     workflow = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
-    assert "windows-latest" in workflow
+    assert "windows-latest" not in workflow
     assert "macos-latest" in workflow
     assert "ubuntu-latest" in workflow
     assert "python scripts/install.py --from-dir dist" in workflow
     assert "uv pip install --python \"$smoke_python\" --strict dist/*.whl" not in workflow
     release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     assert "uses: ./.github/workflows/test.yml" in release
-    assert "windows-latest" not in release.replace("test.yml", "")
-    assert "Operating System :: Microsoft :: Windows" in (ROOT / "pyproject.toml").read_text()
+    assert "windows-latest" not in release
+    assert "Operating System :: Microsoft :: Windows" not in (ROOT / "pyproject.toml").read_text()
+
+
+def test_installer_refuses_windows(monkeypatch):
+    monkeypatch.setattr(INSTALL.sys, "platform", "win32")
+    with pytest.raises(ValueError, match="Windows is out of scope"):
+        INSTALL.require_python()

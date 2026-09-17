@@ -1,5 +1,13 @@
 # Release verification
 
+## 0.9.7
+
+- Windows is out of scope. Publication gates on Ubuntu and macOS × Python
+  3.11–3.13. `scripts/install.py` is the only tagged installer; there is no
+  `install.ps1`. `jotline` exits 2 on Windows.
+- Unreleased work after 0.9.6 (vault doctor, quiet palette, accessibility
+  labels, sync recipes, example actions) ships in this version.
+
 ## 0.9.6
 
 - Same locked suite as 0.9.5. The `v0.9.5` package job failed because
@@ -93,7 +101,7 @@ executor shutdown after a test has passed. The final full suite and wheel smoke
 were therefore run outside that sandbox. No production workaround was added for
 this environment restriction.
 
-The release workflow separately gates publication on the Linux/macOS/Windows
+The release workflow separately gates publication on the Linux/macOS
 Python 3.11–3.13 matrix and smoke-tests the exact wheel it uploads. Consult the
 GitHub Actions run for the remote results associated with a tag.
 
