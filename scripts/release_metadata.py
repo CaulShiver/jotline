@@ -7,7 +7,7 @@ import re
 import shutil
 
 
-RELEASE_SCRIPTS = ('install.py', 'install.ps1')
+RELEASE_SCRIPTS = ('install.py',)
 
 
 def main():

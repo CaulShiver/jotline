@@ -45,7 +45,7 @@ and the [export example supplied by Drafts' developer](https://forums.getdrafts.
 Imports are bounded to 1,000 scanned directory entries, 1,000 records, and 32 MiB
 of source content per preview. Individual notes must fit the normal note limit
 including mapped metadata. Folder imports recognize `.md`, `.txt`, and
-`.draftsExport`. Symlinks and Windows reparse points are not followed. Invalid
+`.draftsExport`. Symlinks are not followed. Invalid
 records are reported separately so valid notes can still be imported. The final
 summary reports imported, skipped, and failed counts; failures do not undo earlier
 successful imports. CLI `--apply` exits nonzero when warnings or failures require

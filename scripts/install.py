@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Install the latest published Jotline wheel after verifying SHA256SUMS.
 
-Linux, macOS, and Windows. Python 3.11+. Git is not required, and you do not
+Linux and macOS. Python 3.11+. Git is not required, and you do not
 need to hunt a wheel filename. Prefer `uv tool` or pipx when they are on PATH.
+Windows is out of scope.
 
 Examples:
   python3 install.py
   python3 install.py --from-dir dist
-  python3 install.py --tag v0.9.6 --force
+  python3 install.py --tag v0.9.7 --force
   python3 install.py --encryption
 """
 from __future__ import annotations
@@ -32,13 +33,14 @@ GITHUB_API = f"https://api.github.com/repos/{REPO}/releases"
 USER_AGENT = "jotline-installer"
 WHEEL_NAME = "jotline-{version}-py3-none-any.whl"
 CHECKSUMS_NAME = "SHA256SUMS"
-SUPPORTED = "Linux, macOS, and Windows"
+SUPPORTED = "Linux and macOS"
+WINDOWS_UNSUPPORTED = "Jotline supports Linux and macOS only. Windows is out of scope."
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--from-dir", type=Path, help="Install from a local dist directory instead of GitHub")
-    parser.add_argument("--tag", help="Install this release tag instead of latest, for example v0.9.6")
+    parser.add_argument("--tag", help="Install this release tag instead of latest, for example v0.9.7")
     parser.add_argument("--force", action="store_true", help="Reinstall if Jotline is already present")
     parser.add_argument("--encryption", action="store_true", help="Also install the optional cryptography extra")
     parser.add_argument("--installer", choices=("uv", "pipx", "pip"),
@@ -70,8 +72,10 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def require_python() -> None:
+    if sys.platform == "win32":
+        raise ValueError(WINDOWS_UNSUPPORTED)
     if sys.version_info < (3, 11):
-        raise ValueError("Jotline needs Python 3.11 or newer on Linux, macOS, or Windows")
+        raise ValueError("Jotline needs Python 3.11 or newer on Linux or macOS")
 
 
 def detect_installer(python: str | None) -> str:

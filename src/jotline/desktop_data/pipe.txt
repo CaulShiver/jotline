@@ -5,5 +5,3 @@ wl-paste | __JOTLINE__ capture
 xclip -selection clipboard -o | __JOTLINE__ capture
 # macOS:
 pbpaste | __JOTLINE__ capture
-# Windows PowerShell:
-powershell -NoProfile -Command "Get-Clipboard" | __JOTLINE__ capture

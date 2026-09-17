@@ -49,13 +49,12 @@ git pull --rebase   # before a writing session
 git add -A && git commit && git push
 ```
 
-Windows, macOS, and Linux all run Git natively. Packaging pain is not a reason
-to drop Windows.
+Linux and macOS run Git natively. Windows is out of scope.
 
 ## Syncthing
 
-Share the folder `jotline path` prints. Ignore `.jotline.lock`. Native Windows
-Terminal users can sync the same vault as Linux and macOS peers. After Syncthing
+Share the folder `jotline path` prints. Ignore `.jotline.lock`. Linux and macOS
+peers can share the same vault. After Syncthing
 replaces a file while Jotline still has unsaved text, use the comparison dialog
 below — not a second copy of the whole vault.
 

@@ -57,7 +57,8 @@ def test_recipes_cover_documented_desktops_and_stay_local(desktop_home):
     assert "windowrulev2" in hyprland and "desktop launch" in hyprland
     assert "Custom Shortcuts" in gnome and "gtk-launch" in gnome
     assert "konsole" in kde and "Meta+Shift+J" in kde
-    assert "wl-paste" in pipe and "pbpaste" in pipe and "Get-Clipboard" in pipe
+    assert "wl-paste" in pipe and "pbpaste" in pipe
+    assert "Get-Clipboard" not in pipe
     assert "/opt/jotline/bin/jotline" in bundled
     for forbidden in ("http://", "https://", "openai", "cloud sync", "share sheet"):
         assert forbidden not in bundled.casefold()
@@ -206,9 +207,9 @@ def test_cli_rejects_mismatched_flags(desktop_home):
     assert output.returncode == 1
 
 
-def test_linux_only_actions_explain_windows_and_macos(monkeypatch):
+def test_linux_only_actions_explain_macos_and_refuse_windows(monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
-    with pytest.raises(ValueError, match="Windows Terminal"):
+    with pytest.raises(ValueError, match="Windows is out of scope"):
         desktop.run_desktop_command(parse("install"))
     monkeypatch.setattr(sys, "platform", "darwin")
     with pytest.raises(ValueError, match="pbpaste"):
@@ -216,18 +217,18 @@ def test_linux_only_actions_explain_windows_and_macos(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     recipe = desktop.render_recipe("pipe")
     assert "wl-paste" in recipe
+    assert "Get-Clipboard" not in recipe
 
 
-def test_status_on_windows_still_prints_recipes(monkeypatch):
+def test_status_on_windows_says_out_of_scope(monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(desktop, "linux_desktop_available", lambda: False)
     monkeypatch.setattr(desktop, "jotline_command", lambda: ["jotline"])
     report = desktop.status_report()
     assert report["supported"] is False
-    assert report["recipes"] == list(RECIPE_NAMES)
     text = desktop.format_status(report)
-    assert "Windows Terminal" in text
-    assert "Get-Clipboard" in text
+    assert "Windows is out of scope" in text
+    assert "Get-Clipboard" not in text
 
 
 def test_terminal_argv_sets_capture_class():

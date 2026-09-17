@@ -153,7 +153,8 @@ async def test_accessibility_notes_command_is_honest(tmp_path):
         await pilot.pause()
         assert isinstance(app.screen, Walkthrough)
         assert "OSC 52" in app.screen.body
-        assert "VoiceOver" in app.screen.body and "NVDA" in app.screen.body and "Orca" in app.screen.body
+        assert "VoiceOver" in app.screen.body and "Orca" in app.screen.body
+        assert "Windows is" in app.screen.body and "out of scope" in app.screen.body
         assert "cannot confirm" in app.screen.body
         await pilot.press("escape")
         assert app.editor().has_focus

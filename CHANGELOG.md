@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.9.7 — 2026-09-17
+
+- Windows is out of scope. The product, CI matrix, PyPI classifiers, and
+  install path are Linux and macOS. `jotline` and `scripts/install.py` exit
+  with a short message on Windows. The PowerShell installer is gone. Native
+  Windows Terminal reports are no longer a 1.0 requirement.
 - Synthetic vault benchmarks (`scripts/vault_bench.py`, `docs/vault-scale.md`)
   time search and backlinks. They stay under the published bar, so search is
   still an in-memory scan — no index. `jotline doctor` now reports recovery
@@ -21,7 +27,7 @@
   controls on the writing screen, Settings, views, find, recovery, capture, the
   action builder, history, arrange, and bulk select now carry labels or tooltips.
   Copy wording is an OSC 52 *request*, never a success claim. `Ctrl+P → Clipboard,
-  IME, and screen-reader notes` explains the limits. Native VoiceOver, NVDA, and
+  IME, and screen-reader notes` explains the limits. Native VoiceOver and
   Orca reports remain required for 1.0; fill the templates in
   `docs/terminal-reports/`. Headless Linux coverage is recorded there and does
   not close issues #2 or #3.

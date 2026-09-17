@@ -27,7 +27,7 @@ def test_build_backend_and_runtime_dependency_bounds_are_explicit():
     assert data["project"]["optional-dependencies"]["dev"] == ["pytest>=8.2", "pytest-asyncio>=0.24"]
     assert data["project"]["urls"]["Repository"] == "https://github.com/CaulShiver/jotline"
     assert data["project"]["urls"]["Documentation"] == "https://github.com/CaulShiver/jotline/blob/main/docs/install.md"
-    assert "Operating System :: Microsoft :: Windows" in data["project"]["classifiers"]
+    assert "Operating System :: Microsoft :: Windows" not in data["project"]["classifiers"]
     assert "Operating System :: POSIX :: Linux" in data["project"]["classifiers"]
     assert "Operating System :: MacOS :: MacOS X" in data["project"]["classifiers"]
     assert data["tool"]["pytest"]["ini_options"]["asyncio_default_fixture_loop_scope"] == "function"
@@ -60,7 +60,7 @@ def test_install_docs_lead_with_a_one_liner_and_name_the_current_wheel_for_check
     install_section = readme.split("## The everyday loop", 1)[0]
     assert "releases/latest/download/install.py" in install_section
     assert "uv tool install jotline" in install_section
-    assert "irm https://github.com/CaulShiver/jotline/releases/latest/download/install.ps1" in install_section
+    assert "install.ps1" not in install_section
     assert wheel not in install_section
     assert leftover.findall(readme.replace(wheel, "")) == []
     for path in (ROOT / "docs/install.md", ROOT / "docs/release-notes.md"):
@@ -69,12 +69,14 @@ def test_install_docs_lead_with_a_one_liner_and_name_the_current_wheel_for_check
         assert leftover.findall(text.replace(wheel, "")) == []
 
 
-def test_supported_os_contract_keeps_windows():
+def test_supported_os_contract_is_linux_and_macos():
     platforms = (ROOT / "docs/platforms.md").read_text()
-    assert "Linux, macOS, and Windows" in platforms
-    assert "Windows is a supported platform" in platforms
+    assert "Linux and macOS" in platforms
+    assert "Windows is out of scope" in platforms
+    assert "Windows is a supported platform" not in platforms
     workflow = (ROOT / ".github/workflows/test.yml").read_text()
-    assert "os: [ubuntu-latest, macos-latest, windows-latest]" in workflow
+    assert "os: [ubuntu-latest, macos-latest]" in workflow
+    assert "windows-latest" not in workflow
 
 
 def test_ci_lower_bound_pair_matches_pytest_asyncio_floor():
