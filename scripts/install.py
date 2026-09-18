@@ -119,7 +119,7 @@ def fetch_release(tag: str | None, releases_url: str | None) -> dict:
         url = f"{GITHUB_API}/tags/{urllib.parse.quote(tag)}"
     else:
         url = f"{GITHUB_API}/latest"
-    payload = json.loads(read_url(url).decode("utf-8"))
+    payload = json.loads(read_url(url, accept="application/vnd.github+json").decode("utf-8"))
     if not isinstance(payload, dict) or not isinstance(payload.get("tag_name"), str):
         raise ValueError("GitHub release metadata was not a release object")
     return payload
@@ -154,10 +154,10 @@ def url_allowed(url: str) -> bool:
     return host in {"github.com", "api.github.com"} or host.endswith(".githubusercontent.com")
 
 
-def read_url(url: str) -> bytes:
+def read_url(url: str, *, accept: str = "application/octet-stream") -> bytes:
     if not url_allowed(url):
         raise ValueError(f"Refusing to download from {url}")
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/octet-stream"})
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
     with urllib.request.urlopen(request, context=ssl.create_default_context(), timeout=60) as response:
         final = response.geturl()
         if not url_allowed(final):

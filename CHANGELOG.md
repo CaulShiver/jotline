@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `scripts/install.py` asks GitHub's release JSON API for
+  `application/vnd.github+json`. Sending `application/octet-stream` for that
+  metadata returned HTTP 415, so the documented one-liner could not install
+  from a tagged GitHub Release. Wheel and `SHA256SUMS` downloads still use
+  `application/octet-stream`.
+
 ## 0.9.7 — 2026-09-17
 
 - Windows is out of scope. The product, CI matrix, PyPI classifiers, and
