@@ -70,8 +70,10 @@ Windows is out of scope.
 
 1.0 needs one filled native report for each of Terminal.app (VoiceOver + IME +
 clipboard) and a Linux terminal with Orca. Templates live in
-[terminal-reports/](terminal-reports/). The headless Linux pass in that folder
-is **toward** 1.0, not a substitute. Issues
-[#2](https://github.com/CaulShiver/jotline/issues/2) and
-[#3](https://github.com/CaulShiver/jotline/issues/3) stay open until those
-reports exist. Do not close them from CI or Pilot tests.
+[terminal-reports/](terminal-reports/). [macos-27-terminal.md](terminal-reports/macos-27-terminal.md)
+covers Terminal.app keyboard, IME, clipboard, and recovery with VoiceOver off;
+that does not satisfy the VoiceOver half of this gate. The headless Linux pass
+in that folder is **toward** 1.0, not a substitute. Issue
+[#2](https://github.com/CaulShiver/jotline/issues/2) is the native-emulator
+report; [#3](https://github.com/CaulShiver/jotline/issues/3) stays open until
+VoiceOver or Orca is actually on. Do not close them from CI or Pilot tests.
