@@ -1,5 +1,15 @@
 # Release verification
 
+## 0.9.8
+
+- Package version `0.9.8`. Publication still gates on Ubuntu and macOS ×
+  Python 3.11–3.13. Native copy uses `pbcopy` on macOS; OSC 52 is a fallback.
+  The GitHub installer JSON Accept header is `application/vnd.github+json`.
+- Local locked suite on macOS 27 / Python 3.13: **690 passed, 19 skipped**,
+  including clipboard native/fallback tests. POSIX PTY smoke passed. Terminal.app
+  Copy updated `pbpaste` with the synthetic note body.
+- No storage format change. VoiceOver remains untested; issue #3 stays open.
+
 ## 0.9.7
 
 - Windows is out of scope. Publication gates on Ubuntu and macOS × Python

@@ -29,7 +29,7 @@ async def test_writing_screen_controls_have_names(tmp_path):
         assert missing == [], [widget.id for widget in missing]
         assert "Note editor" in str(app.editor().tooltip)
         copy = dict(app.command_choices())["copy"]
-        assert "OSC 52" in copy
+        assert "clipboard" in copy.lower()
 
 
 async def test_palette_find_recovery_and_capture_are_named(tmp_path):
@@ -123,7 +123,8 @@ async def test_nfc_and_nfd_are_stored_exactly(tmp_path):
         assert NFC != NFD
 
 
-async def test_copy_describes_osc52_as_a_request(tmp_path):
+async def test_copy_describes_osc52_as_a_request(tmp_path, monkeypatch):
+    monkeypatch.setattr("jotline.clipboard.write_system_clipboard", lambda text: False)
     app = Jotline(Vault(tmp_path))
     async with app.run_test() as pilot:
         app.editor().insert("synthetic note")
@@ -135,8 +136,9 @@ async def test_copy_describes_osc52_as_a_request(tmp_path):
         assert any("Copy requested" in message and "OSC 52" in message for message in messages)
 
 
-async def test_ime_standin_paste_does_not_claim_clipboard_success(tmp_path):
-    """Paste of already-composed text is the IME stand-in; copy still must not overclaim."""
+async def test_ime_standin_paste_does_not_claim_clipboard_success(tmp_path, monkeypatch):
+    """Paste of already-composed text is the IME stand-in; OSC 52 still must not overclaim."""
+    monkeypatch.setattr("jotline.clipboard.write_system_clipboard", lambda text: False)
     app = Jotline(Vault(tmp_path))
     async with app.run_test() as pilot:
         app.editor().insert("日本語")
@@ -153,8 +155,9 @@ async def test_accessibility_notes_command_is_honest(tmp_path):
         await pilot.pause()
         assert isinstance(app.screen, Walkthrough)
         assert "OSC 52" in app.screen.body
+        assert "pbcopy" in app.screen.body
         assert "VoiceOver" in app.screen.body and "Orca" in app.screen.body
         assert "Windows is" in app.screen.body and "out of scope" in app.screen.body
-        assert "cannot confirm" in app.screen.body
+        assert "confirms a copy only after that tool succeeds" in app.screen.body
         await pilot.press("escape")
         assert app.editor().has_focus

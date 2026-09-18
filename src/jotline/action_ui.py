@@ -300,7 +300,7 @@ class ActionWorkflows:
             note = run_action(self.vault, self.current, steps, name=name,
                               history_warning=lambda message: self.notify(message, severity='warning'),
                               selection=self.query_one('#editor', MarkdownEditor).selected_text,
-                              copy=self.copy_to_clipboard, export=export)
+                              copy=self.copy_note_text, export=export)
             self.accept_action_note(note)
             self.status('Saved')
             self.notify('Action completed')

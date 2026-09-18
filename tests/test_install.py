@@ -137,6 +137,12 @@ def test_github_latest_one_liner_downloads_and_verifies(tmp_path):
             if body is None:
                 self.send_error(404)
                 return
+            # GitHub's release JSON API returns 415 for application/octet-stream.
+            if self.path == "/latest":
+                accept = self.headers.get("Accept", "")
+                if "application/octet-stream" in accept and "json" not in accept:
+                    self.send_error(415, "Unsupported Media Type")
+                    return
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()

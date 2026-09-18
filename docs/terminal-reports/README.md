@@ -7,6 +7,12 @@ help-wanted afterthoughts. Issues
 [#3](https://github.com/CaulShiver/jotline/issues/3) (screen reader) stay open
 until a human fills a report from this folder.
 
+## Filled reports
+
+| Report | Covers | Does not cover |
+| --- | --- | --- |
+| [macos-27-terminal.md](macos-27-terminal.md) | Terminal.app 2.15 on macOS 27: capture, keyboard, themes, Unicode paste, U.S. Option dead-key IME, `pbcopy` copy, recovery, quit | VoiceOver announcements (issue #3); iTerm2; Ghostty |
+
 ## Required for 1.0
 
 One filled report for each row. Use a disposable vault. Include versions. Do
@@ -19,7 +25,8 @@ not paste personal notes or clipboard contents.
 
 The checklist lives in [terminal-testing.md](../terminal-testing.md). Copy a
 template, rename it to include the OS version (for example
-`macos-15-terminal.md`), and open a PR.
+`macos-15-terminal.md`), and open a PR. The macOS 27 Terminal.app report
+closes the native-emulator half of issue #2. It does **not** close issue #3.
 
 ## What CI already covers
 

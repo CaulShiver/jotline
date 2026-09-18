@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.9.8 — 2026-09-18
+
+- Copy uses `pbcopy` on macOS and `wl-copy` / `xclip` / `xsel` on Linux when
+  those tools exist, then confirms. OSC 52 remains a fallback request for
+  terminals that honor it. Terminal.app blocks OSC 52; macOS copy no longer
+  depends on it.
+- `scripts/install.py` asks GitHub's release JSON API for
+  `application/vnd.github+json`. Sending `application/octet-stream` for that
+  metadata returned HTTP 415, so the documented one-liner could not install
+  from a tagged GitHub Release. Wheel and `SHA256SUMS` downloads still use
+  `application/octet-stream`.
+- README install leads with `uv tool install jotline`. A filled macOS 27
+  Terminal.app report is in `docs/terminal-reports/macos-27-terminal.md`.
+  VoiceOver was not on; issue #3 stays open.
+
 ## 0.9.7 — 2026-09-17
 
 - Windows is out of scope. The product, CI matrix, PyPI classifiers, and

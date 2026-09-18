@@ -224,10 +224,11 @@ dialog as an external editor. Ctrl+Q flushes edits before quitting. Use it
 before closing the terminal.
 
 ## Clipboard and accessibility
-Ctrl+P → Copy note sends an OSC 52 *request*. The terminal decides whether the
-system clipboard changes; Jotline will not claim that it did. Ctrl+P →
-Clipboard, IME, and screen-reader notes explains Terminal.app and Orca limits.
-Native reports in docs/terminal-reports/ are a 1.0 ship criterion.
+Ctrl+P → Copy note uses pbcopy on macOS (and wl-copy, xclip, or xsel on Linux
+when present). Jotline confirms only after that tool succeeds. It also sends
+an OSC 52 request for terminals that honor it. Ctrl+P → Clipboard, IME, and
+screen-reader notes explains the limits. Native VoiceOver and Orca reports in
+docs/terminal-reports/ remain a 1.0 ship criterion.
 """
 
 REVIEW = """# Weekly review

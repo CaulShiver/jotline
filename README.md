@@ -12,16 +12,15 @@ Linux and macOS. Python 3.11+. Git is not required. Windows is out of scope.
 The same package is published for every supported OS.
 
 ```sh
-curl -fsSL https://github.com/CaulShiver/jotline/releases/latest/download/install.py | python3
+uv tool install jotline
 jotline
 ```
 
-From PyPI, once the tagged release is on the index:
+`pipx install jotline` works too. To install from a GitHub Release (checksum-verified
+wheel), use the one-liner:
 
 ```sh
-uv tool install jotline
-# or: pipx install jotline
-jotline
+curl -fsSL https://github.com/CaulShiver/jotline/releases/latest/download/install.py | python3
 ```
 
 To update, re-run the installer with `--force` (or `uv tool install --force jotline`).
@@ -81,9 +80,10 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 
 The palette opens on everyday capture, find, and recover commands. Type to
 reach format, move, export, encryption, daily-log navigation, extract, and
-inbox processing. Arrows choose; Enter runs; Esc cancels. Clipboard copy is an
-OSC 52 *request* and depends on your terminal. Type **Clipboard, IME, and
-screen-reader notes** for Terminal.app and Orca limits.
+inbox processing. Arrows choose; Enter runs; Esc cancels. Copy uses the system
+clipboard on macOS (`pbcopy`) and on Linux when `wl-copy`, `xclip`, or `xsel`
+is available; otherwise it sends an OSC 52 request. Type **Clipboard, IME, and
+screen-reader notes** for the limits.
 Previous daily, next daily, open-by-date, extract, and process-inbox start
 without shortcuts; assign them in **Ctrl+, → Keyboard shortcuts**.
 
@@ -622,15 +622,16 @@ detection. Recipes execute only these built-in steps; there is no shell evaluati
 
 ## Status
 
-Version 0.9.7 is an early release. It offers a one-liner install on Linux and
+Version 0.9.8 is an early release. It offers a one-liner install on Linux and
 macOS, Markdown source editing, rendered preview, configurable local
 actions, and guided import/recovery workflows. See
 [CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,
 cloud sync, plugins and dictation remain future work.
 Automated cross-platform checks and a POSIX terminal smoke test complement the
 [native terminal and accessibility checklist](docs/terminal-testing.md).
-Clipboard copy is an OSC 52 request (the terminal must allow it). IME composition
-and screen readers need filled [native reports](docs/terminal-reports/) for 1.0;
+Clipboard copy uses the OS clipboard when `pbcopy` / `wl-copy` / `xclip` /
+`xsel` is available, and otherwise an OSC 52 request. IME composition and
+screen readers need filled [native reports](docs/terminal-reports/) for 1.0;
 headless tests only prove control names and Unicode round-trip.
 See [Release verification](docs/release-verification.md) for the local test results
 and the limits of that coverage.
