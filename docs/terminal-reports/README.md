@@ -11,7 +11,7 @@ until a human fills a report from this folder.
 
 | Report | Covers | Does not cover |
 | --- | --- | --- |
-| [macos-27-terminal.md](macos-27-terminal.md) | Terminal.app 2.15 on macOS 27: capture, keyboard, themes, Unicode paste, U.S. Option dead-key IME, OSC 52 blocked copy wording, recovery, quit | VoiceOver announcements (issue #3); iTerm2; Ghostty |
+| [macos-27-terminal.md](macos-27-terminal.md) | Terminal.app 2.15 on macOS 27: capture, keyboard, themes, Unicode paste, U.S. Option dead-key IME, `pbcopy` copy, recovery, quit | VoiceOver announcements (issue #3); iTerm2; Ghostty |
 
 ## Required for 1.0
 

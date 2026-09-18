@@ -30,7 +30,8 @@ hard-link support (APFS, ext4).
 
 ## Known limitations
 
-- Headless CI cannot certify native clipboard, IME, or screen readers. Record
+- Headless CI cannot certify IME or screen readers. macOS copy uses `pbcopy`;
+  Linux copy uses `wl-copy` / `xclip` / `xsel` when present. Record
   those with [the terminal checklist](terminal-testing.md).
 - PDF export needs a local Chromium-based browser, LibreOffice, or pandoc.
 - Omarchy desktop theme follow is a Linux desktop integration; macOS uses

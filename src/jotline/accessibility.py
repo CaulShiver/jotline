@@ -7,14 +7,16 @@ from textual.widget import Widget
 from textual.widgets import Button, Footer, Input, OptionList, Select, SelectionList, Switch, TextArea
 
 INTERACTIVE = (Button, Input, TextArea, OptionList, Select, SelectionList, Switch)
+COPY_NATIVE = "Copied to the system clipboard."
 COPY_REQUEST = "Copy requested. Your terminal must allow OSC 52 clipboard access."
 
 A11Y_NOTES = """Clipboard, input methods, and screen readers
 
-Copy sends an OSC 52 request. Jotline cannot confirm that the system clipboard
-changed. Terminal.app often blocks OSC 52. Many Linux terminals can allow it.
-If copy appears to do nothing, check the terminal's clipboard permissions, not
-a Jotline setting.
+Copy uses pbcopy on macOS, and wl-copy, xclip, or xsel on Linux when those
+tools exist. Jotline confirms a copy only after that tool succeeds. It also
+sends an OSC 52 request for terminals that honor it. Terminal.app blocks OSC 52;
+macOS copy does not depend on it. If copy appears to do nothing, the OS
+clipboard tool is missing and the terminal ignored OSC 52.
 
 Input methods compose characters in the terminal. Jotline stores the Unicode it
 receives. Combining marks, CJK, Arabic, and emoji round-trip as entered. If

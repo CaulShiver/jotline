@@ -26,8 +26,8 @@ the writing core remains offline.
    [the terminal checklist](docs/terminal-testing.md). VoiceOver on
    Terminal.app and Orca on Linux are a **1.0 ship criterion**. The headless
    pass in [docs/terminal-reports/](docs/terminal-reports/) is toward that
-   gate, not a substitute. Clipboard copy remains an OSC 52 request. Windows
-   is out of scope.
+   gate, not a substitute. Clipboard copy uses the OS clipboard when a native
+   tool is present, and OSC 52 as a fallback request. Windows is out of scope.
 3. Measure search with [synthetic vault benchmarks](docs/vault-scale.md) before
    introducing indexing. In-memory scan still meets the bar; doctor, conflicts,
    and backups remain the durability product.

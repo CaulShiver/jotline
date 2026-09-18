@@ -6,6 +6,21 @@ Windows is out of scope. Git is not required.
 The same wheel is published for every supported OS. You do not need to hunt a
 filename on the GitHub Releases page.
 
+## PyPI
+
+```sh
+uv tool install jotline
+# or
+pipx install jotline
+jotline
+```
+
+Optional encryption extra:
+
+```sh
+uv tool install 'jotline[encryption]'
+```
+
 ## One-liner (GitHub Release)
 
 ```sh
@@ -21,24 +36,6 @@ saving `install.py` locally).
 
 If the command is not on PATH, follow uv’s `uv tool update-shell` or pipx’s
 `pipx ensurepath` instructions and reopen the terminal.
-
-## PyPI
-
-After the tagged release publishes to PyPI, the same command works on Linux
-and macOS:
-
-```sh
-uv tool install jotline
-# or
-pipx install jotline
-jotline
-```
-
-Optional encryption extra:
-
-```sh
-uv tool install 'jotline[encryption]'
-```
 
 ## Checksums and a named wheel
 

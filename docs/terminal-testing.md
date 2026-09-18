@@ -29,7 +29,8 @@ Use a disposable vault: `jotline --vault PATH_TO_EMPTY_TEST_FOLDER`.
    platform's input method. Save, reopen and export; compare exact text. Check
    selection, cursor movement and undo around combining marks and wide glyphs.
 5. Copy a synthetic note, paste into another application, and verify the result.
-   Repeat with OSC 52 disabled: Jotline should describe clipboard access as a
+   On macOS, `pbpaste` should match after Copy (pbcopy), even in Terminal.app.
+   When no OS clipboard tool is available, Jotline should describe OSC 52 as a
    request, not claim that the destination clipboard was successfully changed.
 6. Enable the screen reader. Check whether editor text, labels, focus, dialog
    changes and save failures are announced. Record missing announcements as
