@@ -31,7 +31,7 @@ jotline
 The installer downloads the latest release wheel and `SHA256SUMS`, verifies the
 SHA-256 digest, then installs with `uv tool`, `pipx`, or `pip` (whichever it
 finds). Add `--force` after the script to reinstall, or `--encryption` for the
-optional cryptography extra. Pin a version with `--tag v0.9.7` (pass that after
+optional cryptography extra. Pin a version with `--tag v0.9.8` (pass that after
 saving `install.py` locally).
 
 If the command is not on PATH, follow uv’s `uv tool update-shell` or pipx’s
@@ -43,13 +43,13 @@ If the command is not on PATH, follow uv’s `uv tool update-shell` or pipx’s
 want to verify by hand. Hashes confirm that the file matches that release’s
 checksum list; they are not a separate publisher signature.
 
-Current wheel: `jotline-0.9.7-py3-none-any.whl`
+Current wheel: `jotline-0.9.8-py3-none-any.whl`
 
 ```sh
 # Linux
-sha256sum jotline-0.9.7-py3-none-any.whl
+sha256sum jotline-0.9.8-py3-none-any.whl
 # macOS
-shasum -a 256 jotline-0.9.7-py3-none-any.whl
+shasum -a 256 jotline-0.9.8-py3-none-any.whl
 ```
 
 Compare the hash with the matching filename in `SHA256SUMS` before installing.
@@ -57,16 +57,16 @@ Compare the hash with the matching filename in `SHA256SUMS` before installing.
 With a downloaded wheel, from that folder:
 
 ```sh
-uv tool install ./jotline-0.9.7-py3-none-any.whl
+uv tool install ./jotline-0.9.8-py3-none-any.whl
 # or
-pipx install ./jotline-0.9.7-py3-none-any.whl
+pipx install ./jotline-0.9.8-py3-none-any.whl
 ```
 
 To try without uv or pipx:
 
 ```sh
 python -m venv jotline-env
-jotline-env/bin/python -m pip install ./jotline-0.9.7-py3-none-any.whl
+jotline-env/bin/python -m pip install ./jotline-0.9.8-py3-none-any.whl
 jotline-env/bin/jotline
 ```
 
@@ -79,7 +79,7 @@ one-liner with `--force`, or install a specific tag:
 
 ```sh
 python3 install.py --force
-python3 install.py --tag v0.9.7 --force
+python3 install.py --tag v0.9.8 --force
 uv tool install --force jotline
 pipx install --force jotline
 jotline --version
