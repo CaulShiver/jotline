@@ -18,6 +18,7 @@ class QuickCapture(App[str | None]):
     TITLE = "jotline capture"
     CSS = """
     Screen { background: $background; color: $foreground; }
+    Tooltip { visibility: hidden; }
     #capture-title { height: 2; padding: 1 2 0 2; color: $accent; text-style: bold; }
     #capture-editor { height: 1fr; border: none; background: $background; margin: 0 1; }
     #capture-hint { height: 1; padding: 0 2; color: $text-muted; }

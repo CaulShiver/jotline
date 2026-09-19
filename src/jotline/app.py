@@ -59,6 +59,7 @@ class Jotline(App):
     ENABLE_COMMAND_PALETTE = False
     CSS = """
     Screen { background: $background; color: $foreground; }
+    Tooltip { visibility: hidden; }
     #brand { height: 3; padding: 1 2 0 2; color: $accent; text-style: bold; }
     #workspace { height: 1fr; }
     #sidebar { width: 32; min-width: 22; border-right: solid $primary-muted; padding: 0 1; }
@@ -169,7 +170,8 @@ class Jotline(App):
                         yield Button(label, id="md-" + style, classes="markdown-format", tooltip=hint)
                     yield Button("More", id="md-more", tooltip="All Markdown formats, including tables and code blocks")
                     yield Button("Preview", id="md-preview", tooltip="Preview Markdown; Esc returns to writing")
-                editor = MarkdownEditor("", soft_wrap=True, tab_behavior="focus", show_line_numbers=False, id="editor")
+                editor = MarkdownEditor("", soft_wrap=True, tab_behavior="indent", show_line_numbers=False, id="editor")
+                editor.indent_width = 2
                 editor.tooltip = "Note editor. Start typing to capture. Text saves automatically."
                 yield editor
                 connections = ConnectionsBar("", id="connections", markup=False)
