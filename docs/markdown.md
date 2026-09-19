@@ -8,6 +8,12 @@ plain `.md` files.
 Enter continues a bullet (`- `), numbered (`1. ` becomes `2. `), task (`- [ ] `)
 or quote (`> `) line. Press Enter on an empty item to end the list.
 
+**Tab** inserts indentation at the cursor. On a list item or selected lines it
+indents the whole line or selection by two spaces; **Shift+Tab** removes one
+level. Enter keeps the current indentation, including in plain text and code
+blocks. Use **Ctrl+Tab** / **Ctrl+Shift+Tab** to move focus out of the editor,
+or **Ctrl+F** to search notes. Hover descriptions stay hidden.
+
 Select text with the mouse or Shift + arrow keys, then click **Bold**, **Italic**,
 **H**, **List**, **Task**, **Link**, or **Code** above the editor. **More** opens
 all formats, and **Preview** shows the rendered note. The toolbar scrolls in

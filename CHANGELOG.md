@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Hide mouse-hover tooltips throughout the app and quick capture.
+- Tab indents in the note editor, Shift+Tab outdents, and Enter keeps leading
+  indentation. Selected lines and list items indent together. Ctrl+Tab and
+  Ctrl+Shift+Tab move focus between controls.
+
 ## 0.9.8 — 2026-09-18
 
 - Copy uses `pbcopy` on macOS and `wl-copy` / `xclip` / `xsel` on Linux when

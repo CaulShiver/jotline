@@ -15,6 +15,7 @@ import re
 from rich.cells import cell_len
 from rich.style import Style
 from textual import events
+from textual.binding import Binding
 from textual.color import Color
 from textual.theme import Theme
 from textual.widgets import TextArea
@@ -492,6 +493,10 @@ class MarkdownEditor(TextArea):
     """
 
     THEME_NAME = "jotline-markdown"
+    BINDINGS = [
+        Binding("ctrl+tab", "app.focus_next", "Next control", show=False),
+        Binding("ctrl+shift+tab", "app.focus_previous", "Previous control", show=False),
+    ]
     # Class-level defaults: TextArea.__init__ builds the highlight map before a
     # subclass __init__ could run, so these must exist on the class.
     markdown_highlighting = True
@@ -596,11 +601,25 @@ class MarkdownEditor(TextArea):
                 highlights.pop(row, None)
         return True
 
+    def check_consume_key(self, key: str, character: str | None = None) -> bool:
+        if not self.read_only and self.tab_behavior == "indent" and key == "shift+tab":
+            return True
+        return super().check_consume_key(key, character)
+
     async def _on_key(self, event: events.Key) -> None:
-        if event.key == "enter" and self.smart_lists and not self.read_only and self.selection.is_empty:
+        if not self.read_only and self.tab_behavior == "indent" and event.key in ("tab", "shift+tab"):
+            row, _ = self.cursor_location
+            if (event.key == "shift+tab" or not self.selection.is_empty
+                    or list_item(self.document.get_line(row))):
+                event.stop()
+                event.prevent_default()
+                self._restart_blink()
+                self.apply_format("outdent" if event.key == "shift+tab" else "indent")
+                return
+        if event.key == "enter" and not self.read_only and self.selection.is_empty:
             row, column = self.cursor_location
             line = self.document.get_line(row)
-            action = continuation(line, column)
+            action = continuation(line, column) if self.smart_lists else None
             if action:
                 fenced = self._fenced if self._fenced is not None else fenced_rows(self.document.lines[:row + 1])
                 if row not in fenced:
@@ -613,6 +632,14 @@ class MarkdownEditor(TextArea):
                     else:
                         self._replace_via_keyboard("\n" + prefix, (row, column), (row, column))
                     return
+            prefix = line[:column]
+            indentation = prefix[:len(prefix) - len(prefix.lstrip(" \t"))]
+            if indentation:
+                event.stop()
+                event.prevent_default()
+                self._restart_blink()
+                self._replace_via_keyboard("\n" + indentation, (row, column), (row, column))
+                return
         await super()._on_key(event)
 
     def char_offset(self, location: tuple[int, int], text: str | None = None) -> int:
