@@ -35,6 +35,9 @@ formatting:
 | Format table · insert or tidy | Inserts a table, or lines up the columns of the table under the cursor (alignment colons kept) |
 | Format horizontal rule | `---` on its own line |
 
+Preview pauses above 256 KiB, 600 nonblank lines, or 400 table separator
+characters across the note; editing and saving remain available.
+
 **Preview rendered Markdown** opens a full-screen preview. **Toggle side-by-side
 Markdown preview** keeps a live preview beside the editor that follows your
 typing and cursor; it needs a terminal wider than 80 columns, and below that the

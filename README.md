@@ -299,7 +299,10 @@ On macOS, an explicitly set `XDG_DATA_HOME` or an existing vault at the old
 `~/.local/share/jotline/notes` location continues to be used.
 Set an override with `export JOTLINE_VAULT="$HOME/Notes"`.
 
-Use a local filesystem with hard-link support (APFS or ext4). File contents
+Use a local filesystem with hard-link support (APFS or ext4). When hard links
+are unavailable, Jotline tries an atomic exclusive rename. If neither method
+is supported, it refuses publication and reports where any displaced original
+was retained instead of replacing another writer's file. File contents
 are flushed before publication. Unix permission warnings apply on Linux and
 macOS.
 
@@ -491,7 +494,8 @@ unsaved writing. Scroll with the arrow/Page Up/Page Down keys or mouse; press
 `Esc` to return to the same editor selection. Preview is a read-only snapshot;
 reopen it after editing. Notes stay plain Markdown on disk.
 
-Preview supports notes up to 256 KiB to keep rendering responsive. Larger notes
+Preview supports notes up to 256 KiB, 600 nonblank lines, and 400 table separator
+characters across the note to keep rendering responsive. Larger notes
 remain editable and saveable. Images, raw HTML, and interactive task checkboxes
 are not rendered as browser content. Preview links do not open files or browsers.
 Click a `[[note link]]` in preview to open it; use **Follow a link** from the

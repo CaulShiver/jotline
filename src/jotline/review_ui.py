@@ -110,7 +110,7 @@ class Review:
     def preview_fits(self, body: str) -> bool:
         lines = body.splitlines()
         blocks = sum(1 for line in lines if line.strip())
-        cells = max((line.count("|") for line in lines), default=0)
+        cells = sum(line.count("|") for line in lines)
         return (len(body.encode("utf-8")) <= self.PREVIEW_MAX_BYTES and blocks <= self.PREVIEW_MAX_BLOCKS
                 and cells <= self.PREVIEW_MAX_CELLS)
 
@@ -128,7 +128,8 @@ class Review:
         body = self.current.body
         if not self.preview_fits(body):
             self.notify(f"Preview supports notes up to {self.PREVIEW_MAX_BYTES // 1024} KiB and "
-                        f"{self.PREVIEW_MAX_BLOCKS} lines of content. You can still edit and save this note.",
+                        f"{self.PREVIEW_MAX_BLOCKS} lines of content and {self.PREVIEW_MAX_CELLS} table separators. "
+                        "You can still edit and save this note.",
                         severity="warning")
             return
         self.push_screen(MarkdownPreview(self.preview_markdown(body)))
@@ -159,7 +160,8 @@ class Review:
         body = editor.text
         text = (self.preview_markdown(body) if self.preview_fits(body) else
                 f"*Preview paused: this note is longer than {self.PREVIEW_MAX_BLOCKS} lines of content "
-                f"or {self.PREVIEW_MAX_BYTES // 1024} KiB. Editing and saving still work.*")
+                f"or {self.PREVIEW_MAX_BYTES // 1024} KiB, or has more than {self.PREVIEW_MAX_CELLS} table separators. "
+                "Editing and saving still work.*")
         ratio = editor.cursor_location[0] / max(1, editor.document.line_count - 1)
         changed = text != self._live_preview_text
         if not changed and ratio == self._live_preview_ratio:

@@ -23,7 +23,7 @@ from textual.widgets.text_area import Edit, TextAreaTheme
 
 from .limits import EDIT_LIMIT_BYTES
 from .store import LINK as WIKI, TAG
-from .tasks import FENCE, TASK, closes_fence, code_spans, fenced_rows, set_done
+from .tasks import FENCE, TASK, closes_fence, code_spans, fenced_rows, opens_fence, set_done
 
 # Above this size the editor stays plain so typing never waits on highlighting.
 HIGHLIGHT_MAX_CHARS = 512 * 1024
@@ -65,10 +65,6 @@ BARE_URL = re.compile(r"<?(?:https?|mailto):[^\s<>()]+>?")
 UNWRAP_RUNS = {"bold": {"**", "__", "***", "___"}, "italic": {"*", "_", "***", "___"}, "strike": {"~~"}}
 
 Highlight = tuple[int, int | None, str]
-
-
-def _bytes(text: str, index: int) -> int:
-    return len(text[:index].encode("utf-8"))
 
 
 def list_item(line: str, pos: int = 0) -> re.Match | None:
@@ -158,7 +154,10 @@ def highlight_line(line: str) -> list[Highlight]:
     spans = [span for span in spans if span[1] > span[0]]
     if line.isascii():
         return spans
-    return [(_bytes(line, start), _bytes(line, end), name) for start, end, name in spans]
+    offsets = [0]
+    for char in line:
+        offsets.append(offsets[-1] + len(char.encode('utf-8')))
+    return [(offsets[start], offsets[end], name) for start, end, name in spans]
 
 
 def highlight_fenced(line: str) -> list[Highlight]:
@@ -842,12 +841,13 @@ class MarkdownEditor(TextArea):
     def format_code_block(self, start: tuple[int, int], end: tuple[int, int]) -> None:
         rows = self.document.lines
         first, last = self.selected_rows(start, end)
-        opener = FENCE.fullmatch(rows[first])
+        opener = opens_fence(rows[first])
         if (end[1] == 0 and end[0] > first and opener and closes_fence(rows[end[0]], opener)
                 and not any(closes_fence(rows[row], opener) for row in range(first + 1, end[0]))):
             last = end[0]
         lines = rows[first:last + 1]
-        if last > first and opener and closes_fence(lines[-1], opener):
+        if (last > first and opener and closes_fence(lines[-1], opener)
+                and not any(closes_fence(line, opener) for line in lines[1:-1])):
             inner = lines[1:-1]
             self.replace("\n".join(inner), (first, 0), (last, len(lines[-1])))
             self.move_cursor((first, 0))

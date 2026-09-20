@@ -109,10 +109,24 @@ async def test_live_desktop_change_preserves_editing_and_manual_theme(tmp_path, 
         assert app.current_theme.background == '#f0f0f0'
         await pilot.press('ctrl+z')
         assert editor.text == ''
+        assert app.omarchy_sync._timer is not None
         app.theme = 'nord'
         palette.write_text(PALETTE)
         await pilot.pause(1.2)
         assert app.theme == 'nord'
+        assert app.omarchy_sync._timer is None
+
+
+async def test_omarchy_poll_runs_only_while_theme_is_omarchy(tmp_path):
+    vault = Vault(tmp_path / 'notes')
+    app = Jotline(vault)
+    async with app.run_test():
+        assert app.theme != 'omarchy'
+        assert app.omarchy_sync._timer is None
+        app.theme = 'omarchy'
+        assert app.omarchy_sync._timer is not None
+        app.theme = 'jotline'
+        assert app.omarchy_sync._timer is None
 
 
 async def test_missing_palette_recovers_and_capture_follows(palette):
@@ -129,3 +143,4 @@ async def test_missing_palette_recovers_and_capture_follows(palette):
         assert editor.text == 'hi'
         assert editor._theme.cursor_style.bgcolor == Color.parse('#eceff2').rich_color
         assert editor._theme.selection_style.bgcolor == Color.parse('#2b2f37').rich_color
+        assert app.omarchy_sync._timer is not None

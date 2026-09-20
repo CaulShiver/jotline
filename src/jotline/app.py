@@ -47,12 +47,18 @@ __all__ = ["Command", "FindInNote", "Jotline", "MarkdownPreview", "Palette", "Re
 
 def _bind_capabilities(target, *sources):
     """Copy public methods and constants onto the app class without mixin inheritance or MRO."""
+    original = set(target.__dict__)
+    bound: dict[str, type] = {}
     for source in sources:
         for name, value in source.__dict__.items():
-            if name.startswith("_") or name in target.__dict__:
+            if name.startswith("_") or name in original:
                 continue
-            if callable(value) or isinstance(value, (int, float, str, bytes, tuple, frozenset)):
-                setattr(target, name, value)
+            if not (callable(value) or isinstance(value, (int, float, str, bytes, tuple, frozenset))):
+                continue
+            if name in bound:
+                raise RuntimeError(f"{name} is defined on both {bound[name].__name__} and {source.__name__}")
+            bound[name] = source
+            setattr(target, name, value)
 
 
 class Jotline(App):
@@ -1035,7 +1041,7 @@ class Jotline(App):
                         for collection in COLLECTIONS)
         commands.extend(self.workflow_commands(Command))
         commands.extend(self.navigation_commands(Command))
-        commands.extend(self.action_workflow_commands(Command))
+        commands.extend(self.recipe_commands(Command))
         commands.extend(self.review_commands(Command))
         commands.extend(self.encryption_commands(Command))
         commands.extend(self.connect_commands(Command))

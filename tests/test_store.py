@@ -177,8 +177,20 @@ def test_read_workspace_guard_and_shared_titles(tmp_path):
     assert vault.titles('default') == {}
     with pytest.raises(ValueError, match=OTHER_WORKSPACE):
         vault.read(note.id, workspace='default')
-    with vault.locked() as directory:
+    with vault.write_lock() as directory:
         assert vault.read(note.id, workspace='work', directory=directory).id == note.id
         with pytest.raises(ValueError, match=OTHER_WORKSPACE):
             vault.read(note.id, workspace='default', directory=directory)
     assert vault.read(note.id).workspace == 'work'
+
+
+def test_sticky_warnings_are_not_duplicated(tmp_path):
+    vault = Vault(tmp_path)
+    vault.retain_warning("kept")
+    vault.retain_warning("kept")
+    vault.retain_warning("other")
+    assert vault.sticky_warnings == ["kept", "other"]
+    assert vault.warnings.count("kept") == 1
+    vault.notes()
+    assert vault.warnings.count("kept") == 1
+    assert vault.warnings.count("other") == 1

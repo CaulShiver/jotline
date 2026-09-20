@@ -46,6 +46,11 @@ def code_spans(line: str, start: int = 0) -> list[tuple[int, int]]:
     return spans
 
 
+def opens_fence(line: str) -> re.Match | None:
+    marker = FENCE.fullmatch(line)
+    return marker if marker and not (marker[1][0] == '`' and '`' in marker[2]) else None
+
+
 def closes_fence(line: str, opener: re.Match) -> bool:
     """Whether a line closes this opener under the shared fenced-code rules."""
     marker = FENCE.fullmatch(line)
@@ -64,12 +69,11 @@ def fenced_rows(lines: list[str]) -> set[int]:
     """
     rows, fence = set(), None
     for row, line in enumerate(lines):
-        marker = FENCE.fullmatch(line)
         if fence is not None:
             rows.add(row)
             if closes_fence(line, fence):
                 fence = None
-        elif marker and not (marker[1][0] == "`" and "`" in marker[2]):
+        elif marker := opens_fence(line):
             fence = marker
             rows.add(row)
     return rows

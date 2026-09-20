@@ -99,7 +99,7 @@ def test_unicode_cli_pipeline_without_utf8_environment(tmp_path):
 def test_separate_process_cannot_write_until_lock_is_released(tmp_path):
     vault = Vault(tmp_path)
     command = [sys.executable, '-m', 'jotline', '--vault', str(tmp_path), 'capture', 'saved']
-    with vault.locked():
+    with vault.write_lock():
         blocked = subprocess.run(command, capture_output=True, timeout=15)
         assert blocked.returncode == 1
         assert b'busy' in blocked.stderr

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Integrate the earlier publication-race hardening: when hard links are
+  unavailable, use exclusive rename on Linux/macOS so saves, key setup and
+  exports cannot overwrite a competing creator. Failed-save recovery keeps
+  the displaced original when restoration cannot succeed safely.
+- Preserve all original fences when formatting selections spanning multiple
+  code blocks, compute Unicode highlight offsets in one pass, and limit the
+  total number of preview table separators across the note.
+- Apply CLI tags under one write lock, retain each storage warning once,
+  reject duplicate capability names, and poll the desktop theme only while
+  Omarchy is selected. Recipe helpers no longer look like Textual actions.
 - Speed up large-outline opening and editing by reusing unchanged row identities,
   painting Rich text only for visible rows, and skipping idle serialization.
   Plain flat lists use a narrow parser shortcut; other Markdown keeps CommonMark.

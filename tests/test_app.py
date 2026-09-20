@@ -1,3 +1,4 @@
+import pytest
 from textual.widgets import Footer, Input, OptionList, Static, TextArea
 from jotline.app import Jotline, Palette
 from jotline.store import Vault
@@ -179,3 +180,47 @@ async def test_duplicate_note_choices_include_recovery_context(tmp_path):
     assert first.updated[:10] in choices[first.id]
     assert 'First detail' in choices[first.id]
     assert first.id[:8] in choices[first.id]
+
+
+def test_recipe_helpers_are_not_textual_actions():
+    assert hasattr(Jotline, "recipe_commands")
+    assert hasattr(Jotline, "recipe_options")
+    assert not hasattr(Jotline, "action_workflow_commands")
+    assert not hasattr(Jotline, "action_recipe_options")
+
+
+def test_bind_capabilities_rejects_collisions_and_keeps_target_methods():
+    from jotline.app import _bind_capabilities
+
+    class Target:
+        keep = "original"
+
+        def own(self):
+            return "own"
+
+    class First:
+        copied = 1
+
+        def shared(self):
+            return "first"
+
+    class Second:
+        copied = 2
+
+        def shared(self):
+            return "second"
+
+    with pytest.raises(RuntimeError, match="is defined on both First and Second"):
+        _bind_capabilities(Target, First, Second)
+
+    class Extra:
+        added = 3
+
+        def extra(self):
+            return "extra"
+
+    _bind_capabilities(Target, Extra)
+    assert Target.keep == "original"
+    assert Target.added == 3
+    assert Target().own() == "own"
+    assert Target().extra() == "extra"

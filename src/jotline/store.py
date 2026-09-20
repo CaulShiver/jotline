@@ -25,6 +25,7 @@ from .filesystem import (
     read_regular_fd,
     read_regular_file,
     replace_at,
+    rename_noreplace,
     unlink_quietly,
     vault_lock,
 )
@@ -224,17 +225,23 @@ class Vault:
         self.cipher: NoteCipher | None = None
         self._cache: dict[str, tuple[FileSignature, Note, int, float]] = {}
         self.permission_warning = ("Vault is writable by other users; use chmod go-w to protect note replacement"
-                                   if os.name != "nt" and self.path.stat().st_mode & 0o022 else "")
+                                   if self.path.stat().st_mode & 0o022 else "")
         if self.permission_warning:
             self.warnings.append(self.permission_warning)
 
-    def locked(self):
+    def write_lock(self):
         """Hold the vault's write lock (unrelated to Note.locked, which means encrypted and sealed)."""
         return vault_lock(self.path, self.lock_timeout)
 
+    def locked(self):
+        """Compatibility alias for callers using the original lock helper."""
+        return self.write_lock()
+
     def retain_warning(self, message: str) -> None:
-        self.sticky_warnings.append(message)
-        self.warnings.append(message)
+        if message not in self.sticky_warnings:
+            self.sticky_warnings.append(message)
+        if message not in self.warnings:
+            self.warnings.append(message)
 
     def file(self, note_id: str) -> Path:
         return self.path / f"{validate_note_id(note_id)}.md"
@@ -356,7 +363,7 @@ class Vault:
         return sorted(notes, key=lambda n: (n.starred, n.updated, n.id), reverse=True)
 
     def save(self, note: Note, *, preserve_updated: bool = False) -> None:
-        with self.locked() as directory:
+        with self.write_lock() as directory:
             self._save_locked(note, directory, preserve_updated=preserve_updated)
 
     def _check_saveable(self, note: Note) -> None:
@@ -441,9 +448,10 @@ class Vault:
                     collision = read_regular_at(directory, filename)
                 except FileNotFoundError:
                     try:
-                        # Rename works on every filesystem; the displaced
-                        # inode is the only copy, so put it straight back.
-                        replace_at(directory, displaced, filename)
+                        # Restore only into a free name. A creator after the
+                        # read above must not lose its own content.
+                        rename_noreplace(displaced, filename,
+                                         src_dir_fd=directory, dst_dir_fd=directory)
                     except BaseException as restore_error:
                         self.retain_warning(
                             f"Save failed; the original note was retained as {displaced}: {restore_error}")
@@ -583,12 +591,12 @@ class Vault:
         return sorted(notes, key=lambda note: (note.updated, note.id), reverse=True)
 
     def backup(self) -> Path:
-        with self.locked() as directory:
+        with self.write_lock() as directory:
             return history.backup(self, vault_directory=directory)
 
     def daily(self, template: str = "# {{date}}\n\n", workspace: str = "default",
               when: date | None = None) -> Note:
-        with self.locked() as directory:
+        with self.write_lock() as directory:
             return self._daily_locked(template, workspace, when=when, directory=directory)
 
     def _daily_locked(self, template: str, workspace: str = "default", *,
@@ -608,7 +616,7 @@ class Vault:
     def append_daily(self, body: str, template: str = "# {{date}}\n\n", workspace: str = "default",
                      when: date | None = None) -> Note:
         """Append a shell capture atomically with respect to other Jotline writers."""
-        with self.locked() as directory:
+        with self.write_lock() as directory:
             note = self._daily_locked(template, workspace, when=when, directory=directory)
             separator = "" if note.body.endswith("\n\n") else ("\n" if note.body.endswith("\n") else "\n\n")
             note.body = note.body + separator + body + "\n"
@@ -622,7 +630,7 @@ class Vault:
         With line_break, text that would run into the existing body is joined
         on a new line in the note's own newline style.
         """
-        with self.locked() as directory:
+        with self.write_lock() as directory:
             note = self.read(note_id, workspace=workspace, directory=directory)
             if line_break and note.body and body:
                 newline = "\r\n" if "\r\n" in note.body else ("\r" if "\r" in note.body else "\n")
@@ -767,7 +775,7 @@ class Vault:
             raise ValueError(already)
         note_key = new_note_key()
         key = KeyFile.create(passphrase, note_key, n=n or SCRYPT_N)
-        with self.locked() as directory:
+        with self.write_lock() as directory:
             try:
                 # Never replace an existing key: notes sealed with it would become unreadable.
                 self._write_key(directory, key, replace_existing=False)
@@ -778,14 +786,14 @@ class Vault:
 
     def change_passphrase(self, old: str, new: str) -> None:
         """Rewrap the note key; encrypted notes themselves are not rewritten."""
-        with self.locked() as directory:
+        with self.write_lock() as directory:
             current = self._read_key(directory)
             note_key = current.unwrap(old)
             self._write_key(directory, KeyFile.create(new, note_key, n=current.n), replace_existing=True)
 
     def set_encrypted(self, note_id: str, workspace: str, encrypted: bool) -> tuple[Note, bool]:
         """Encrypt or decrypt one note; returns the note and whether anything changed."""
-        with self.locked() as directory:
+        with self.write_lock() as directory:
             note = self.read(note_id, workspace=workspace, directory=directory)
             if note.locked or (encrypted and self.cipher is None):
                 raise ValueError(LOCKED)
@@ -800,7 +808,7 @@ class Vault:
 
     def update_body(self, note_id: str, workspace: str, change) -> Note:
         """Replace a note's text with change(text) under one lock."""
-        with self.locked() as directory:
+        with self.write_lock() as directory:
             note = self.read(note_id, workspace=workspace, directory=directory)
             if note.locked:
                 raise ValueError(LOCKED)
