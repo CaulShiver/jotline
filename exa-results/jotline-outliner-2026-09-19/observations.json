@@ -1,0 +1,398 @@
+{
+  "date": "2026-09-19",
+  "environment": {
+    "python": "3.12.14 (main, Aug 14 2026, 15:34:45) [Clang 22.1.3 ]",
+    "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+    "packages": {
+      "textual": "8.2.8",
+      "markdown-it-py": "4.2.0"
+    },
+    "source_sha256": {
+      "outliner.py": "3c8e8cf7ce7590f47ab4d6f9b2647d0bd7574b4f1e8fdb466af513395e0c859f",
+      "outliner_ui.py": "ad69c03b101a30f6ad8c9e136fffddb765804bb4a5945623cb19aadd4fecaa97"
+    }
+  },
+  "method": {
+    "data": "Synthetic flat outlines, 70 ASCII characters per line including separator.",
+    "sync": "Actual OutlinerScreen.sync, with source.location_at, source.replace and app.capture_current_buffer stubbed. Measures serialization, equality, UTF-8 size check, prefix/suffix scan and slicing. Excludes actual editor mutation, rendering, event delivery, filesystem I/O and autosave.",
+    "tree": "Build an unmounted Textual Tree of leaf nodes. Excludes screen layout, actual OutlinerScreen.rebuild labels and painting.",
+    "caveat": "Single-machine microbenchmarks, not end-to-end latency or user-study results."
+  },
+  "correctness": {
+    "parent_ownership": {
+      "input": "- Parent\n  - Child\n\n  Parent paragraph\n- Other",
+      "outline_before": [
+        {
+          "content": "Parent",
+          "parent": null
+        },
+        {
+          "content": "Child\n\n  Parent paragraph",
+          "parent": "Parent"
+        },
+        {
+          "content": "Other",
+          "parent": null
+        }
+      ],
+      "markdown_structure": [
+        {
+          "type": "list_item_open",
+          "level": 1,
+          "lines": [
+            0,
+            4
+          ]
+        },
+        {
+          "type": "paragraph_open",
+          "level": 2,
+          "lines": [
+            0,
+            1
+          ]
+        },
+        {
+          "type": "list_item_open",
+          "level": 3,
+          "lines": [
+            1,
+            3
+          ]
+        },
+        {
+          "type": "paragraph_open",
+          "level": 4,
+          "lines": [
+            1,
+            2
+          ]
+        },
+        {
+          "type": "paragraph_open",
+          "level": 2,
+          "lines": [
+            3,
+            4
+          ]
+        },
+        {
+          "type": "list_item_open",
+          "level": 1,
+          "lines": [
+            4,
+            5
+          ]
+        },
+        {
+          "type": "paragraph_open",
+          "level": 2,
+          "lines": [
+            4,
+            5
+          ]
+        }
+      ],
+      "after_child_delete": "- Parent\n- Other",
+      "parent_paragraph_survives": false
+    },
+    "ordered_indent": {
+      "input": "10. Parent\n  - Is this a child?\n11. Next",
+      "byte_roundtrip": true,
+      "outline": [
+        {
+          "content": "Parent",
+          "parent": null
+        },
+        {
+          "content": "Is this a child?",
+          "parent": "Parent"
+        },
+        {
+          "content": "Next",
+          "parent": null
+        }
+      ],
+      "markdown_structure": [
+        {
+          "type": "list_item_open",
+          "level": 1,
+          "lines": [
+            0,
+            1
+          ]
+        },
+        {
+          "type": "paragraph_open",
+          "level": 2,
+          "lines": [
+            0,
+            1
+          ]
+        },
+        {
+          "type": "list_item_open",
+          "level": 1,
+          "lines": [
+            1,
+            2
+          ]
+        },
+        {
+          "type": "paragraph_open",
+          "level": 2,
+          "lines": [
+            1,
+            2
+          ]
+        },
+        {
+          "type": "list_item_open",
+          "level": 1,
+          "lines": [
+            2,
+            3
+          ]
+        },
+        {
+          "type": "paragraph_open",
+          "level": 2,
+          "lines": [
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    "indented_code": {
+      "input": "    - literal code\n\n- Real item",
+      "byte_roundtrip": true,
+      "outline": [
+        {
+          "content": "literal code\n",
+          "parent": null
+        },
+        {
+          "content": "Real item",
+          "parent": null
+        }
+      ],
+      "markdown_structure": [
+        {
+          "type": "code_block",
+          "level": 0,
+          "lines": [
+            0,
+            1
+          ]
+        },
+        {
+          "type": "list_item_open",
+          "level": 1,
+          "lines": [
+            2,
+            3
+          ]
+        },
+        {
+          "type": "paragraph_open",
+          "level": 2,
+          "lines": [
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    "multiline_marker": {
+      "serialized": "- Parent\n  - continuation\n  - Child\n- Other",
+      "before_reload": [
+        {
+          "content": "Parent\n- continuation",
+          "parent": null
+        },
+        {
+          "content": "Child",
+          "parent": "Parent"
+        },
+        {
+          "content": "Other",
+          "parent": null
+        }
+      ],
+      "after_reload": [
+        {
+          "content": "Parent",
+          "parent": null
+        },
+        {
+          "content": "continuation",
+          "parent": "Parent"
+        },
+        {
+          "content": "Child",
+          "parent": "Parent"
+        },
+        {
+          "content": "Other",
+          "parent": null
+        }
+      ],
+      "markdown_structure": [
+        {
+          "type": "list_item_open",
+          "level": 1,
+          "lines": [
+            0,
+            3
+          ]
+        },
+        {
+          "type": "paragraph_open",
+          "level": 2,
+          "lines": [
+            0,
+            1
+          ]
+        },
+        {
+          "type": "list_item_open",
+          "level": 3,
+          "lines": [
+            1,
+            2
+          ]
+        },
+        {
+          "type": "paragraph_open",
+          "level": 4,
+          "lines": [
+            1,
+            2
+          ]
+        },
+        {
+          "type": "list_item_open",
+          "level": 3,
+          "lines": [
+            2,
+            3
+          ]
+        },
+        {
+          "type": "paragraph_open",
+          "level": 4,
+          "lines": [
+            2,
+            3
+          ]
+        },
+        {
+          "type": "list_item_open",
+          "level": 1,
+          "lines": [
+            3,
+            4
+          ]
+        },
+        {
+          "type": "paragraph_open",
+          "level": 2,
+          "lines": [
+            3,
+            4
+          ]
+        }
+      ],
+      "same_structure_after_reload": false
+    },
+    "unfinished_fence": {
+      "serialized": "- ```\n  text\n  - Child\n- Other",
+      "before_reload": [
+        {
+          "content": "```\ntext",
+          "parent": null
+        },
+        {
+          "content": "Child",
+          "parent": "```"
+        },
+        {
+          "content": "Other",
+          "parent": null
+        }
+      ],
+      "after_reload": [
+        {
+          "content": "```\ntext\n- Child\n- Other",
+          "parent": null
+        }
+      ],
+      "markdown_structure": [
+        {
+          "type": "list_item_open",
+          "level": 1,
+          "lines": [
+            0,
+            3
+          ]
+        },
+        {
+          "type": "fence",
+          "level": 2,
+          "lines": [
+            0,
+            3
+          ]
+        },
+        {
+          "type": "list_item_open",
+          "level": 1,
+          "lines": [
+            3,
+            4
+          ]
+        },
+        {
+          "type": "paragraph_open",
+          "level": 2,
+          "lines": [
+            3,
+            4
+          ]
+        }
+      ],
+      "same_structure_after_reload": false
+    }
+  },
+  "benchmarks": [
+    {
+      "blocks": 100,
+      "bytes": 6999,
+      "parse_median_ms_7_runs": 0.28,
+      "sync_preparation_median_ms_11_runs": 1.21,
+      "unmounted_tree_build_median_ms_3_runs": 2.29
+    },
+    {
+      "blocks": 1000,
+      "bytes": 69999,
+      "parse_median_ms_7_runs": 2.83,
+      "sync_preparation_median_ms_11_runs": 13.23,
+      "unmounted_tree_build_median_ms_3_runs": 21.41
+    },
+    {
+      "blocks": 5000,
+      "bytes": 349999,
+      "parse_median_ms_7_runs": 16.76,
+      "sync_preparation_median_ms_11_runs": 67.77,
+      "unmounted_tree_build_median_ms_3_runs": 103.56
+    },
+    {
+      "blocks": 10000,
+      "bytes": 699999,
+      "parse_median_ms_7_runs": 38.14,
+      "sync_preparation_median_ms_11_runs": 133.88,
+      "unmounted_tree_build_median_ms_3_runs": 259.82
+    }
+  ]
+}

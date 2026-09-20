@@ -158,7 +158,7 @@ def _scan_folder(root: Path, recursive: bool, plan: ImportPlan) -> list[Path]:
                     except OSError as error:
                         plan.warnings.append(f'{child.name}: {error}')
                         continue
-                    if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
+                    if stat.S_ISLNK(info.st_mode):
                         plan.warnings.append(f'Skipped link: {child.name}')
                     elif stat.S_ISDIR(info.st_mode) and recursive:
                         pending.append(child)

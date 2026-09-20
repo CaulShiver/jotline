@@ -27,7 +27,7 @@ SORT_ORDERS = ('updated', 'created', 'title')
 VIEW_COLLECTIONS = ('all', 'starred', *COLLECTIONS)
 DEFAULT_COLLECTIONS = ('inbox', 'projects', 'areas', 'resources')
 BOOLEAN_SETTINGS = ('line_numbers', 'soft_wrap', 'highlight_line', 'markdown_highlighting', 'smart_lists',
-                    'focus_on_start', 'show_hints')
+                    'focus_on_start', 'show_hints', 'outliner_on_start')
 
 
 HOTKEY_ACTIONS = {
@@ -50,6 +50,7 @@ HOTKEY_ACTIONS = {
     "format_quote": ("", "Format quote (optional)"),
     "live_preview": ("", "Side-by-side preview (optional)"),
     "outline": ("", "Jump to heading (optional)"),
+    "outliner": ("", "Open outliner (optional)"),
     "daily_previous": ("", "Previous daily log (optional)"),
     "daily_next": ("", "Next daily log (optional)"),
     "daily_date": ("", "Open daily log by date (optional)"),
@@ -131,6 +132,8 @@ class Settings:
     smart_lists: bool = True
     focus_on_start: bool = False
     show_hints: bool = True
+    outliner_on_start: bool = False
+    outline_hotkeys: dict[str, str] = field(default_factory=dict)
     sidebar_width: int = 32
     autosave_seconds: float = 0.7
     sort_order: str = 'updated'
@@ -207,6 +210,16 @@ class Settings:
             raise ValueError("Hotkeys must map known Jotline actions to keys")
         if any(not isinstance(key, str) for key in self.hotkeys.values()):
             raise ValueError("Each hotkey must be text")
+        from .outliner_ui import ACTIONS
+        if not isinstance(self.outline_hotkeys, dict) or set(self.outline_hotkeys) - ACTIONS.keys():
+            raise ValueError("Outline shortcuts must name known outline commands")
+        outline_used = set()
+        for key in self.outline_hotkeys.values():
+            if not isinstance(key, str) or not re.fullmatch(r"(?:ctrl|alt)\+[a-z]|f(?:[2-9]|1[0-2])", key):
+                raise ValueError("Outline shortcuts use ctrl+letter, alt+letter, or f2–f12")
+            if key in RESERVED_HOTKEYS or key in outline_used or key in self.effective_hotkeys.values():
+                raise ValueError("Outline shortcut is reserved or assigned more than once")
+            outline_used.add(key)
         used = {}
         for action, key in self.effective_hotkeys.items():
             label = HOTKEY_ACTIONS[action][1]

@@ -12,6 +12,8 @@ import fcntl
 import os
 from pathlib import Path
 import stat
+import sys
+from functools import lru_cache
 from time import monotonic, sleep
 from typing import NamedTuple
 from uuid import uuid4
@@ -19,6 +21,44 @@ from uuid import uuid4
 from .limits import LOCK_TIMEOUT_SECONDS, MAX_NOTE_BYTES
 
 fs = os
+
+
+@lru_cache(maxsize=1)
+def _exclusive_rename():
+    """Resolve the native no-replace operation without weakening dir_fd semantics."""
+    import ctypes
+
+    if sys.platform.startswith('linux'):
+        name, flag, cwd = 'renameat2', 1, -100  # RENAME_NOREPLACE, AT_FDCWD
+    elif sys.platform == 'darwin':
+        name, flag, cwd = 'renameatx_np', 4, -2  # RENAME_EXCL, AT_FDCWD
+    else:
+        raise OSError(errno.ENOTSUP, 'This platform cannot safely publish without hard links')
+    try:
+        operation = getattr(ctypes.CDLL(None, use_errno=True), name)
+    except AttributeError:
+        raise OSError(errno.ENOTSUP, 'This platform cannot safely publish without hard links') from None
+    operation.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    operation.restype = ctypes.c_int
+    return operation, flag, cwd
+
+
+def rename_noreplace(source, target, *, src_dir_fd=None, dst_dir_fd=None) -> None:
+    """Atomically move a complete file only if the destination name is free.
+
+    Never emulate this with stat followed by replace: that loses a concurrent
+    creator's file. Unsupported filesystems fail with the source still intact.
+    """
+    import ctypes
+
+    operation, flag, cwd = _exclusive_rename()
+    source_bytes, target_bytes = os.fsencode(source), os.fsencode(target)
+    if b'\0' in source_bytes or b'\0' in target_bytes:
+        raise ValueError('embedded null byte')
+    if operation(cwd if src_dir_fd is None else src_dir_fd, source_bytes,
+                 cwd if dst_dir_fd is None else dst_dir_fd, target_bytes, flag):
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), os.fspath(target))
 
 
 class FileSignature(NamedTuple):
@@ -99,19 +139,14 @@ def publish_new(directory: int, source: str, target: str) -> None:
     """Publish a complete file under a name that must not already exist.
 
     A hard link is atomic and exclusive. Where the filesystem refuses links,
-    fall back to an existence check plus rename so the note is never lost.
+    use a native exclusive rename, or fail without replacing another file.
     """
     try:
         fs.link(source, target, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
     except OSError as error:
         if isinstance(error, FileExistsError) or not link_unsupported(error):
             raise
-        try:
-            fs.stat(target, dir_fd=directory, follow_symlinks=False)
-        except FileNotFoundError:
-            fs.replace(source, target, src_dir_fd=directory, dst_dir_fd=directory)
-        else:
-            raise FileExistsError(errno.EEXIST, "File exists", target) from None
+        rename_noreplace(source, target, src_dir_fd=directory, dst_dir_fd=directory)
 
 
 def follow_root_prefix_symlinks(path: Path) -> Path:

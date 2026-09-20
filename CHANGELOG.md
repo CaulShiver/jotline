@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- Integrate the earlier publication-race hardening: when hard links are
+  unavailable, use exclusive rename on Linux/macOS so saves, key setup and
+  exports cannot overwrite a competing creator. Failed-save recovery keeps
+  the displaced original when restoration cannot succeed safely.
+- Preserve all original fences when formatting selections spanning multiple
+  code blocks, compute Unicode highlight offsets in one pass, and limit the
+  total number of preview table separators across the note.
+- Apply CLI tags under one write lock, retain each storage warning once,
+  reject duplicate capability names, and poll the desktop theme only while
+  Omarchy is selected. Recipe helpers no longer look like Textual actions.
+- Speed up large-outline opening and editing by reusing unchanged row identities,
+  painting Rich text only for visible rows, and skipping idle serialization.
+  Plain flat lists use a narrow parser shortcut; other Markdown keeps CommonMark.
+  Resolve note-link aliases once per workspace snapshot and accelerate tag scans.
+- Fix outline duplication, mixed line endings, folded search navigation, and
+  pending edits when switching notes or leaving a focused branch. Whole-note
+  actions update the complete note when run from the outliner.
+- Keep encrypted-note outline preferences in memory and remove stale saved
+  state when encryption is enabled. Bound malformed Markdown parsing and
+  encryption key resource costs; tolerate malformed outline preferences.
+- Add an inline outliner with wrapped rows, folding, branch focus, clickable
+  breadcrumbs, search through folded content, bulk selection, grouping,
+  duplication, move-to, and explicit outline/text paste commands.
+- Parse outline structure with CommonMark source ranges. Preserve parent text
+  after children; respect code fences, numbered marker widths, and tab stops.
+- Share source undo and autosave, preserve block identity through transactions,
+  remember per-note view positions, and offer a default outliner preference.
+  Note navigation, formatting, link/snippet completion, and command shortcuts
+  work inside the outliner. Every outline action has a menu alternative.
+- Add optional permanent block references and read-only branch previews.
+  Ordinary edits patch one block and refresh its rows with one reusable editor.
 - Hide mouse-hover tooltips throughout the app and quick capture.
 - Tab indents in the note editor, Shift+Tab outdents, and Enter keeps leading
   indentation. Selected lines and list items indent together. Ctrl+Tab and

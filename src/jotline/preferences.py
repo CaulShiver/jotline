@@ -61,7 +61,8 @@ class Preferences(Modal[Settings | None]):
                                     ('markdown_highlighting', 'Highlight Markdown syntax'),
                                     ('smart_lists', 'Continue lists and quotes on Enter'),
                                     ('focus_on_start', 'Start in focus mode'),
-                                    ('show_hints', 'Show writing hints')):
+                                    ('show_hints', 'Show writing hints'),
+                                    ('outliner_on_start', 'Open notes in outliner mode')):
                     with Horizontal(classes='pref-toggle'):
                         yield Label(title)
                         yield Switch(getattr(s, name), id='pref-' + name, tooltip=title)
@@ -80,6 +81,13 @@ class Preferences(Modal[Settings | None]):
                     yield Label(label, classes='pref-label')
                     yield Input(hotkeys[action], placeholder='Unassigned' if not default else '',
                                 id='hotkey-' + action, tooltip=label)
+                yield Label('Outliner shortcuts', classes='pref-section')
+                yield Static('Optional overrides for outline commands. All commands are also in the outliner menu.')
+                from .outliner_ui import ACTIONS
+                for action, label in ACTIONS.items():
+                    yield Label(label, classes='pref-label')
+                    yield Input(s.outline_hotkeys.get(action, ''), id='outline-hotkey-' + action,
+                                placeholder='Use default / menu', tooltip=label)
                 yield Button('Reset hotkeys', id='reset-hotkeys')
                 yield Label('Daily template', classes='pref-section')
                 yield Label('Daily template · {{date}} becomes today’s date; existing logs stay unchanged', classes='pref-label')
@@ -124,6 +132,10 @@ class Preferences(Modal[Settings | None]):
                 raise ValueError('Autosave interval must be a number') from None
             data['hotkeys'] = {action: self.query_one('#hotkey-' + action, Input).value.strip().lower()
                                for action in HOTKEY_ACTIONS}
+            from .outliner_ui import ACTIONS
+            data['outline_hotkeys'] = {action: self.query_one('#outline-hotkey-' + action, Input).value.strip().lower()
+                                       for action in ACTIONS
+                                       if self.query_one('#outline-hotkey-' + action, Input).value.strip()}
             data['daily_template'] = self.query_one('#daily-template', TextArea).text
             settings = Settings(**data)
             settings.validate()
@@ -133,6 +145,9 @@ class Preferences(Modal[Settings | None]):
         self.dismiss(settings)
 
     def reset_hotkeys(self):
+        from .outliner_ui import ACTIONS
+        for action in ACTIONS:
+            self.query_one('#outline-hotkey-' + action, Input).value = ''
         for action, (key, _) in HOTKEY_ACTIONS.items():
             self.query_one('#hotkey-' + action, Input).value = key
 
@@ -150,7 +165,7 @@ class Preferences(Modal[Settings | None]):
                 if name == 'hotkeys':
                     self.reset_hotkeys()
                     continue
-                if name in ('active_workspace', 'workspace_names', 'saved_views', 'actions', '_baseline'):
+                if name in ('active_workspace', 'workspace_names', 'saved_views', 'actions', '_baseline', 'outline_hotkeys'):
                     continue
                 if name == 'daily_template':
                     self.query_one('#daily-template', TextArea).load_text(value)

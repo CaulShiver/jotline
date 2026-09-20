@@ -215,7 +215,7 @@ class ActionEditor(Modal[tuple | None]):
 class ActionWorkflows:
     """Local action recipes. Bound onto Jotline; not inherited."""
 
-    def action_workflow_commands(self, Command):
+    def recipe_commands(self, Command):
         return [Command('actions', 'Run local action', self.choose_action, group='everyday'),
                 Command('save-action', 'Save action recipe from this note', self.save_action_prompt),
                 Command('delete-action', 'Delete local action', lambda: self.choose_action(delete=True)),
@@ -317,6 +317,10 @@ class ActionWorkflows:
             self.replace_whole_text(note.body)
         self._editor_baseline = editor.text
         self.current, self.dirty, self.last_error = note, False, ''
+        from .outliner_ui import OutlinerScreen
+        for screen in self.screen_stack:
+            if isinstance(screen, OutlinerScreen) and screen.note_id == note.id:
+                screen.update_save_status()
         self.refresh_notes()
         self.connections()
 
@@ -325,9 +329,9 @@ class ActionWorkflows:
             self.builtin_action_recipe()
             return
         self.push_screen(Palette([(name, name) for name in self.settings.actions], 'Manage action'),
-                         self.action_recipe_options)
+                         self.recipe_options)
 
-    def action_recipe_options(self, name):
+    def recipe_options(self, name):
         if name:
             self.push_screen(Palette([('edit', 'Edit steps or rename'), ('duplicate', 'Duplicate and edit'),
                                       ('export', 'Export shareable recipe')], name),

@@ -10,7 +10,6 @@ from textual.widgets import Input, Label, OptionList, SelectionList, Static
 
 from .accessibility import named
 from .limits import EDIT_LIMIT_BYTES
-from .markdown_editor import MarkdownEditor
 from .modal import Modal, Palette, TextPrompt
 from .store import tagged_body, wiki_link
 from .templates import Templates
@@ -127,16 +126,18 @@ class Workflows:
 
     def insert_editor_text(self, body) -> bool:
         """Replace the selection, or insert at the cursor, as one undo step within the size limit."""
-        editor = self.query_one('#editor', MarkdownEditor)
+        editor = self.editing_surface()
         if not editor.insert_checked(body, limit=EDIT_LIMIT_BYTES):
             self.notify('Result exceeds the note size limit', severity='error')
             return False
+        if editor is not self.editor():
+            self.screen.flush()
         self.capture_current_buffer()
         return True
 
     def action_extract_note(self) -> None:
         """Turn the selection into a new inbox note and leave a [[link]] behind."""
-        editor = self.query_one('#editor', MarkdownEditor)
+        editor = self.editing_surface()
         selected = editor.selected_text
         if not selected.strip():
             self.notify('Select the text to extract first')
@@ -166,7 +167,7 @@ class Workflows:
 
     def replace_whole_text(self, body) -> None:
         """Replace the whole note text as one undo step, keeping the cursor where it was."""
-        editor = self.query_one('#editor', MarkdownEditor)
+        editor = self.editor()
         position = editor.cursor_location
         editor.history.checkpoint()
         editor.replace(body, (0, 0), editor.location_at(len(editor.text), editor.text))
@@ -176,7 +177,7 @@ class Workflows:
     def replace_editor_text(self, body) -> bool:
         if body is None:
             return False
-        editor = self.query_one('#editor', MarkdownEditor)
+        editor = self.editing_surface()
         if not editor.replace_checked(body, limit=EDIT_LIMIT_BYTES):
             self.notify('Result exceeds the note size limit', severity='error')
             return False
@@ -208,7 +209,7 @@ class Workflows:
         TextArea.Changed can be delivered after a palette dismiss, when the
         editor no longer has focus. The trigger at the cursor is the gate.
         """
-        editor = self.query_one('#editor', MarkdownEditor)
+        editor = self.editing_surface()
         if not editor.selection.is_empty:
             return
         offset = editor.char_offset(editor.cursor_location, editor.text)
@@ -256,7 +257,7 @@ class Workflows:
     def insert_template_named(self, name):
         if name:
             try:
-                editor = self.query_one('#editor', MarkdownEditor)
+                editor = self.editing_surface()
                 self.capture_current_buffer()
                 body = Templates(self.vault.path).render(name, self.workspace, title=self.current.title,
                                                         body=editor.text, selection=editor.selected_text)
@@ -273,12 +274,12 @@ class Workflows:
         if key:
             try:
                 self.insert_editor_text(self.read_in_workspace(key).body)
-                self.query_one('#editor', MarkdownEditor).focus()
+                self.editing_surface().focus()
             except (ValueError, OSError) as error:
                 self.notify(str(error), severity='error')
 
     def arrange(self, paragraphs):
-        body = self.query_one('#editor', MarkdownEditor).text
+        body = self.editing_surface().text
         if len(body.encode('utf-8')) > MAX_ARRANGE_BYTES or len(split_parts(body, paragraphs)) > MAX_ARRANGE_ITEMS:
             self.notify(f'Arrange supports up to {MAX_ARRANGE_BYTES // 1024} KiB and {MAX_ARRANGE_ITEMS:,} items',
                         severity='warning')

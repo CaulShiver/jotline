@@ -73,7 +73,7 @@ def test_contended_lock_times_out_and_can_be_retried(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "LOCK_TIMEOUT_SECONDS", 0.05)
     vault = Vault(tmp_path)
     note = vault.new("keep this")
-    with vault.locked():
+    with vault.write_lock():
         start = time.monotonic()
         with pytest.raises(OSError, match="busy"):
             vault.save(note)

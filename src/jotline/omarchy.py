@@ -32,7 +32,7 @@ def load_omarchy_theme() -> Theme | None:
         try:
             # Theme directories may legitimately be symlinks. Avoid opening
             # special files, and bound the amount of configuration we parse.
-            descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0))
+            descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
             with os.fdopen(descriptor, 'rb') as source:
                 if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
                     continue
@@ -87,10 +87,20 @@ class OmarchySync:
     def __init__(self, app: App):
         self.app = app
         self.palette = load_omarchy_theme() or replace(JOTLINE_THEME, name='omarchy')
+        self._timer = None
         app.register_theme(self.palette)
 
     def start(self) -> None:
-        self.app.set_interval(1, self.refresh)
+        self.app.watch(self.app, 'theme', self._theme_changed)
+
+    def _theme_changed(self, _old: str, theme: str) -> None:
+        if theme == 'omarchy':
+            if self._timer is None:
+                self._timer = self.app.set_interval(1, self.refresh)
+            return
+        if self._timer is not None:
+            self._timer.stop()
+            self._timer = None
 
     def refresh(self) -> None:
         if self.app.theme != 'omarchy':

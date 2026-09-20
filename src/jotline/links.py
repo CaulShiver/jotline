@@ -6,13 +6,15 @@ not become fake backlinks.
 """
 from __future__ import annotations
 
+from bisect import bisect_right
 from dataclasses import dataclass, field
+from itertools import chain
 import re
 from typing import Callable, Iterator, Literal, Protocol
 from urllib.parse import quote, unquote
 
 from .limits import MAX_DERIVED_ITEMS
-from .tasks import CODE_SPAN, fenced_pairs
+from .tasks import code_spans, fenced_pairs
 
 LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|([^\[\]]*))?\]\]")
 SNIPPET_LIMIT = 80
@@ -100,8 +102,9 @@ def wiki_target_from_href(href: str) -> str | None:
 
 
 def _overlaps_code(start: int, end: int, spans: list[tuple[int, int]]) -> bool:
-    return any(span_start <= start < span_end or span_start < end <= span_end
-               for span_start, span_end in spans)
+    index = bisect_right(spans, (start, end))
+    return bool((index and spans[index - 1][1] > start)
+                or (index < len(spans) and spans[index][0] < end))
 
 
 def iter_wiki_links(body: str) -> Iterator[WikiLink]:
@@ -112,7 +115,8 @@ def iter_wiki_links(body: str) -> Iterator[WikiLink]:
     for row, (content, _) in enumerate(pairs):
         if row in fenced or "[[" not in content:
             continue
-        spans = [(match.start(), match.end()) for match in CODE_SPAN.finditer(content)]
+        spans = code_spans(content)
+        snippet = snippet_text(content)
         for match in LINK.finditer(content):
             if _overlaps_code(match.start(), match.end(), spans):
                 continue
@@ -122,7 +126,7 @@ def iter_wiki_links(body: str) -> Iterator[WikiLink]:
                 line=row + 1,
                 column=match.start(),
                 end_column=match.end(),
-                snippet=snippet_text(content),
+                snippet=snippet,
             )
 
 
@@ -155,7 +159,8 @@ def rewrite_wiki_links(body: str, replace: Callable[[WikiLink, re.Match[str]], s
     result = []
     for row, (content, ending) in enumerate(pairs):
         if row not in fenced and "[[" in content:
-            spans = [(match.start(), match.end()) for match in CODE_SPAN.finditer(content)]
+            spans = code_spans(content)
+            snippet = snippet_text(content)
             pieces, last = [], 0
             for match in LINK.finditer(content):
                 if _overlaps_code(match.start(), match.end(), spans):
@@ -166,7 +171,7 @@ def rewrite_wiki_links(body: str, replace: Callable[[WikiLink, re.Match[str]], s
                     line=row + 1,
                     column=match.start(),
                     end_column=match.end(),
-                    snippet=snippet_text(content),
+                    snippet=snippet,
                 )
                 pieces.append(content[last:match.start()] + replace(link, match))
                 last = match.end()
@@ -189,19 +194,35 @@ def stabilize_wiki_target(body: str, target: str, note: LinkedNote) -> str:
 
 
 def note_matches_target(note: LinkedNote, token: str) -> bool:
-    return token in {note.id, note.title, note.heading}
+    return token.split('#^', 1)[0] in {note.id, note.title, note.heading}
 
 
 def resolve_link_targets(notes: list[LinkedNote], token: str) -> list[LinkedNote]:
     return [note for note in notes if note_matches_target(note, token)]
 
 
-def outgoing_refs(body: str, notes: list[LinkedNote]) -> list[LinkRef]:
+def index_link_targets(notes: list[LinkedNote]) -> dict[str, list[LinkedNote]]:
+    """Resolve aliases once for a note snapshot, retaining ambiguous matches in order."""
+    targets: dict[str, list[LinkedNote]] = {}
+    for note in notes:
+        for alias in {note.id, note.title, note.heading}:
+            targets.setdefault(alias, []).append(note)
+    return targets
+
+
+def outgoing_refs(body: str, notes: list[LinkedNote], *,
+                  target_index: dict[str, list[LinkedNote]] | None = None) -> list[LinkRef]:
     """Resolve each wiki link in ``body`` against notes already in the workspace."""
+    links = iter_wiki_links(body)
+    first = next(links, None)
+    if first is None:
+        return []
+    if target_index is None:
+        target_index = index_link_targets(notes)
     refs: list[LinkRef] = []
     seen: set[tuple[str, str, str | None]] = set()
-    for link in iter_wiki_links(body):
-        matches = resolve_link_targets(notes, link.target)
+    for link in chain((first,), links):
+        matches = target_index.get(link.target.split('#^', 1)[0], ())
         if not matches:
             key = ("outgoing", link.target, None)
             if key not in seen:
@@ -225,8 +246,12 @@ def incoming_refs(target: LinkedNote, notes: list[LinkedNote]) -> list[LinkRef]:
     for note in notes:
         if note.id == target.id:
             continue
+        # Exact alias equality below requires the alias to occur verbatim in
+        # the body. Most peers cannot point here; avoid parsing those notes.
+        if not any(key in note.body for key in keys):
+            continue
         for link in iter_wiki_links(note.body):
-            if link.target not in keys:
+            if link.target.split('#^', 1)[0] not in keys:
                 continue
             refs.append(LinkRef("incoming", link.target, link.snippet, "ok", note.id, note.title))
             break

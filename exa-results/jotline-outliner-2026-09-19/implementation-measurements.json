@@ -1,0 +1,18 @@
+[
+  {
+    "blocks": 1000,
+    "open_headless_ms": 290.14,
+    "flush_median_ms": 2.3,
+    "flush_max_ms": 3.14,
+    "editor_widgets": 1,
+    "visible_rows": 24
+  },
+  {
+    "blocks": 10000,
+    "open_headless_ms": 1211.93,
+    "flush_median_ms": 20.26,
+    "flush_max_ms": 21.47,
+    "editor_widgets": 1,
+    "visible_rows": 24
+  }
+]

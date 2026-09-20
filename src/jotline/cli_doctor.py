@@ -47,7 +47,7 @@ def check_managed_directory(path: Path, label: str, warnings: list[str]) -> Path
         return None
     try:
         info = path.lstat()
-        if not stat.S_ISDIR(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+        if not stat.S_ISDIR(info.st_mode):
             warnings.append(f"{label}: Not a safe directory: {path.name}")
             return None
         return path
@@ -85,7 +85,7 @@ def check_lock(vault: Vault, warnings: list[str]) -> dict[str, object]:
     path = vault.path / ".jotline.lock"
     state = {"path": str(path), "exists": path.exists() or path.is_symlink(), "acquired": False}
     try:
-        with vault.locked():
+        with vault.write_lock():
             state["acquired"] = True
     except OSError as error:
         warnings.append(f"lock: {error}")

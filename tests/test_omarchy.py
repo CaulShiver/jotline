@@ -109,10 +109,46 @@ async def test_live_desktop_change_preserves_editing_and_manual_theme(tmp_path, 
         assert app.current_theme.background == '#f0f0f0'
         await pilot.press('ctrl+z')
         assert editor.text == ''
+        assert app.omarchy_sync._timer is not None
         app.theme = 'nord'
         palette.write_text(PALETTE)
         await pilot.pause(1.2)
         assert app.theme == 'nord'
+        assert app.omarchy_sync._timer is None
+
+
+async def test_omarchy_poll_runs_only_while_theme_is_omarchy(tmp_path):
+    vault = Vault(tmp_path / 'notes')
+    app = Jotline(vault)
+    async with app.run_test():
+        assert app.theme != 'omarchy'
+        assert app.omarchy_sync._timer is None
+        app.theme = 'omarchy'
+        assert app.omarchy_sync._timer is not None
+        app.theme = 'jotline'
+        assert app.omarchy_sync._timer is None
+
+
+async def test_palette_refresh_invalidates_cached_selection_rows(tmp_path, palette):
+    vault = Vault(tmp_path / 'notes')
+    Settings(theme='omarchy').save(vault.path / '.jotline-settings.json')
+    app = Jotline(vault)
+    async with app.run_test(size=(120, 36)):
+        editor = app.query_one('#editor', TextArea)
+        editor.cursor_blink = False
+        editor.load_text('# Heading\ntext')
+        editor.move_cursor((0, 0))
+        editor.move_cursor((1, 2), select=True)
+        old = next(segment for segment in editor.render_line(0) if 'Heading' in segment.text)
+        assert old.style.bgcolor == Color.parse('#2b2f37').rich_color
+        palette.write_text(PALETTE.replace('#2b2f37', '#cccccc'))
+        app.omarchy_sync.refresh()
+        # Exercise the theme notification before unrelated layout or cursor
+        # events get a chance to evict the old rendered row.
+        editor._app_theme_changed()
+        assert editor._theme.selection_style.bgcolor == Color.parse('#cccccc').rich_color
+        updated = next(segment for segment in editor.render_line(0) if 'Heading' in segment.text)
+        assert updated.style.bgcolor == Color.parse('#cccccc').rich_color
 
 
 async def test_missing_palette_recovers_and_capture_follows(palette):
@@ -129,3 +165,4 @@ async def test_missing_palette_recovers_and_capture_follows(palette):
         assert editor.text == 'hi'
         assert editor._theme.cursor_style.bgcolor == Color.parse('#eceff2').rich_color
         assert editor._theme.selection_style.bgcolor == Color.parse('#2b2f37').rich_color
+        assert app.omarchy_sync._timer is not None

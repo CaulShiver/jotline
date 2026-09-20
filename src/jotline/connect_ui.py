@@ -8,6 +8,7 @@ from .links import (
     LinkRef,
     connection_mark,
     incoming_refs,
+    index_link_targets,
     outgoing_refs,
     stabilize_wiki_target,
     wiki_link_at,
@@ -41,8 +42,15 @@ class Connections:
             snapshot = self.vault.notes() if notes is None else notes
             self._link_notes = self.vault.workspace_notes(self.workspace, notes=snapshot)
             self._link_workspace = self.workspace
+            self._link_targets = None
             self._incoming_for = ""
         return self._link_notes
+
+    def cached_link_targets(self):
+        notes = self.cached_workspace_notes()
+        if self._link_targets is None:
+            self._link_targets = index_link_targets(notes)
+        return self._link_targets
 
     def current_outgoing(self):
         if self.current.locked:
@@ -51,7 +59,9 @@ class Connections:
             body = self.editor().text
         except Exception:
             body = self.current.body
-        return outgoing_refs(body, self.cached_workspace_notes())
+        if "[[" not in body:
+            return []
+        return outgoing_refs(body, self.cached_workspace_notes(), target_index=self.cached_link_targets())
 
     def current_incoming(self, *, refresh: bool = False):
         notes = self.cached_workspace_notes(refresh=refresh)
@@ -153,8 +163,9 @@ class Connections:
             self.load_id(resolved[0].note_id)
             return
         if resolved:
+            resolved_ids = {item.note_id for item in resolved}
             notes = [note for note in self.cached_workspace_notes()
-                     if note.id in {item.note_id for item in resolved}]
+                     if note.id in resolved_ids]
             self.push_screen(Palette(self.note_choices(notes), "Follow a link"),
                              lambda key: self.load_id(key) if key else None)
             return
@@ -164,8 +175,40 @@ class Connections:
         self.notify("No link under the cursor. Place the cursor on [[…]] or insert a note link.")
 
     def follow_wiki_target(self, target: str) -> None:
-        matches = [note for note in self.cached_workspace_notes()
-                   if target in {note.id, note.title, note.heading}]
+        if '#^' in target:
+            from .outliner import ANCHOR, Outline
+            from .outliner_ui import OutlinerScreen
+            note_target, anchor = target.split('#^', 1)
+            matches = self.cached_link_targets().get(note_target, [])
+            if len(matches) != 1:
+                self.notify('Block reference needs one existing note.', severity='warning')
+                return
+            self.load_id(matches[0].id)
+            if self.current.id != matches[0].id:
+                return
+            if isinstance(self.screen, OutlinerScreen):
+                self.screen.update_save_status()
+                outline = self.screen.outline
+            else:
+                outline = Outline(self.editor().text)
+            blocks = [block for block in outline.walk()
+                      if (match := ANCHOR.search(block.content)) and match[1] == anchor]
+            if len(blocks) != 1:
+                self.notify('Referenced block is missing or its anchor is duplicated.', severity='warning')
+                return
+            block = blocks[0]
+            if isinstance(self.screen, OutlinerScreen):
+                self.screen.current, self.screen.zoomed = block, block.parent
+                parent = block.parent
+                while parent:
+                    parent.collapsed = False
+                    parent = parent.parent
+                self.screen.record_location()
+                self.screen.rebuild()
+            else:
+                self.editor().move_cursor((outline.row(block), 0))
+            return
+        matches = self.cached_link_targets().get(target, [])
         if len(matches) == 1:
             self.load_id(matches[0].id)
             return

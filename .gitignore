@@ -13,3 +13,4 @@ audit/
 .jotline-settings.json
 .jotline.lock
 .jotline-action-history.json
+.jotline-outline.json

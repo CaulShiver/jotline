@@ -61,6 +61,14 @@ def test_ambiguous_prefix_names_the_candidates(tmp_path):
     assert "#work" not in vault.read("abcd0001").body + vault.read("abcd0002").body
 
 
+def test_tag_rewrites_the_note_under_one_lock(tmp_path):
+    vault = Vault(tmp_path)
+    note = saved(vault, "body", "abcd1234")
+    result = run_cli(tmp_path, "tag", "abcd", "work")
+    assert result.returncode == 0, result.stderr
+    assert "#work" in vault.read(note.id).body
+
+
 def test_exact_title_ignores_case_and_must_be_unique(tmp_path):
     vault = Vault(tmp_path)
     review = saved(vault, "# Weekly Review\n\n- [ ] plan")

@@ -484,9 +484,8 @@ def run_list(run: Invocation) -> None:
 
 
 def run_tag(run: Invocation) -> None:
-    note = read_note_here(run, run.args.id)
-    note.body = tagged_body(note.body, " ".join(run.args.tags))
-    run.vault.save(note)
+    tags = " ".join(run.args.tags)
+    note = run.vault.update_body(run.args.id, run.workspace, lambda body: tagged_body(body, tags))
     print(note.id)
 
 

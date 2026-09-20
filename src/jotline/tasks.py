@@ -7,7 +7,48 @@ import re
 
 TASK = re.compile(r"(?P<lead>[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+\[)(?P<mark>[ xX])(?P<gap>\][ \t]+)(?P<text>\S.*)")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
-CODE_SPAN = re.compile(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)")
+BACKTICK_RUN = re.compile(r"`+|\n")
+
+
+def code_spans(line: str, start: int = 0) -> list[tuple[int, int]]:
+    """Disjoint inline code ranges, matching complete equal-length backtick runs.
+
+    Index the next run of each length once instead of retrying a backtracking
+    expression at every backtick. An unmatched opener stays ordinary text;
+    a matched opener consumes every intervening run. Newlines remain barriers,
+    matching the editor's line-based inline syntax.
+    """
+    runs: list[tuple[int, int]] = []
+    closers: list[int | None] = []
+    previous: dict[int, int] = {}
+    for match in BACKTICK_RUN.finditer(line, start):
+        if match[0] == "\n":
+            previous.clear()
+            continue
+        if match.start() and line[match.start() - 1] == "`":
+            continue  # Never treat a suffix of a longer run as a delimiter.
+        length = match.end() - match.start()
+        index = len(runs)
+        if length in previous:
+            closers[previous[length]] = index
+        previous[length] = index
+        runs.append(match.span())
+        closers.append(None)
+    spans = []
+    index = 0
+    while index < len(runs):
+        closing = closers[index]
+        if closing is None:
+            index += 1
+        else:
+            spans.append((runs[index][0], runs[closing][1]))
+            index = closing + 1
+    return spans
+
+
+def opens_fence(line: str) -> re.Match | None:
+    marker = FENCE.fullmatch(line)
+    return marker if marker and not (marker[1][0] == '`' and '`' in marker[2]) else None
 
 
 def closes_fence(line: str, opener: re.Match) -> bool:
@@ -28,12 +69,11 @@ def fenced_rows(lines: list[str]) -> set[int]:
     """
     rows, fence = set(), None
     for row, line in enumerate(lines):
-        marker = FENCE.fullmatch(line)
         if fence is not None:
             rows.add(row)
             if closes_fence(line, fence):
                 fence = None
-        elif marker and not (marker[1][0] == "`" and "`" in marker[2]):
+        elif marker := opens_fence(line):
             fence = marker
             rows.add(row)
     return rows

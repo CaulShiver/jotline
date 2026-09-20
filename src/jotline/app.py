@@ -30,6 +30,7 @@ from .modal import Palette, TextPrompt
 from .navigation import Views, Walkthrough
 from .note_menu import NoteList, NoteMenu
 from .omarchy import OmarchySync
+from .outliner_ui import OutlinerScreen
 from .preferences import Preferences
 from .recovery_ui import HealthScreen
 from .review_ui import Review
@@ -46,12 +47,18 @@ __all__ = ["Command", "FindInNote", "Jotline", "MarkdownPreview", "Palette", "Re
 
 def _bind_capabilities(target, *sources):
     """Copy public methods and constants onto the app class without mixin inheritance or MRO."""
+    original = set(target.__dict__)
+    bound: dict[str, type] = {}
     for source in sources:
         for name, value in source.__dict__.items():
-            if name.startswith("_") or name in target.__dict__:
+            if name.startswith("_") or name in original:
                 continue
-            if callable(value) or isinstance(value, (int, float, str, bytes, tuple, frozenset)):
-                setattr(target, name, value)
+            if not (callable(value) or isinstance(value, (int, float, str, bytes, tuple, frozenset))):
+                continue
+            if name in bound:
+                raise RuntimeError(f"{name} is defined on both {bound[name].__name__} and {source.__name__}")
+            bound[name] = source
+            setattr(target, name, value)
 
 
 class Jotline(App):
@@ -170,6 +177,7 @@ class Jotline(App):
                         yield Button(label, id="md-" + style, classes="markdown-format", tooltip=hint)
                     yield Button("More", id="md-more", tooltip="All Markdown formats, including tables and code blocks")
                     yield Button("Preview", id="md-preview", tooltip="Preview Markdown; Esc returns to writing")
+                    yield Button("Outliner", id="md-outliner", tooltip="Edit collapsible blocks and move whole branches")
                 editor = MarkdownEditor("", soft_wrap=True, tab_behavior="indent", show_line_numbers=False, id="editor")
                 editor.indent_width = 2
                 editor.tooltip = "Note editor. Start typing to capture. Text saves automatically."
@@ -202,6 +210,8 @@ class Jotline(App):
             self.notify(self.settings_warning, severity='warning', timeout=10)
         self.editor().focus()
         self.notify_storage_warnings()
+        if self.settings.outliner_on_start:
+            self.call_after_refresh(self.action_outliner)
 
     def on_resize(self, event: events.Resize) -> None:
         self.update_responsive_layout(event.size)
@@ -241,6 +251,8 @@ class Jotline(App):
                 self._shown_storage_warnings.add(warning)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if isinstance(self.screen, OutlinerScreen) and action in {'commands', 'open_note', 'daily', 'daily_previous', 'daily_next', 'new', 'quit', 'settings', 'format_markdown', 'save'}:
+            return True
         if isinstance(self.screen, ModalScreen) and action not in {'focus_next', 'focus_previous'}:
             return False
         return super().check_action(action, parameters)
@@ -416,6 +428,12 @@ class Jotline(App):
     def toolbar_preview(self) -> None:
         self.action_preview()
 
+    @on(Button.Pressed, "#md-outliner")
+    def action_outliner(self) -> None:
+        if isinstance(self.screen, ModalScreen):
+            return
+        self.push_screen(OutlinerScreen(self.editor()))
+
     @on(Button.Pressed, "#nav-import")
     def navigation_import(self):
         self.import_library()
@@ -533,6 +551,13 @@ class Jotline(App):
         self.query_one("#note-heading", Static).update(Text(self.current.title + " / " + self.current.collection))
 
     def save_current(self, *, explicit: bool = False) -> bool:
+        # An inline Changed message may still be queued when a navigation or
+        # save command runs, including callbacks from a palette above it.
+        for screen in reversed(self.screen_stack):
+            if isinstance(screen, OutlinerScreen) and screen.note_id == self.current.id:
+                if not screen.flush():
+                    return False
+                break
         self.capture_current_buffer()
         if not self.dirty:
             return True
@@ -567,6 +592,11 @@ class Jotline(App):
         return note
 
     def load(self, note: Note) -> None:
+        outline_screen = self.screen if isinstance(self.screen, OutlinerScreen) else None
+        if outline_screen:
+            if not outline_screen.flush():
+                return
+            outline_screen.persist_state()
         if note.workspace != self.workspace:
             raise ValueError("Note moved to another workspace; save a recovery copy if needed")
         editor = self.editor()
@@ -581,6 +611,10 @@ class Jotline(App):
         editor.focus()
         self.status("Saved" if note.original is not None else "Ready")
         self.connections()
+        if outline_screen:
+            outline_screen.update_save_status()
+        elif self.settings.outliner_on_start and not isinstance(self.screen, ModalScreen):
+            self.call_after_refresh(self.action_outliner)
 
     def load_id(self, note_id: str) -> None:
         if not self.save_current(explicit=True):
@@ -651,9 +685,16 @@ class Jotline(App):
         self.editor().focus()
 
     def action_save(self) -> None:
+        if isinstance(self.screen, OutlinerScreen):
+            self.screen.action_save()
+            return
         self.save_current(explicit=True)
 
     def action_quit(self) -> None:
+        if isinstance(self.screen, OutlinerScreen):
+            if not self.screen.flush():
+                return
+            self.screen.persist_state()
         if self.save_current(explicit=True):
             self.exit()
 
@@ -881,7 +922,18 @@ class Jotline(App):
         self.refresh_notes()
         self.notify("Saved version restored as a new inbox note.")
 
+    def editing_surface(self) -> MarkdownEditor:
+        """Text commands target the visible editor; saving uses editor()."""
+        if isinstance(self.screen, OutlinerScreen):
+            return self.screen.block_editor()
+        return self.editor()
+
     def action_format_markdown(self, style: str) -> None:
+        if isinstance(self.screen, OutlinerScreen):
+            self.screen.block_editor().apply_format(style)
+            self.screen.flush()
+            self.screen.action_edit_block()
+            return
         editor = self.editor()
         result = editor.apply_format(style)
         if result == "tidied":
@@ -916,12 +968,17 @@ class Jotline(App):
             self.notify("Vault refreshed from disk.")
 
     def action_commands(self) -> None:
+        if isinstance(self.screen, OutlinerScreen):
+            self.screen.action_commands()
+            return
         everyday = frozenset(command.key for command in self.command_registry.values()
                              if command.group == "everyday")
         self.push_screen(Palette(self.command_choices(), "Run a command", everyday=everyday), self.command)
 
     def build_command_registry(self) -> dict[str, Command]:
         commands = [
+            Command("outliner", "Outliner · edit collapsible blocks and branches", self.action_outliner,
+                    "outliner", group="everyday"),
             Command("templates", "New note from template", self.action_templates),
             Command("save-template", "Save this note as a template", self.prompt_save_template),
             Command("template-source", "Copy template source to new note", lambda: self.action_templates(source=True)),
@@ -984,7 +1041,7 @@ class Jotline(App):
                         for collection in COLLECTIONS)
         commands.extend(self.workflow_commands(Command))
         commands.extend(self.navigation_commands(Command))
-        commands.extend(self.action_workflow_commands(Command))
+        commands.extend(self.recipe_commands(Command))
         commands.extend(self.review_commands(Command))
         commands.extend(self.encryption_commands(Command))
         commands.extend(self.connect_commands(Command))

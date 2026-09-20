@@ -18,6 +18,7 @@ import time
 from uuid import uuid4
 
 from .links import rewrite_wiki_links, wiki_href
+from .filesystem import link_unsupported, rename_noreplace
 from .tasks import TASK, fenced_pairs
 
 FORMATS = ("markdown", "html", "docx", "pdf")
@@ -319,10 +320,13 @@ def write_export(target: Path, data: bytes, *, force: bool = False) -> Path:
                 os.link(temporary, target)
             except FileExistsError:
                 raise ExportError(exists) from None
-            except OSError:
-                if os.path.lexists(target):
+            except OSError as error:
+                if not link_unsupported(error):
+                    raise
+                try:
+                    rename_noreplace(temporary, target)
+                except FileExistsError:
                     raise ExportError(exists) from None
-                os.replace(temporary, target)
     finally:
         try:
             os.unlink(temporary)
