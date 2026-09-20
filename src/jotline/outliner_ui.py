@@ -375,6 +375,8 @@ class OutlinerScreen(Modal[None]):
         event.stop()
         key = event.button.id or ''
         if event.button.has_class('crumb'):
+            if not self.flush():
+                return
             uid = event.button.name
             self.zoomed = next((b for b in self.outline.walk() if b.uid == uid), None)
             self.current = self.zoomed or self.current
@@ -553,6 +555,8 @@ class OutlinerScreen(Modal[None]):
             self.rebuild()
 
     def action_home(self):
+        if not self.flush():
+            return
         self.zoomed = None
         self.record_location()
         self.rebuild()
@@ -619,11 +623,14 @@ class OutlinerScreen(Modal[None]):
         self.app.push_screen(Palette(choices, 'Find block · includes folded branches and ancestor paths'), found)
 
     def action_restore_folds(self):
-        if self.search_folds is not None:
+        if self.search_folds is not None and self.flush():
             for block in self.outline.walk():
                 block.collapsed = self.search_folds.get(block.uid, block.collapsed)
-            while self.current.parent and self.current.parent.collapsed:
-                self.current = self.current.parent
+            parent = self.current.parent
+            while parent:
+                if parent.collapsed:
+                    self.current = parent
+                parent = parent.parent
             self.search_folds = None
             self.rebuild()
 
@@ -824,7 +831,8 @@ class OutlinerScreen(Modal[None]):
                 self.notify(str(error), severity='error')
 
     def restore_state(self):
-        state = read_state(self.app.vault.path / '.jotline-outline.json', self.note_id, self.source.text)
+        state = ({} if self.app.current.encrypted else
+                 read_state(self.app.vault.path / '.jotline-outline.json', self.note_id, self.source.text))
         rows = {row: block for block, row in self.outline.rows().items()}
         folded = state.get('folded', [])
         for row in (folded if isinstance(folded, list) else []):
@@ -843,7 +851,8 @@ class OutlinerScreen(Modal[None]):
                 'current': rows.get(self.current, 0), 'zoom': rows.get(self.zoomed),
                 'cursor': list(self.block_editor().cursor_location), 'scroll': int(self.view().scroll_y)}
         try:
-            write_state(self.app.vault.path / '.jotline-outline.json', self.note_id, data)
+            write_state(self.app.vault.path / '.jotline-outline.json', self.note_id,
+                        None if self.app.current.encrypted else data)
         except (OSError, ValueError) as error:
             self.notify('Could not save outline view: ' + str(error), severity='warning')
 

@@ -109,8 +109,9 @@ completion (`[[`), and snippets (`;;`) are available while outlining. Search
 reveals the result's ancestors; **Restore folds after search** restores the
 previous folding state. **Previous / Next outline location** return through
 branch-focus history. Folds, focused branch, caret, and scroll position are
-remembered per note in `.jotline-outline.json`. That file contains positions and
-a revision hash, not note text. External edits invalidate stored positions.
+remembered for unencrypted notes in `.jotline-outline.json`. That file contains
+positions and a revision hash. Encrypted notes keep view state only while open;
+encrypting a note removes its saved view state. External edits invalidate stored positions.
 View operations do not enter text undo history; undo preserves unrelated folds.
 Enable **Settings → Open notes in outliner mode** to make this the default.
 

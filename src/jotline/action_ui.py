@@ -317,6 +317,10 @@ class ActionWorkflows:
             self.replace_whole_text(note.body)
         self._editor_baseline = editor.text
         self.current, self.dirty, self.last_error = note, False, ''
+        from .outliner_ui import OutlinerScreen
+        for screen in self.screen_stack:
+            if isinstance(screen, OutlinerScreen) and screen.note_id == note.id:
+                screen.update_save_status()
         self.refresh_notes()
         self.connections()
 

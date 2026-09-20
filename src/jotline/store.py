@@ -483,6 +483,11 @@ class Vault:
             actual = None
         if actual != note.original:
             raise ConflictError(CONFLICT_MESSAGE)
+        if note.encrypted:
+            # Outline revisions are hashes of plaintext, so they must not remain
+            # beside ciphertext (including on otherwise unchanged saves).
+            from .outline_state import STATE_FILE, remove_state_locked
+            remove_state_locked(self.path / STATE_FILE, note.id, directory)
         previous = None
         if actual is not None:
             previous = self.parse_note(note.id, actual, None if note.locked else self.cipher)
@@ -778,6 +783,9 @@ class Vault:
             if note.locked or (encrypted and self.cipher is None):
                 raise ValueError(LOCKED)
             if note.encrypted == encrypted:
+                if encrypted:
+                    from .outline_state import STATE_FILE, remove_state_locked
+                    remove_state_locked(self.path / STATE_FILE, note.id, directory)
                 return note, False
             note.encrypted = encrypted
             self._save_locked(note, directory)

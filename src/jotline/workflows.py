@@ -167,7 +167,7 @@ class Workflows:
 
     def replace_whole_text(self, body) -> None:
         """Replace the whole note text as one undo step, keeping the cursor where it was."""
-        editor = self.editing_surface()
+        editor = self.editor()
         position = editor.cursor_location
         editor.history.checkpoint()
         editor.replace(body, (0, 0), editor.location_at(len(editor.text), editor.text))

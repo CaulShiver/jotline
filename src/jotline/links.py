@@ -6,13 +6,14 @@ not become fake backlinks.
 """
 from __future__ import annotations
 
+from bisect import bisect_right
 from dataclasses import dataclass, field
 import re
 from typing import Callable, Iterator, Literal, Protocol
 from urllib.parse import quote, unquote
 
 from .limits import MAX_DERIVED_ITEMS
-from .tasks import CODE_SPAN, fenced_pairs
+from .tasks import code_spans, fenced_pairs
 
 LINK = re.compile(r"\[\[([^\[\]|]+)(?:\|([^\[\]]*))?\]\]")
 SNIPPET_LIMIT = 80
@@ -100,8 +101,9 @@ def wiki_target_from_href(href: str) -> str | None:
 
 
 def _overlaps_code(start: int, end: int, spans: list[tuple[int, int]]) -> bool:
-    return any(span_start <= start < span_end or span_start < end <= span_end
-               for span_start, span_end in spans)
+    index = bisect_right(spans, (start, end))
+    return bool((index and spans[index - 1][1] > start)
+                or (index < len(spans) and spans[index][0] < end))
 
 
 def iter_wiki_links(body: str) -> Iterator[WikiLink]:
@@ -112,7 +114,8 @@ def iter_wiki_links(body: str) -> Iterator[WikiLink]:
     for row, (content, _) in enumerate(pairs):
         if row in fenced or "[[" not in content:
             continue
-        spans = [(match.start(), match.end()) for match in CODE_SPAN.finditer(content)]
+        spans = code_spans(content)
+        snippet = snippet_text(content)
         for match in LINK.finditer(content):
             if _overlaps_code(match.start(), match.end(), spans):
                 continue
@@ -122,7 +125,7 @@ def iter_wiki_links(body: str) -> Iterator[WikiLink]:
                 line=row + 1,
                 column=match.start(),
                 end_column=match.end(),
-                snippet=snippet_text(content),
+                snippet=snippet,
             )
 
 
@@ -155,7 +158,8 @@ def rewrite_wiki_links(body: str, replace: Callable[[WikiLink, re.Match[str]], s
     result = []
     for row, (content, ending) in enumerate(pairs):
         if row not in fenced and "[[" in content:
-            spans = [(match.start(), match.end()) for match in CODE_SPAN.finditer(content)]
+            spans = code_spans(content)
+            snippet = snippet_text(content)
             pieces, last = [], 0
             for match in LINK.finditer(content):
                 if _overlaps_code(match.start(), match.end(), spans):
@@ -166,7 +170,7 @@ def rewrite_wiki_links(body: str, replace: Callable[[WikiLink, re.Match[str]], s
                     line=row + 1,
                     column=match.start(),
                     end_column=match.end(),
-                    snippet=snippet_text(content),
+                    snippet=snippet,
                 )
                 pieces.append(content[last:match.start()] + replace(link, match))
                 last = match.end()

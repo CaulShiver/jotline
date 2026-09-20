@@ -116,13 +116,24 @@ class Block:
 
 
 class Outline:
+    """Raw-line blocks with mixed newlines normalized to the first ending style.
+
+    Uniform LF, CRLF, or CR input round-trips unchanged. Mixed-ending input,
+    such as an explicit outline clipboard paste, retains all line content but
+    ``text`` joins its lines using the first newline convention encountered.
+    """
+
     def __init__(self, text: str):
-        self.newline = '\r\n' if '\r\n' in text else '\n'
+        ending = re.search(r'\r\n|\r|\n', text)
+        self.newline = ending[0] if ending else '\n'
         self.roots: list[Block] = []
-        lines = text.split(self.newline)
+        # CommonMark recognizes all three newline conventions. Clipboard text
+        # may mix them; use the same row boundaries and normalize on output.
+        lines = re.split(r'\r\n|\r|\n', text)
         tokens = PARSER.parse(text)
         ranges: dict[Block, tuple[int, int]] = {}
         stack: list[Block | None] = []
+        opaque_blocks: set[Block] = set()
         opaque_depth = 0
         for token in tokens:
             if token.type == 'blockquote_open':
@@ -132,7 +143,13 @@ class Outline:
             if token.type == 'list_item_open':
                 start, end = token.map
                 parent = stack[-1] if stack else None
-                if opaque_depth or not list_item(lines[start]):
+                # A nested list can start on its parent's marker line ("- - A").
+                # Rows cannot own overlapping source slices; keep that entire
+                # nested list as opaque parent content instead.
+                if parent and ranges[parent][0] == start:
+                    opaque_blocks.add(parent)
+                if (opaque_depth or stack and parent is None or parent in opaque_blocks
+                        or not list_item(lines[start])):
                     stack.append(None)
                     continue
                 # Separators do not belong to the deleted/moved child.
@@ -333,13 +350,20 @@ class Outline:
         return roots
 
     def duplicate(self, block: Block) -> Block:
-        # Parsing an indented fragment would make it code: normalize first.
-        raw = '\n'.join(dedent_line(line, block.indent) for line in block.source_lines())
-        clone = Outline(raw).roots[0]
-        clone.shift(block.indent)
-        clone.parent, clone.slot = block.parent, block.slot
+        # Clone the existing structure. Dedenting and reparsing opaque code can
+        # turn it into several roots and silently discard all but the first.
+        clone = Block(block.lines[:], parent=block.parent, slot=block.slot)
+        pending = [(block, clone)]
+        while pending:
+            original, copied = pending.pop()
+            for child in original.children:
+                descendant = Block(child.lines[:], parent=copied, slot=child.slot)
+                copied.children.append(descendant)
+                pending.append((child, descendant))
         for descendant in clone.walk():
-            descendant.set_content(ANCHOR.sub('', descendant.content))
+            content = ANCHOR.sub('', descendant.content)
+            if content != descendant.content:
+                descendant.set_content(content)
         siblings = self.siblings(block)
         siblings.insert(siblings.index(block) + 1, clone)
         return clone

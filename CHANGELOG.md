@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fix outline duplication, mixed line endings, folded search navigation, and
+  pending edits when switching notes or leaving a focused branch. Whole-note
+  actions update the complete note when run from the outliner.
+- Keep encrypted-note outline preferences in memory and remove stale saved
+  state when encryption is enabled. Bound malformed Markdown parsing and
+  encryption key resource costs; tolerate malformed outline preferences.
 - Add an inline outliner with wrapped rows, folding, branch focus, clickable
   breadcrumbs, search through folded content, bulk selection, grouping,
   duplication, move-to, and explicit outline/text paste commands.

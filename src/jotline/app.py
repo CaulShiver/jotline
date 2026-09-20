@@ -545,6 +545,13 @@ class Jotline(App):
         self.query_one("#note-heading", Static).update(Text(self.current.title + " / " + self.current.collection))
 
     def save_current(self, *, explicit: bool = False) -> bool:
+        # An inline Changed message may still be queued when a navigation or
+        # save command runs, including callbacks from a palette above it.
+        for screen in reversed(self.screen_stack):
+            if isinstance(screen, OutlinerScreen) and screen.note_id == self.current.id:
+                if not screen.flush():
+                    return False
+                break
         self.capture_current_buffer()
         if not self.dirty:
             return True
