@@ -10,6 +10,7 @@ from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, HorizontalScroll
+from textual.css.query import NoMatches
 from textual.widgets import Button, Footer, Static, TextArea
 
 from .limits import EDIT_LIMIT_BYTES
@@ -250,7 +251,12 @@ class OutlinerScreen(Modal[None]):
     def position_editor(self):
         if not self.is_mounted:
             return
-        editor, view = self.block_editor(), self.view()
+        try:
+            editor, view = self.block_editor(), self.view()
+        except NoMatches:
+            # A queued layout callback may run after children are removed,
+            # while the screen is still marked mounted during shutdown.
+            return
         location = view.locations.get(self.current.uid)
         if not location:
             editor.display = False

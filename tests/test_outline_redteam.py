@@ -129,3 +129,17 @@ def test_same_line_nested_lists_remain_opaque_without_overlapping_rows(text, lab
     assert [block.content for block in outline.walk()] == labels
     assert all(block.lines for block in outline.walk())
     assert len(set(outline.rows().values())) == len(list(outline.walk()))
+
+
+async def test_delayed_layout_tolerates_editor_removed_during_teardown(tmp_path):
+    app, note = outline_app(tmp_path, '- Parent\n  - Child')
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.action_outliner()
+        await pilot.pause()
+        screen = app.screen
+        # Child removal can finish before the parent processes its unmount.
+        # A queued call_after_refresh must be harmless in that interval.
+        await screen.block_editor().remove()
+        assert screen.is_mounted
+        screen.position_editor()
+        assert app.editor().text == note.body
