@@ -129,6 +129,28 @@ async def test_omarchy_poll_runs_only_while_theme_is_omarchy(tmp_path):
         assert app.omarchy_sync._timer is None
 
 
+async def test_palette_refresh_invalidates_cached_selection_rows(tmp_path, palette):
+    vault = Vault(tmp_path / 'notes')
+    Settings(theme='omarchy').save(vault.path / '.jotline-settings.json')
+    app = Jotline(vault)
+    async with app.run_test(size=(120, 36)):
+        editor = app.query_one('#editor', TextArea)
+        editor.cursor_blink = False
+        editor.load_text('# Heading\ntext')
+        editor.move_cursor((0, 0))
+        editor.move_cursor((1, 2), select=True)
+        old = next(segment for segment in editor.render_line(0) if 'Heading' in segment.text)
+        assert old.style.bgcolor == Color.parse('#2b2f37').rich_color
+        palette.write_text(PALETTE.replace('#2b2f37', '#cccccc'))
+        app.omarchy_sync.refresh()
+        # Exercise the theme notification before unrelated layout or cursor
+        # events get a chance to evict the old rendered row.
+        editor._app_theme_changed()
+        assert editor._theme.selection_style.bgcolor == Color.parse('#cccccc').rich_color
+        updated = next(segment for segment in editor.render_line(0) if 'Heading' in segment.text)
+        assert updated.style.bgcolor == Color.parse('#cccccc').rich_color
+
+
 async def test_missing_palette_recovers_and_capture_follows(palette):
     palette.unlink()
     app = QuickCapture('Inbox', theme='omarchy')

@@ -542,6 +542,10 @@ class MarkdownEditor(TextArea):
     def _app_theme_changed(self) -> None:
         self._register_markdown_theme()
         super()._app_theme_changed()
+        # Textual keys rendered rows by theme name. Our name stays constant
+        # while the app palette changes, so those strips must be discarded.
+        self._line_cache.clear()
+        self.refresh()
 
     def set_markdown_options(self, *, highlighting: bool, smart_lists: bool) -> None:
         self.smart_lists = smart_lists
