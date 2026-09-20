@@ -47,7 +47,7 @@ class OutlineView(ScrollView, can_focus=True):
         super().__init__(**kwargs)
         self.blocks: list[Block] = []
         self.starts: list[int] = []
-        self.lines: list[Text] = []
+        self.lines: list[str] = []
         self.locations: dict[str, tuple[int, int, int]] = {}
         self.active: str = ''
         self.selected: set[str] = set()
@@ -57,6 +57,16 @@ class OutlineView(ScrollView, can_focus=True):
     def populate(self, roots, active, selected):
         self.roots, self.active, self.selected = roots, active.uid, selected
         self.reflow()
+
+    def wrapped_lines(self, content: str, width: int) -> list[str]:
+        """Keep plain rows cheap; create Rich text only for wrapping or paint."""
+        wrapped = []
+        for line in content.split('\n'):
+            if cell_len(line) <= width and '\t' not in line:
+                wrapped.append(line or ' ')
+            else:
+                wrapped.extend(part.plain for part in Text(line or ' ').wrap(self.app.console, width))
+        return wrapped
 
     def reflow(self):
         if self.size.width <= 0:
@@ -72,12 +82,7 @@ class OutlineView(ScrollView, can_focus=True):
             key = (block.uid, content, width - indent - 4)
             wrapped = self.cache.get(key)
             if wrapped is None:
-                wrapped = []
-                for line in content.split('\n'):
-                    if cell_len(line) <= max(8, width - indent - 4) and '\t' not in line:
-                        wrapped.append(Text(line or ' '))
-                    else:
-                        wrapped.extend(Text(line or ' ').wrap(self.app.console, max(8, width - indent - 4)))
+                wrapped = self.wrapped_lines(content, max(8, width - indent - 4))
             cache[key] = wrapped
             start = len(self.lines)
             self.locations[block.uid] = (start, len(wrapped), indent)
@@ -86,7 +91,7 @@ class OutlineView(ScrollView, can_focus=True):
             for index, line in enumerate(wrapped):
                 marker = ('▸' if block.collapsed else '▾') if block.children else '•'
                 prefix = ' ' * indent + ((marker + ' ') if index == 0 else '  ')
-                self.lines.append(Text(prefix) + line)
+                self.lines.append(prefix + line)
             if not block.collapsed:
                 pending.extend((child, depth + 1) for child in reversed(block.children))
         self.cache = cache
@@ -100,16 +105,14 @@ class OutlineView(ScrollView, can_focus=True):
             return
         start, height, indent = location
         width = max(8, self.scrollable_content_region.width - indent - 4)
-        wrapped = []
-        for line in (block.content or 'Empty block').split('\n'):
-            wrapped.extend(Text(line or ' ').wrap(self.app.console, width))
+        wrapped = self.wrapped_lines(block.content or 'Empty block', width)
         if len(wrapped) != height:
             self.reflow()
             return
         for index, line in enumerate(wrapped):
             marker = ('▸' if block.collapsed else '▾') if block.children else '•'
             prefix = ' ' * indent + ((marker + ' ') if index == 0 else '  ')
-            self.lines[start + index] = Text(prefix) + line
+            self.lines[start + index] = prefix + line
         self.refresh_lines(start, height)
         self.screen.position_editor()
 
@@ -118,7 +121,7 @@ class OutlineView(ScrollView, can_focus=True):
         width = self.scrollable_content_region.width
         if row >= len(self.lines):
             return Strip.blank(width, self.rich_style)
-        line = self.lines[row].copy()
+        line = Text(self.lines[row])
         index = bisect_right(self.starts, row) - 1
         block = self.blocks[index]
         style = self.rich_style

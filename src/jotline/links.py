@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from dataclasses import dataclass, field
+from itertools import chain
 import re
 from typing import Callable, Iterator, Literal, Protocol
 from urllib.parse import quote, unquote
@@ -200,12 +201,28 @@ def resolve_link_targets(notes: list[LinkedNote], token: str) -> list[LinkedNote
     return [note for note in notes if note_matches_target(note, token)]
 
 
-def outgoing_refs(body: str, notes: list[LinkedNote]) -> list[LinkRef]:
+def index_link_targets(notes: list[LinkedNote]) -> dict[str, list[LinkedNote]]:
+    """Resolve aliases once for a note snapshot, retaining ambiguous matches in order."""
+    targets: dict[str, list[LinkedNote]] = {}
+    for note in notes:
+        for alias in {note.id, note.title, note.heading}:
+            targets.setdefault(alias, []).append(note)
+    return targets
+
+
+def outgoing_refs(body: str, notes: list[LinkedNote], *,
+                  target_index: dict[str, list[LinkedNote]] | None = None) -> list[LinkRef]:
     """Resolve each wiki link in ``body`` against notes already in the workspace."""
+    links = iter_wiki_links(body)
+    first = next(links, None)
+    if first is None:
+        return []
+    if target_index is None:
+        target_index = index_link_targets(notes)
     refs: list[LinkRef] = []
     seen: set[tuple[str, str, str | None]] = set()
-    for link in iter_wiki_links(body):
-        matches = resolve_link_targets(notes, link.target)
+    for link in chain((first,), links):
+        matches = target_index.get(link.target.split('#^', 1)[0], ())
         if not matches:
             key = ("outgoing", link.target, None)
             if key not in seen:
@@ -228,6 +245,10 @@ def incoming_refs(target: LinkedNote, notes: list[LinkedNote]) -> list[LinkRef]:
     refs: list[LinkRef] = []
     for note in notes:
         if note.id == target.id:
+            continue
+        # Exact alias equality below requires the alias to occur verbatim in
+        # the body. Most peers cannot point here; avoid parsing those notes.
+        if not any(key in note.body for key in keys):
             continue
         for link in iter_wiki_links(note.body):
             if link.target.split('#^', 1)[0] not in keys:

@@ -33,7 +33,9 @@ one referenced branch only; it cannot recurse through cycles. Cross-note branch
 transactions and editable mirrors remain outside this implementation, consistent
 with the research sequence that places them after reliable same-note operations.
 
-**Measurements.** The opt-in `tests/test_outline_measurements.py` runs a real
+**Measurements.** These are the initial implementation measurements; see
+[the subsequent performance review](../../docs/performance.md) for the optimized
+results and expanded flat/nested benchmark. The opt-in `tests/test_outline_measurements.py` runs a real
 Textual application in headless test mode at 110×35, with seven direct flush
 samples per size. `implementation-measurements.json` records the results.
 

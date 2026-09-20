@@ -5,7 +5,6 @@ import codecs
 from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import datetime, date, timedelta
-import io
 import json
 from pathlib import Path
 import re
@@ -50,7 +49,9 @@ COLLECTIONS = ("inbox", "projects", "areas", "resources", "archive", "trash")
 CONFLICT_MESSAGE = "This note changed outside Jotline. Save a recovery copy to preserve your changes."
 OTHER_WORKSPACE = "Note is in another workspace; pass --workspace NAME"
 
-TAG = re.compile(r"(?<![\w#])#([\w][\w/-]*)", re.UNICODE)
+# Start with the literal marker so the regex engine can skip directly to '#'.
+# The two-character lookbehind then rejects the same word/# prefixes as before.
+TAG = re.compile(r"#(?<![\w#]#)([\w][\w/-]*)", re.UNICODE)
 
 
 def _derived_values(pattern: re.Pattern, body: str, label: str) -> tuple[set[str], str]:
@@ -173,9 +174,15 @@ class Note:
         """The full first non-blank line; links by title match against this."""
         if self.locked:
             return "Encrypted note (locked)"
-        for line in io.StringIO(self.body):
+        start = 0
+        while start < len(self.body):
+            end = self.body.find("\n", start)
+            if end < 0:
+                end = len(self.body)
+            line = self.body[start:end]
             if line.strip():
                 return line.lstrip("# ").strip() or "Untitled"
+            start = end + 1
         return "Untitled"
 
     @property

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Speed up large-outline opening and editing by reusing unchanged row identities,
+  painting Rich text only for visible rows, and skipping idle serialization.
+  Plain flat lists use a narrow parser shortcut; other Markdown keeps CommonMark.
+  Resolve note-link aliases once per workspace snapshot and accelerate tag scans.
 - Fix outline duplication, mixed line endings, folded search navigation, and
   pending edits when switching notes or leaving a focused branch. Whole-note
   actions update the complete note when run from the outliner.

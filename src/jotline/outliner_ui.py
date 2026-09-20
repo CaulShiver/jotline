@@ -120,7 +120,8 @@ class OutlinerScreen(Modal[None]):
     def __init__(self, source: MarkdownEditor):
         super().__init__()
         self.source = source
-        self.session = OutlineSession(source.text)
+        self._synced_source_text = source.text
+        self.session = OutlineSession(self._synced_source_text)
         self.outline = self.session.outline
         self.current = self.outline.at_row(source.cursor_location[0])
         self.zoomed: Block | None = None
@@ -190,7 +191,8 @@ class OutlinerScreen(Modal[None]):
     def update_save_status(self) -> None:
         if self.app.current.id != self.note_id:
             self.note_id = self.app.current.id
-            self.session = OutlineSession(self.source.text)
+            self._synced_source_text = self.source.text
+            self.session = OutlineSession(self._synced_source_text)
             self.outline = self.session.outline
             self.current, self.zoomed = self.outline.roots[0], None
             self.selection.clear()
@@ -200,7 +202,7 @@ class OutlinerScreen(Modal[None]):
             self.restore_state()
             self.rebuild()
             self.call_after_refresh(self.apply_restored_position)
-        elif self.source.text != self.outline.text:
+        elif self.source.text != self._synced_source_text:
             self.reparse()
             self.rebuild()
         self.query_one('#outline-save', Static).update(
@@ -277,7 +279,9 @@ class OutlinerScreen(Modal[None]):
         uid, zoom = self.current.uid, self.zoomed.uid if self.zoomed else None
         row = self.outline.row(self.current)
         self.session.outline = self.outline
-        self.outline = self.session.reload(self.source.text, history=history)
+        text = self.source.text
+        self.outline = self.session.reload(text, history=history)
+        self._synced_source_text = text
         ids = {b.uid: b for b in self.outline.walk()}
         self.current = ids.get(uid) or self.outline.at_row(row)
         self.zoomed = ids.get(zoom)
@@ -290,7 +294,7 @@ class OutlinerScreen(Modal[None]):
         if self.source.read_only:
             return False
         self.session.outline = self.outline
-        self.session.remember(self.source.text, self.block_rows)
+        self.session.remember(self.source.text, self.block_rows, content_only=True)
         old_lines, old_slots = self.current.lines[:], [c.slot for c in self.current.children]
         before_content = self.current.content
         self.current.set_content(editor.text)
@@ -329,18 +333,21 @@ class OutlinerScreen(Modal[None]):
         a = self.source.location_at(start, old)
         b = self.source.location_at(end, old)
         self.source.replace(replacement, (row + a[0], a[1]), (row + b[0], b[1]))
+        self._synced_source_text = self.source.text
         self.app.capture_current_buffer()
         return True
 
     def sync(self) -> bool:
         before, after = self.source.text, self.outline.text
         if before == after:
+            self._synced_source_text = before
             return True
         if len(after.encode('utf-8')) > EDIT_LIMIT_BYTES:
             self.notify('Note is too large; shorten this block before continuing.', severity='error')
             return False
         start, end, replacement = patch(before, after)
         self.source.replace(replacement, self.source.location_at(start, before), self.source.location_at(end, before))
+        self._synced_source_text = self.source.text
         self.app.capture_current_buffer()
         return True
 

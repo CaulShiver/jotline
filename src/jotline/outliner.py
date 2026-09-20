@@ -19,6 +19,18 @@ PARSER = MarkdownIt('commonmark', {'maxNesting': 256}).disable('inline')
 ANCHOR = re.compile(r'(?:^|\s)\^([a-zA-Z0-9-]+)\s*$')
 
 
+def _plain_flat_list(lines: list[str]) -> bool:
+    """Recognize only nonempty, unindented dash items with plain text starts.
+
+    Every line begins a root item. Numeric starts may contain a same-line
+    ordered sublist, which Outline also retains as opaque item text. Other
+    markers, empty items, whitespace starts, and continuation lines stay with
+    the authoritative CommonMark parser.
+    """
+    return bool(lines) and all(len(line) > 2 and line.startswith('- ') and line[2].isalnum()
+                               for line in lines)
+
+
 def dedent_line(line: str, width: int) -> str:
     content = line.lstrip(' \t')
     leading = len(line[:len(line) - len(content)].expandtabs(4))
@@ -130,6 +142,12 @@ class Outline:
         # CommonMark recognizes all three newline conventions. Clipboard text
         # may mix them; use the same row boundaries and normalize on output.
         lines = re.split(r'\r\n|\r|\n', text)
+        items = lines[:-1] if lines[-1] == '' else lines
+        if _plain_flat_list(items):
+            self.roots = [Block([line]) for line in items]
+            if lines[-1] == '':
+                self.roots[-1].lines.append('')
+            return
         tokens = PARSER.parse(text)
         ranges: dict[Block, tuple[int, int]] = {}
         stack: list[Block | None] = []
