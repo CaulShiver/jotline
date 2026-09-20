@@ -164,6 +164,40 @@ class Connections:
         self.notify("No link under the cursor. Place the cursor on [[…]] or insert a note link.")
 
     def follow_wiki_target(self, target: str) -> None:
+        if '#^' in target:
+            from .outliner import ANCHOR, Outline
+            from .outliner_ui import OutlinerScreen
+            note_target, anchor = target.split('#^', 1)
+            matches = [note for note in self.cached_workspace_notes()
+                       if note_target in {note.id, note.title, note.heading}]
+            if len(matches) != 1:
+                self.notify('Block reference needs one existing note.', severity='warning')
+                return
+            self.load_id(matches[0].id)
+            if self.current.id != matches[0].id:
+                return
+            if isinstance(self.screen, OutlinerScreen):
+                self.screen.update_save_status()
+                outline = self.screen.outline
+            else:
+                outline = Outline(self.editor().text)
+            blocks = [block for block in outline.walk()
+                      if (match := ANCHOR.search(block.content)) and match[1] == anchor]
+            if len(blocks) != 1:
+                self.notify('Referenced block is missing or its anchor is duplicated.', severity='warning')
+                return
+            block = blocks[0]
+            if isinstance(self.screen, OutlinerScreen):
+                self.screen.current, self.screen.zoomed = block, block.parent
+                parent = block.parent
+                while parent:
+                    parent.collapsed = False
+                    parent = parent.parent
+                self.screen.record_location()
+                self.screen.rebuild()
+            else:
+                self.editor().move_cursor((outline.row(block), 0))
+            return
         matches = [note for note in self.cached_workspace_notes()
                    if target in {note.id, note.title, note.heading}]
         if len(matches) == 1:

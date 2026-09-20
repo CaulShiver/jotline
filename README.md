@@ -110,6 +110,9 @@ with the original settings; nothing changes until you save.
   on Linux. See [Omarchy](docs/omarchy.md).
 - **Editor:** line numbers, wrapping, current-line highlighting, Markdown
   highlighting, and list continuation on Enter.
+- **Outliner:** open **Outliner** in the toolbar or Ctrl+P to fold branches,
+  focus a subtree, and edit inline. Select, group, duplicate, search, or move
+  whole branches; folds and cursor positions persist per note. [Outliner controls](docs/markdown.md#outliner).
 - **Layout:** sidebar width, writing hints, and starting in focus mode.
 - **Workflow:** open a blank thought or today's log, choose the collection for new
   thoughts, and sort notes by last edit, creation date, or title (stars stay first).

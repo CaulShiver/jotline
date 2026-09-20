@@ -1,0 +1,429 @@
+{
+  "searches": 14,
+  "requested_results": 70,
+  "returned_entries": 70,
+  "unique_urls": 70,
+  "entries": [
+    {
+      "workstream": "editing_logseq",
+      "title": "Feat: Multi-functional Enter/Tab key \u00b7 Pull Request #2889 \u00b7 logseq/logseq",
+      "url": "https://github.com/logseq/logseq/pull/2889",
+      "quality": "Historical 2021 primary pull request; not current product-wide behavior."
+    },
+    {
+      "workstream": "editing_logseq",
+      "title": "src/main/frontend/handler/block.cljs",
+      "url": "https://github.com/logseq/logseq/blob/3de7c751/src/main/frontend/handler/block.cljs",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "editing_logseq",
+      "title": "src/main/frontend/handler/editor.cljs",
+      "url": "https://github.com/logseq/logseq/blob/4cad271f/src/main/frontend/handler/editor.cljs",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "editing_logseq",
+      "title": "src/main/frontend/handler/block.cljs at 3b7bc2e5 \u00b7 logseq/logseq",
+      "url": "https://github.com/logseq/logseq/blob/3b7bc2e5/src/main/frontend/handler/block.cljs",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "editing_logseq",
+      "title": "src/main/frontend/components/block/selection.cljs",
+      "url": "https://github.com/logseq/logseq/blob/be7c1d19/src/main/frontend/components/block/selection.cljs",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "editing_workflowy",
+      "title": "Add, edit and format | Workflowy Help",
+      "url": "https://workflowy.com/help/add-edit-format/",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "editing_workflowy",
+      "title": "Keyboard shortcuts | Workflowy Help",
+      "url": "https://workflowy.com/help/hotkeys/",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "editing_workflowy",
+      "title": "Navigate around | Workflowy Help",
+      "url": "https://workflowy.com/help/navigate-around/",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "editing_workflowy",
+      "title": "N/A",
+      "url": "https://workflowy.com/help/bullets.md",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "editing_workflowy",
+      "title": "Get started | Workflowy Help",
+      "url": "https://workflowy.com/help/get-started/",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "editing_bike",
+      "title": "using-bike/text-editing.md",
+      "url": "https://github.com/jessegrosjean/BikeGuide/blob/main/using-bike/text-editing.md",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "editing_bike",
+      "title": "N/A",
+      "url": "https://bikeguide.hogbaysoftware.com/using-bike/outline-editing.md",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "editing_bike",
+      "title": "N/A",
+      "url": "https://bikeguide.hogbaysoftware.com/using-bike/using-focus-mode.md",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "editing_bike",
+      "title": "N/A",
+      "url": "https://bikeguide.hogbaysoftware.com/getting-started.md",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "editing_bike",
+      "title": "using-bike/text-formatting.md at main \u00b7 jessegrosjean/BikeGuide",
+      "url": "https://github.com/jessegrosjean/BikeGuide/blob/main/using-bike/text-formatting.md",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "navigation_dynalist",
+      "title": "Keyboard shortcut reference - Dynalist Help Center",
+      "url": "https://help.dynalist.io/article/91-keyboard-shortcut-reference",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "navigation_dynalist",
+      "title": "Zoom in a list - Dynalist Help Center",
+      "url": "https://help.dynalist.io/article/56-zoom-in-a-list",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "navigation_dynalist",
+      "title": "Select multiple items - Dynalist Help Center",
+      "url": "https://help.dynalist.io/article/77-select-multiple-items",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "navigation_dynalist",
+      "title": "Move lists - Dynalist Help Center",
+      "url": "https://help.dynalist.io/article/54-move-lists",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "navigation_dynalist",
+      "title": "Search operators reference - Dynalist Help Center",
+      "url": "https://help.dynalist.io/article/93-search-operators-reference",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "navigation_accessibility",
+      "title": "Tree View Pattern | APG | WAI | W3C",
+      "url": "https://www.w3.org/WAI/ARIA/apg/patterns/treeview/",
+      "quality": "Primary W3C guidance for web widgets; not evidence of terminal conformance."
+    },
+    {
+      "workstream": "navigation_accessibility",
+      "title": "Treegrid Pattern | APG | WAI | W3C",
+      "url": "https://www.w3.org/WAI/ARIA/apg/patterns/treegrid/",
+      "quality": "Primary W3C guidance for web widgets; not evidence of terminal conformance."
+    },
+    {
+      "workstream": "navigation_accessibility",
+      "title": "Treegrid Email Inbox Example | APG | WAI | W3C",
+      "url": "https://www.w3.org/WAI/ARIA/apg/patterns/treegrid/examples/treegrid-1/",
+      "quality": "Primary W3C guidance for web widgets; not evidence of terminal conformance."
+    },
+    {
+      "workstream": "navigation_accessibility",
+      "title": "Navigation Treeview Example | APG | WAI | W3C",
+      "url": "https://www.w3.org/WAI/ARIA/apg/patterns/treeview/examples/treeview-navigation/",
+      "quality": "Primary W3C guidance for web widgets; not evidence of terminal conformance."
+    },
+    {
+      "workstream": "navigation_accessibility",
+      "title": "ARIA: treegrid role - ARIA | MDN",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/treegrid_role",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "navigation_terminal",
+      "title": "Comprehensive keyboard handling in terminals - kitty",
+      "url": "https://sw.kovidgoyal.net/kitty/keyboard-protocol/",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "navigation_terminal",
+      "title": "docs/keyboard-protocol.rst",
+      "url": "https://github.com/kovidgoyal/kitty/blob/f13c8cd4/docs/keyboard-protocol.rst",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "navigation_terminal",
+      "title": "N/A",
+      "url": "https://blessed.readthedocs.io/en/latest/keyboard_kitty.html",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "navigation_terminal",
+      "title": "docs/keyboard-protocol.rst",
+      "url": "https://github.com/kovidgoyal/kitty/blob/2d9e2438/docs/keyboard-protocol.rst",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "navigation_terminal",
+      "title": "Your Terminal Can't Tell Shift+Enter from Enter \u2014 Massively Parallel Procrastination",
+      "url": "https://blog.fsck.com/agent-blog/2026/02/26/terminal-keyboard-protocol/",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "correctness_markdown",
+      "title": "CommonMark Spec",
+      "url": "https://spec.commonmark.org/spec",
+      "quality": "Primary specification or official source; versions are not independent corroboration."
+    },
+    {
+      "workstream": "correctness_markdown",
+      "title": "CommonMark Spec",
+      "url": "https://spec.commonmark.org/0.31.2/",
+      "quality": "Primary specification or official source; versions are not independent corroboration."
+    },
+    {
+      "workstream": "correctness_markdown",
+      "title": "spec.txt",
+      "url": "https://github.com/commonmark/commonmark-spec/blob/master/spec.txt",
+      "quality": "Primary specification or official source; versions are not independent corroboration."
+    },
+    {
+      "workstream": "correctness_markdown",
+      "title": "Version 0.31.2 (2024-01-28)",
+      "url": "https://spec.commonmark.org/",
+      "quality": "Primary specification or official source; versions are not independent corroboration."
+    },
+    {
+      "workstream": "correctness_markdown",
+      "title": "N/A",
+      "url": "https://raw.githubusercontent.com/commonmark/commonmark-spec/0.31.2/spec.txt",
+      "quality": "Primary specification or official source; versions are not independent corroboration."
+    },
+    {
+      "workstream": "correctness_identity",
+      "title": "pages/Properties.md",
+      "url": "https://github.com/logseq/docs/blob/master/pages/Properties.md",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "correctness_identity",
+      "title": "docs/logseq-markdown-syntax.md",
+      "url": "https://github.com/logseq/logseq/blob/3de7c751/docs/logseq-markdown-syntax.md",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "correctness_identity",
+      "title": "libs/guides/db_properties_references.md",
+      "url": "https://github.com/logseq/logseq/blob/master/libs/guides/db_properties_references.md",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "correctness_identity",
+      "title": "logseq-to-obsidian/docs/specifications.md at main",
+      "url": "https://github.com/",
+      "quality": "Rejected generic homepage; not evidence for the requested claim."
+    },
+    {
+      "workstream": "correctness_identity",
+      "title": "docs/adr/0016-markdown-mirror.md",
+      "url": "https://github.com/logseq/logseq/blob/d3d6afa3/docs/adr/0016-markdown-mirror.md",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "correctness_testing",
+      "title": "N/A",
+      "url": "https://hypothesis.readthedocs.io/en/latest/stateful.html",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "correctness_testing",
+      "title": "N/A",
+      "url": "https://hypothesis.readthedocs.io/en/latest/reference/api.html",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "correctness_testing",
+      "title": "Hypothesis",
+      "url": "https://hypothesis.works/articles/rule-based-stateful-testing/",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "correctness_testing",
+      "title": "N/A",
+      "url": "https://hypothesis.readthedocs.io/en/latest/_modules/hypothesis/stateful.html",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "correctness_testing",
+      "title": "Stateful and Model-Based Testing | PTD",
+      "url": "https://python-testing-debugging.com/property-based-fuzz-testing-strategies/stateful-and-model-based-testing/",
+      "quality": "Secondary explanation or mirror; not used as independent primary evidence."
+    },
+    {
+      "workstream": "architecture_textual",
+      "title": "TextArea - Textual",
+      "url": "https://textual.textualize.io/widgets/text_area/",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "architecture_textual",
+      "title": "textual.widget - Textual",
+      "url": "https://textual.textualize.io/api/widget/",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "architecture_textual",
+      "title": "docs/widgets/text_area.md",
+      "url": "https://github.com/textualize/textual/blob/main/docs/widgets/text_area.md",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "architecture_textual",
+      "title": "Tree - Textual",
+      "url": "https://textual.textualize.io/widgets/tree/",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "architecture_textual",
+      "title": "src/textual/widgets/_tree.py",
+      "url": "https://github.com/Textualize/textual/blob/8ce58dc0/src/textual/widgets/_tree.py",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "architecture_transactions",
+      "title": "ProseMirror Guide",
+      "url": "https://prosemirror.net/docs/guide/",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "architecture_transactions",
+      "title": "ProseMirror Reference manual",
+      "url": "https://prosemirror.net/docs/ref/",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "architecture_transactions",
+      "title": "markdown/guide/transform.md at master \u00b7 ProseMirror/website",
+      "url": "https://github.com/ProseMirror/website/blob/master/markdown/guide/transform.md",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "architecture_transactions",
+      "title": "Search code, repositories, users, issues, pull requests...",
+      "url": "https://github.com/ProseMirror/website/blob/master/markdown/guide/state.md",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "architecture_transactions",
+      "title": "src/README.md at master \u00b7 ProseMirror/prosemirror-state",
+      "url": "https://github.com/ProseMirror/prosemirror-state/blob/master/src/README.md",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "architecture_performance",
+      "title": "Show HN: Bike \u2013 macOS Native Outliner | Hacker News",
+      "url": "https://news.ycombinator.com/item?id=31409077",
+      "quality": "Firsthand creator implementation discussion; vendor performance claims separated from local results."
+    },
+    {
+      "workstream": "architecture_performance",
+      "title": "Thanks! Bike's editor is pretty much: OutlinerLayer RowLayers LineFragmentLayers... | Hacker News",
+      "url": "https://news.ycombinator.com/item?id=31411020",
+      "quality": "Firsthand creator implementation discussion; vendor performance claims separated from local results."
+    },
+    {
+      "workstream": "architecture_performance",
+      "title": "Bike Outliner: Structured & focused writing app for Mac",
+      "url": "https://www.hogbaysoftware.com/bike/",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "architecture_performance",
+      "title": "Show HN: Bike \u2013 macOS Native Outliner",
+      "url": "https://news.ycombinator.com/",
+      "quality": "Rejected generic homepage; not evidence for the requested claim."
+    },
+    {
+      "workstream": "architecture_performance",
+      "title": "Welcome to Bike! (Original Preview) - Bike Outliner - Hog Bay Software Support",
+      "url": "https://support.hogbaysoftware.com/t/welcome-to-bike-original-preview/4688",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "architecture_line_api",
+      "title": "textual.scroll_view - Textual",
+      "url": "https://textual.textualize.io/api/scroll_view/",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "architecture_line_api",
+      "title": "Widgets - Textual",
+      "url": "https://textual.textualize.io/guide/widgets/",
+      "quality": "Library/protocol documentation or reference; local validation required for applicability."
+    },
+    {
+      "workstream": "architecture_line_api",
+      "title": "src/textual/strip.py",
+      "url": "https://github.com/Textualize/textual/blob/182277f6/src/textual/strip.py",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "architecture_line_api",
+      "title": "Performance and Optimization | Textualize/textual | DeepWiki",
+      "url": "https://deepwiki.com/Textualize/textual/9.2-performance-and-optimization",
+      "quality": "Secondary explanation or mirror; not used as independent primary evidence."
+    },
+    {
+      "workstream": "architecture_line_api",
+      "title": "src/textual/scroll_view.py",
+      "url": "https://github.com/Textualize/textual/blob/182277f6/src/textual/scroll_view.py",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "identity_obsidian",
+      "title": "Internal links - Obsidian Help",
+      "url": "https://obsidian.md/help/links",
+      "quality": "Product maintainer documentation; behavior evidence, not comparative usability evidence."
+    },
+    {
+      "workstream": "identity_obsidian",
+      "title": "en/Linking%20notes%20and%20files/Internal%20links.md",
+      "url": "https://github.com/obsidianmd/obsidian-help/blob/master/en/Linking%20notes%20and%20files/Internal%20links.md",
+      "quality": "Official project source or documentation; fixed revisions describe that snapshot."
+    },
+    {
+      "workstream": "identity_obsidian",
+      "title": "Internal links - Obsidian Help",
+      "url": "https://obsidian.md/",
+      "quality": "Rejected generic homepage; not evidence for the requested claim."
+    },
+    {
+      "workstream": "identity_obsidian",
+      "title": "N/A",
+      "url": "https://obsidianmd-obsidian-help.mintlify.app/linking/internal-links",
+      "quality": "Secondary explanation or mirror; not used as independent primary evidence."
+    },
+    {
+      "workstream": "identity_obsidian",
+      "title": "N/A",
+      "url": "https://mintlify.wiki/obsidianmd/obsidian-help/linking/internal-links",
+      "quality": "Secondary explanation or mirror; not used as independent primary evidence."
+    }
+  ],
+  "method_note": "14 searches with 5 results each across four workstreams. Equivalent versions and mirrors do not count as independent evidence."
+}

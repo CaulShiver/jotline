@@ -28,7 +28,7 @@ classifiers = [
   "Topic :: Text Editors",
   "Topic :: Utilities",
 ]
-dependencies = ["textual>=8.2.8,<9"]
+dependencies = ["textual>=8.2.8,<9", "markdown-it-py>=4,<5"]
 
 [project.urls]
 Homepage = "https://github.com/CaulShiver/jotline"

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Add an inline outliner with wrapped rows, folding, branch focus, clickable
+  breadcrumbs, search through folded content, bulk selection, grouping,
+  duplication, move-to, and explicit outline/text paste commands.
+- Parse outline structure with CommonMark source ranges. Preserve parent text
+  after children; respect code fences, numbered marker widths, and tab stops.
+- Share source undo and autosave, preserve block identity through transactions,
+  remember per-note view positions, and offer a default outliner preference.
+  Note navigation, formatting, link/snippet completion, and command shortcuts
+  work inside the outliner. Every outline action has a menu alternative.
+- Add optional permanent block references and read-only branch previews.
+  Ordinary edits patch one block and refresh its rows with one reusable editor.
 - Hide mouse-hover tooltips throughout the app and quick capture.
 - Tab indents in the note editor, Shift+Tab outdents, and Enter keeps leading
   indentation. Selected lines and list items indent together. Ctrl+Tab and

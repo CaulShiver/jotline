@@ -189,7 +189,7 @@ def stabilize_wiki_target(body: str, target: str, note: LinkedNote) -> str:
 
 
 def note_matches_target(note: LinkedNote, token: str) -> bool:
-    return token in {note.id, note.title, note.heading}
+    return token.split('#^', 1)[0] in {note.id, note.title, note.heading}
 
 
 def resolve_link_targets(notes: list[LinkedNote], token: str) -> list[LinkedNote]:
@@ -226,7 +226,7 @@ def incoming_refs(target: LinkedNote, notes: list[LinkedNote]) -> list[LinkRef]:
         if note.id == target.id:
             continue
         for link in iter_wiki_links(note.body):
-            if link.target not in keys:
+            if link.target.split('#^', 1)[0] not in keys:
                 continue
             refs.append(LinkRef("incoming", link.target, link.snippet, "ok", note.id, note.title))
             break
