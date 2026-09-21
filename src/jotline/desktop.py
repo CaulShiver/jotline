@@ -106,6 +106,8 @@ def jotline_shell(command: list[str] | None = None) -> str:
 
 
 def quote_desktop_arg(value: str) -> str:
+    # Exec= reads % as a field code (%f, %u, ...) whether or not the argument is quoted.
+    value = value.replace("%", "%%")
     if value and not any(character in DESKTOP_RESERVED or ord(character) < 32 for character in value):
         return value
     escaped = (value.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$").replace("`", "\\`"))

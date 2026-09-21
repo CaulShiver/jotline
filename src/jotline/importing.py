@@ -30,6 +30,18 @@ class ImportPlan:
     items: list[ImportItem] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     duplicates: str = 'skip'
+    # The warnings that leave nothing for the user to fix: a link the importer
+    # never follows, or a note already in the vault that could not be read.
+    notices: list[str] = field(default_factory=list)
+
+    def notice(self, message):
+        self.warnings.append(message)
+        self.notices.append(message)
+
+    @property
+    def needs_review(self):
+        """Whether a warning means a source was not, or not fully, imported."""
+        return len(self.warnings) > len(self.notices)
 
     @property
     def ready(self):
@@ -159,7 +171,7 @@ def _scan_folder(root: Path, recursive: bool, plan: ImportPlan) -> list[Path]:
                         plan.warnings.append(f'{child.name}: {error}')
                         continue
                     if stat.S_ISLNK(info.st_mode):
-                        plan.warnings.append(f'Skipped link: {child.name}')
+                        plan.notice(f'Skipped link: {child.name}')
                     elif stat.S_ISDIR(info.st_mode) and recursive:
                         pending.append(child)
                     elif stat.S_ISREG(info.st_mode) and child.suffix.lower() in IMPORT_SUFFIXES:
@@ -178,7 +190,8 @@ def preview_import(vault: Vault, path: Path, workspace='default', default_collec
         raise ValueError('Invalid import options')
     plan = ImportPlan(duplicates=duplicates)
     existing = vault.notes()
-    plan.warnings.extend(vault.warnings)
+    for message in vault.warnings:
+        plan.notice(message)
     fingerprints = {_fingerprint(note) for note in existing}
     ids = {note.id for note in existing}
     total_bytes = 0

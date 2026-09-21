@@ -58,7 +58,7 @@ def encoding_name(value: str) -> str:
         codecs.lookup(value)
         b"a".decode(value, "replace")
     except LookupError:
-        raise argparse.ArgumentTypeError(f"unknown text encoding: {value}") from None
+        raise argparse.ArgumentTypeError(f"unknown text encoding: {terminal_text(value)}") from None
     return value
 
 

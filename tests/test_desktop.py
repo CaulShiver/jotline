@@ -90,6 +90,14 @@ def test_desktop_exec_quotes_spaces_and_reserved_characters():
     assert 'Exec="/home/user/My Notes/jotline" desktop launch' in body
 
 
+def test_desktop_exec_writes_a_literal_percent_as_two():
+    # Exec= reads %f, %u and the rest as field codes; a literal percent is %%.
+    assert desktop.quote_desktop_arg("/srv/100%/jotline") == "/srv/100%%/jotline"
+    assert desktop.quote_desktop_arg("/srv/100% done/jotline") == '"/srv/100%% done/jotline"'
+    body = desktop.render_desktop_entry(["/home/u%ser/jotline"])
+    assert "Exec=/home/u%%ser/jotline desktop launch" in body
+
+
 def test_install_is_idempotent_and_status_sees_it(desktop_home):
     path = desktop.install_desktop_entry()
     assert path == desktop_home / "xdg/applications/org.jotline.capture.desktop"

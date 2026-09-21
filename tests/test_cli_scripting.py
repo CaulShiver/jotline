@@ -167,6 +167,23 @@ def test_folder_import_warning_is_plain_and_encoding_applies(tmp_path):
 
 
 @posix_only
+def test_apply_exit_status_reports_failures_not_skipped_links(tmp_path):
+    folder = tmp_path / "notes"
+    folder.mkdir()
+    (folder / "one.md").write_text("One")
+    (folder / "link.md").symlink_to(tmp_path / "elsewhere.md")
+    vault_path = tmp_path / "vault"
+    applied = run_cli(vault_path, "import", str(folder), "--apply")
+    assert "warning: Skipped link: link.md" in error(applied)
+    assert applied.returncode == 0, error(applied)
+    assert b"Imported 1" in applied.stdout
+    (folder / "bad.txt").write_bytes(b"caf\xe9")
+    failed = run_cli(vault_path, "import", str(folder), "--apply")
+    assert failed.returncode == 1
+    assert "bad.txt: not valid UTF-8" in error(failed)
+
+
+@posix_only
 def test_command_line_bytes_are_decoded_as_asked(tmp_path):
     result = run_cli(tmp_path, "capture", b"caf\xe9")
     assert result.returncode == 1

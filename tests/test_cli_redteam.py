@@ -63,6 +63,13 @@ def test_list_and_doctor_escape_controls_in_malformed_filenames(tmp_path):
     assert b"\\x1b" in doctor.stderr
 
 
+def test_unknown_encoding_error_escapes_terminal_controls(tmp_path):
+    result = run_cli(tmp_path, "capture", "--encoding", "\x1b]0;OWNED\x07latin", "text")
+    assert result.returncode == 2
+    assert b"\x1b" not in result.stderr
+    assert b"unknown text encoding: \\x1b]0;OWNED\\x07latin" in result.stderr
+
+
 def test_import_copies_regular_utf8_file_without_changing_source(tmp_path):
     vault_path = tmp_path / "vault"
     source = tmp_path / "outside.md"

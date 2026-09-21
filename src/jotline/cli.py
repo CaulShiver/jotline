@@ -385,7 +385,7 @@ def run_import(run: Invocation) -> None:
     print(result.summary())
     for message in result.errors:
         warning(message)
-    if result.errors or plan.warnings:
+    if result.errors or plan.needs_review:
         raise SystemExit(1)
 
 
