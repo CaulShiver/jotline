@@ -41,7 +41,7 @@ Documentation = "https://github.com/CaulShiver/jotline/blob/main/docs/install.md
 jotline = "jotline.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.2", "pytest-asyncio>=0.24"]
+dev = ["pytest>=8.2", "pytest-asyncio>=0.24", "ruff>=0.14,<0.15"]
 encryption = ["cryptography>=42"]
 
 [tool.pytest.ini_options]
@@ -54,3 +54,24 @@ path = "src/jotline/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/jotline"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["exa-results"]
+
+[tool.ruff.lint]
+# Defects, not style. Pyflakes catches a stale name, an unused import and a
+# f-string that lost its placeholder; bugbear catches the traps that read as
+# correct, above all a closure that captures the loop variable. The style sets
+# (UP, SIM, RUF, C4, PERF) report about a hundred findings across the tree and
+# are a separate decision from having a linter at all, so they stay off until
+# someone wants to make it.
+select = ["F", "E9", "B"]
+ignore = [
+  "B905",     # zip(strict=) changes behaviour; each site needs its own read.
+]
+
+[tool.ruff.lint.per-file-ignores]
+# A bare assert False in a test is the test failing on purpose.
+"tests/*" = ["B011"]

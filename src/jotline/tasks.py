@@ -154,7 +154,7 @@ def gather(notes, *, include_done: bool = False, due_by: str | None = None) -> l
 
 def set_done(body: str, line: int, done: bool) -> tuple[str, Task]:
     """Check or uncheck the task on a line, keeping everything else byte for byte."""
-    for number, content, ending, match in task_lines(body):
+    for number, _content, ending, match in task_lines(body):
         if number == line:
             mark = "x" if done else " "
             updated = match["lead"] + mark + match["gap"] + match["text"]

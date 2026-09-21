@@ -41,8 +41,9 @@ def load_omarchy_theme() -> Theme | None:
                 continue
             colors = tomllib.loads(raw.decode('utf-8'))
 
-            def color(key: str, fallback: str | None = None) -> str:
-                value = colors.get(key, fallback)
+            # Called inside this iteration, so the palette it reads is this one.
+            def color(key: str, fallback: str | None = None) -> str:  # noqa: B023
+                value = colors.get(key, fallback)  # noqa: B023
                 if not isinstance(value, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', value):
                     raise ValueError('Invalid palette color: ' + key)
                 return value

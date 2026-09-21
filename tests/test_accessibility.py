@@ -115,7 +115,7 @@ async def test_unicode_and_combining_marks_round_trip(tmp_path):
 async def test_nfc_and_nfd_are_stored_exactly(tmp_path):
     vault = Vault(tmp_path)
     app = Jotline(vault)
-    async with app.run_test() as pilot:
+    async with app.run_test():
         editor = app.editor()
         editor.insert(NFC + "\n" + NFD)
         assert app.save_current()
