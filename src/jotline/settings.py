@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 
+from .outline_actions import ACTIONS
 from .actions import validate_actions
 from .filesystem import (
     create_private_temp, fs as os, read_regular_at, read_regular_file, replace_at,
@@ -211,7 +212,6 @@ class Settings:
             raise ValueError("Hotkeys must map known Jotline actions to keys")
         if any(not isinstance(key, str) for key in self.hotkeys.values()):
             raise ValueError("Each hotkey must be text")
-        from .outliner_ui import ACTIONS
         if not isinstance(self.outline_hotkeys, dict) or set(self.outline_hotkeys) - ACTIONS.keys():
             raise ValueError("Outline shortcuts must name known outline commands")
         outline_used = set()
@@ -267,7 +267,15 @@ class Settings:
         """Keep every field that validates alongside the others; name the rest."""
         kept: dict = {}
         rejected = []
-        known = {item.name for item in fields(cls) if item.name != "_baseline"}
+        # A deterministic order: which field survives a collision must not be a
+        # coin toss. Set iteration depends on string hashing, which is
+        # randomised per process, so the same file kept the hotkey map in some
+        # runs and threw it away in others -- and the next ordinary save wrote
+        # the loser back as empty. outline_hotkeys validates against the main
+        # hotkey map, so settle the map it depends on first and let the
+        # dependent field be the one rejected.
+        known = [item.name for item in fields(cls) if item.name != "_baseline"]
+        known.sort(key=lambda name: name == "outline_hotkeys")
         for name in known:
             if name not in data:
                 continue

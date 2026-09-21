@@ -16,31 +16,12 @@ from textual.widgets import Button, Footer, Static, TextArea
 from .limits import EDIT_LIMIT_BYTES
 from .markdown_editor import MarkdownEditor
 from .modal import Modal, Palette
+from .outline_actions import ACTIONS
 from .outline_session import OutlineSession, patch, revision
 from .outline_state import read_state, write_state
 from .outline_view import OutlineNode, OutlineView
 from .outliner import ANCHOR, Block, Outline, dedent_line, literal_text
 
-ACTIONS = {
-    'new_block': 'Insert sibling block', 'new_child': 'Insert child block',
-    'continuation': 'Insert continuation line', 'indent': 'Indent selected branches',
-    'outdent': 'Outdent selected branches', 'move_up': 'Move selected branches up',
-    'move_down': 'Move selected branches down', 'move_to': 'Move selected branches to…',
-    'task': 'Toggle task status', 'fold': 'Fold or expand branch',
-    'collapse_all': 'Fold all branches', 'expand_all': 'Expand all branches',
-    'zoom': 'Focus branch', 'zoom_out': 'Focus parent', 'home': 'Focus whole note',
-    'nav_back': 'Previous outline location', 'nav_forward': 'Next outline location',
-    'search': 'Find block, including folded branches', 'restore_folds': 'Restore folds after search',
-    'select_block': 'Select or deselect branch', 'select_all': 'Select all visible branches',
-    'clear_selection': 'Clear branch selection', 'duplicate': 'Duplicate selected branches',
-    'group': 'Group selected sibling branches', 'copy': 'Copy selected branches as Markdown',
-    'cut': 'Cut selected branches', 'paste_outline': 'Paste clipboard as outline branches',
-    'paste_text': 'Paste clipboard as literal block text', 'delete_branch': 'Delete selected branches',
-    'merge': 'Merge block into previous sibling', 'reference': 'Copy permanent block reference',
-    'insert_link': 'Insert note link', 'snippet': 'Insert snippet', 'follow_reference': 'Open block reference',
-    'embed': 'Preview referenced branch', 'inspector': 'Toggle full-height block inspector',
-    'undo': 'Undo edit', 'redo': 'Redo edit', 'save': 'Save note', 'done': 'Switch to Markdown',
-}
 
 # A structural edit already knows the tree it built, and writes it to the note
 # immediately. Re-deriving that tree from CommonMark costs a whole-note parse,

@@ -383,6 +383,22 @@ def test_shell_commands_do_not_import_the_terminal_ui(tmp_path):
     assert result.stdout.split() == [b"False", b"False"]
 
 
+def test_running_a_shell_command_over_a_vault_with_settings_does_not_import_the_ui(tmp_path):
+    """Importing jotline.cli was never the whole story.
+
+    Settings.validate() imported outliner_ui to check outline shortcut names,
+    so the terminal UI came in the moment a settings file was read -- which is
+    every run for every user who has ever saved a preference. The import-time
+    check above passed the whole time it was costing capture 0.2s.
+    """
+    (tmp_path / ".jotline-settings.json").write_text('{"theme": "nord"}')
+    probe = ("import sys, pathlib; from jotline.settings import Settings;"
+             f"Settings.load(pathlib.Path({str(tmp_path / '.jotline-settings.json')!r}));"
+             "print('textual' in sys.modules, 'markdown_it' in sys.modules)")
+    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, check=True, timeout=60)
+    assert result.stdout.split() == [b"False", b"False"]
+
+
 def test_capture_still_opens_the_editor_when_no_text_is_given(tmp_path, monkeypatch):
     """The deferred import has to happen before the screen is needed, not after."""
     from jotline import cli
