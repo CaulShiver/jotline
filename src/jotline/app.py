@@ -45,6 +45,7 @@ from .store import (COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, d
                     is_daily_id, parse_calendar_date, tagged_body, validate_workspace)
 from .sync import sync_guide
 from .templates import GUIDE, REVIEW, TEMPLATE_ENCRYPTED, Templates
+from .terminal import terminal_text
 from .workflows import Workflows
 
 class Row(NamedTuple):
@@ -193,7 +194,8 @@ class Jotline(App):
                 notes.tooltip = "Notes in the current collection"
                 yield notes
             with Vertical(id="writing"):
-                yield Static(self.current.title + " / " + self.current.collection, id="note-heading")
+                yield Static(terminal_text(self.current.title) + " / " + self.current.collection,
+                             id="note-heading")
                 with HorizontalScroll(id="markdown-toolbar"):
                     for style, label, hint in (
                         ("bold", "Bold", "Toggle **bold** on selected text"),
@@ -365,7 +367,7 @@ class Jotline(App):
         list says why a note is in it rather than only that it is. Without a
         query the row stays two lines, which is what fits an 80x24 terminal.
         """
-        text = (("★ " if note.starred else "") + ("🔒 " if note.encrypted else "") + note.title
+        text = (("★ " if note.starred else "") + ("🔒 " if note.encrypted else "") + terminal_text(note.title)
                 + "\n  " + (note.updated[:10] or "imported") + " · " + note.collection)
         if found is None or not found.line:
             return Row(note.id, text, ())
@@ -665,7 +667,8 @@ class Jotline(App):
             details += "  ·  " + " ".join("#" + tag for tag in tags) if tags else ""
 
         self.query_one("#status", Static).update(details)
-        self.query_one("#note-heading", Static).update(Text(self.current.title + " / " + self.current.collection))
+        self.query_one("#note-heading", Static).update(
+            Text(terminal_text(self.current.title) + " / " + self.current.collection))
 
     def save_current(self, *, explicit: bool = False) -> bool:
         # An inline Changed message may still be queued when a navigation or

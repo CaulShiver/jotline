@@ -5,6 +5,8 @@ from datetime import date
 import shlex
 from typing import Protocol
 
+from .terminal import terminal_text
+
 DATE_FIELDS = ('created-after', 'created-before', 'updated-after', 'updated-before')
 FIELDS = ('tag', 'title', *DATE_FIELDS)
 
@@ -192,7 +194,10 @@ def window(line: str, at: int, words: list[str]) -> tuple[str, tuple[tuple[int, 
     """Trim a line to the part around the match, marking each word in it."""
     left = max(0, at - SNIPPET_LEAD)
     right = left + SNIPPET_WIDTH
-    windowed = line[left:right].strip()
+    # A note's body is data the user was handed. Escape anything that could
+    # drive the terminal before the spans are measured, so the marks still
+    # land on the words and neither the list nor the shell prints it raw.
+    windowed = terminal_text(line[left:right].strip())
     if left:
         windowed = '…' + windowed
     if right < len(line):
