@@ -21,12 +21,17 @@ BACKUP_LIMIT = 7
 MAX_HISTORY_ENTRIES = 4096
 MAX_BACKUP_ENTRIES = 10_000
 MAX_BACKUP_BYTES = 256 * 1024 * 1024
+# A manifest Jotline wrote lists at most two scan budgets of skipped paths, a
+# few megabytes at the outside. An entry's declared size is whatever the file
+# says, so the cap is on the bytes actually inflated.
+MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 REVISION_ID = re.compile(r"[0-9]{8}T[0-9]{12}-[0-9a-f]{8}")
 # Every create_private_temp caller uses one of these prefixes, followed by a uuid4 hex.
 TEMP_PREFIXES = ("jotline", "backup", "revision", "settings", "action-history", "tmp", "recipe")
 STALE_TEMP = re.compile(r"\.(?:" + "|".join(TEMP_PREFIXES) + r")-[0-9a-f]{32}")
 STALE_TEMP_SECONDS = 3600
 BACKUP_NAME = re.compile(r"(?:daily-[0-9]{4}-[0-9]{2}-[0-9]{2}|manual-[0-9]{8}T[0-9]{12}-[0-9a-f]{8})\.zip")
+QUARANTINE_NAME = re.compile(r"\.invalid-[0-9]{8}T[0-9]{12}-[0-9a-f]{8}\.zip")
 DISPLACED_PREFIX = ".jotline-displaced-"
 STALE_BACKUP_SECONDS = 2 * 24 * 3600
 
@@ -332,6 +337,8 @@ def _validate_archive(stream, *, require_content: bool) -> tuple[bool, str]:
                         if consumed > MAX_BACKUP_BYTES:
                             return False, "archive contents exceed validation limit"
                         if captured is not None:
+                            if len(captured) + len(chunk) > MAX_MANIFEST_BYTES:
+                                return False, "manifest exceeds validation limit"
                             captured.extend(chunk)
                 if captured is not None:
                     manifest = json.loads(bytes(captured))
@@ -430,16 +437,22 @@ def _reuse_daily_backup(vault, folder: int, name: str) -> bool:
 
 
 def _prune_backups(vault, folder: int, keep_name: str) -> None:
-    """Keep the newest BACKUP_LIMIT archives, always including today's and the one just written."""
+    """Keep the newest BACKUP_LIMIT archives, always including today's and the one just written,
+    and the newest BACKUP_LIMIT quarantined ones."""
     archives = []
+    quarantined = []
     with os.scandir(folder) as entries:
         for index, entry in enumerate(entries):
             if index >= MAX_BACKUP_ENTRIES:
                 vault.warnings.append(f"Backup retention stopped after {MAX_BACKUP_ENTRIES} entries")
                 break
             info = _stat_entry(entry)
-            if info is not None and BACKUP_NAME.fullmatch(entry.name) and stat.S_ISREG(info.st_mode):
+            if info is None or not stat.S_ISREG(info.st_mode):
+                continue
+            if BACKUP_NAME.fullmatch(entry.name):
                 archives.append((info.st_mtime_ns, entry.name))
+            elif QUARANTINE_NAME.fullmatch(entry.name):
+                quarantined.append((info.st_mtime_ns, entry.name))
     archives.sort(reverse=True)
     today = f"daily-{date.today().isoformat()}.zip"
     keep = {keep_name, *(archive_name for _, archive_name in archives if archive_name == today)}
@@ -448,6 +461,8 @@ def _prune_backups(vault, folder: int, keep_name: str) -> None:
             keep.add(archive_name)
         if archive_name not in keep:
             os.unlink(archive_name, dir_fd=folder)
+    for _, quarantine_name in sorted(quarantined, reverse=True)[BACKUP_LIMIT:]:
+        os.unlink(quarantine_name, dir_fd=folder)
     sync_directory(folder)
 
 

@@ -244,7 +244,8 @@ class Vault:
             raise FileNotFoundError(
                 f"Vault does not exist: {self.path} (start jotline or capture a note to create it)")
         self.warnings: list[str] = []
-        # Warnings that name a retained file survive every sidebar refresh.
+        # Warnings that name a retained file, or a history that is not being
+        # kept, survive every sidebar refresh.
         self.sticky_warnings: list[str] = []
         self.backup_warning = ""
         self.lock_timeout = LOCK_TIMEOUT_SECONDS
@@ -501,6 +502,14 @@ class Vault:
             os.fsync(stream.fileno())
         return temp
 
+    def _snapshot(self, note_id: str, raw: str, directory: int) -> Path | None:
+        """Record raw in history; a history that cannot be written must not cost the save."""
+        try:
+            return history.snapshot(self, note_id, raw, vault_directory=directory)
+        except OSError as error:
+            self.retain_warning(f"Note history is not being kept: {error}")
+            return None
+
     def _publish_created(self, directory: int, temp: str, filename: str, note_id: str) -> None:
         try:
             publish_new(directory, temp, filename)
@@ -545,7 +554,7 @@ class Vault:
                     else:
                         keep_displaced = False
                 else:
-                    history.snapshot(self, note_id, collision, vault_directory=directory)
+                    self._snapshot(note_id, collision, directory)
                     self.retain_warning(
                         f"Save collided with another writer; the original note was retained as {displaced}")
                 raise
@@ -608,8 +617,10 @@ class Vault:
         candidate = None
         try:
             try:
+                # The archive takes the sealed text of a note being encrypted in
+                # place of the plain text still on disk, as history does below.
                 history.backup(self, automatic=True, vault_directory=directory,
-                               pending=(path.name, raw) if actual is None else None)
+                               pending=(path.name, raw) if actual is None or newly_encrypted else None)
             except OSError as error:
                 # A failed daily backup must never hold the note itself hostage;
                 # the overwritten text is still snapshotted to history below.
@@ -619,8 +630,8 @@ class Vault:
                     self.warnings.append(message)
             if actual is not None and not newly_encrypted:
                 # A note being encrypted must not leave its plain text behind in history.
-                history.snapshot(self, note.id, actual, vault_directory=directory)
-            candidate = history.snapshot(self, note.id, raw, vault_directory=directory)
+                self._snapshot(note.id, actual, directory)
+            candidate = self._snapshot(note.id, raw, directory)
             # Revalidate as late as possible. For a brand-new note, publish with
             # an atomic hard link so an uncooperative creator can never be replaced.
             try:
@@ -629,7 +640,7 @@ class Vault:
                 latest = None
             if latest != actual:
                 if latest is not None:
-                    history.snapshot(self, note.id, latest, vault_directory=directory)
+                    self._snapshot(note.id, latest, directory)
                 raise ConflictError(CONFLICT_MESSAGE)
             if actual is None:
                 self._publish_created(directory, temp, path.name, note.id)

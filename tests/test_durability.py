@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 import errno
 import json
 import os
@@ -16,7 +16,7 @@ from jotline import filesystem
 from jotline.app import Jotline, Palette
 from jotline.bench import CI_BUDGET_SECONDS, CI_NOTE_COUNT, measure_vault, populate_synthetic_vault, verdict
 from jotline.cli_doctor import doctor_report
-from jotline.history import DISPLACED_PREFIX, STALE_BACKUP_SECONDS
+from jotline.history import BACKUP_LIMIT, DISPLACED_PREFIX, STALE_BACKUP_SECONDS
 from jotline.recovery_ui import HealthScreen
 from jotline.store import Vault
 
@@ -252,3 +252,47 @@ def test_recovery_refuses_to_publish_a_symlink_as_a_note(tmp_path):
     (tmp_path / f"{DISPLACED_PREFIX}{'a' * 32}.{'0' * 32}").symlink_to(secret)
     assert vault.recover_displaced() == []
     assert not (tmp_path / f"{'a' * 32}.md").exists()
+
+
+def test_quarantined_backups_are_bounded_and_reported(tmp_path):
+    # An invalid daily archive is set aside as .invalid-*.zip so a fresh one can
+    # be written. Nothing pruned those and nothing listed them, so a vault whose
+    # daily archive kept failing validation grew a hidden pile of them.
+    vault = Vault(tmp_path)
+    folder = tmp_path / ".jotline-backups"
+    folder.mkdir()
+    note = vault.new("data")
+    seen = []
+    for round_ in range(BACKUP_LIMIT + 3):
+        (folder / f"daily-{date.today().isoformat()}.zip").write_bytes(b"not a zip %d" % round_)
+        note.body = f"data {round_}"
+        vault.save(note)
+        seen.extend(path.name for path in folder.glob(".invalid-*.zip") if path.name not in seen)
+    kept = sorted(path.name for path in folder.glob(".invalid-*.zip"))
+    assert len(seen) == BACKUP_LIMIT + 3
+    assert kept == sorted(seen[-BACKUP_LIMIT:])
+    report = doctor_report(vault, "")
+    assert sorted(report["ancillary"]["backups"]["quarantined"]) == kept
+    for name in kept:
+        assert any(name in item and "failing validation" in item for item in report["warnings"])
+    doctor = run_cli(tmp_path, "doctor")
+    assert kept[0].encode() in doctor.stderr
+
+
+def test_a_note_still_saves_when_its_history_cannot_be_written(tmp_path):
+    # A file at .jotline-history made every save of every note fail. The daily
+    # backup was already allowed to fail without holding the note hostage;
+    # history was not, and what got lost was the text being saved.
+    vault = Vault(tmp_path)
+    (tmp_path / ".jotline-history").write_text("a sync tool put a file here")
+    note = vault.new("Text that must not be lost\n")
+    vault.save(note)
+    assert vault.read(note.id).body == "Text that must not be lost\n"
+    note.body = "Edited\n"
+    vault.save(note)
+    assert vault.read(note.id).body == "Edited\n"
+    assert any("history is not being kept" in item for item in vault.warnings)
+    # The condition outlasts a refresh, so the health report still says so.
+    report = doctor_report(vault, "")
+    assert any("history is not being kept" in item for item in report["warnings"])
+    assert (tmp_path / ".jotline-history").read_text() == "a sync tool put a file here"

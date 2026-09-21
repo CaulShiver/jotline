@@ -162,7 +162,7 @@ def check_stale_temps(folder: Path, label: str, limit: int, warnings: list[str])
 
 def check_backups(vault: Vault, warnings: list[str]) -> dict[str, object]:
     root = check_managed_directory(vault.path / ".jotline-backups", "backups", warnings)
-    state = {"path": str(vault.path / ".jotline-backups"), "archives": 0}
+    state = {"path": str(vault.path / ".jotline-backups"), "archives": 0, "quarantined": []}
     if root is None:
         state["exists"] = False
         return state
@@ -173,6 +173,11 @@ def check_backups(vault: Vault, warnings: list[str]) -> dict[str, object]:
             info = path.lstat()
             if not stat.S_ISREG(info.st_mode):
                 raise OSError(f"Not a regular backup file: {path.name}")
+            if history.QUARANTINE_NAME.fullmatch(path.name):
+                state["quarantined"].append(path.name)
+                warnings.append(f"backups: {path.name} is a daily backup set aside after failing validation; "
+                                f"only the newest {history.BACKUP_LIMIT} are kept")
+                continue
             if not history.BACKUP_NAME.fullmatch(path.name):
                 continue
             valid, reason = history.validate_backup(path)
