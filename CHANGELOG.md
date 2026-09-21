@@ -146,6 +146,45 @@
   indentation. Selected lines and list items indent together. Ctrl+Tab and
   Ctrl+Shift+Tab move focus between controls.
 
+- **Nothing Jotline starts can read your passphrase any more.** `$EDITOR`, the
+  clipboard tool, the export converters and the terminal that quick capture
+  opens all inherited `JOTLINE_PASSPHRASE`, where on Linux any process of yours
+  could read it back out of `/proc`. `encryption change` leaked the replacement
+  passphrase the same way.
+- **A note still saves when its history cannot be written.** A stray file or a
+  symlink where `.jotline-history` belongs used to make every save of that note
+  fail, so the text went nowhere. The save goes through and Jotline says history
+  is not being kept. Nothing is written through a symlink, as before.
+- **A key file damaged on disk says so** instead of reporting a wrong
+  passphrase. A key file from another vault still reports a wrong passphrase;
+  telling those apart needs a note format change.
+- **Changing your passphrase now strengthens the key file.** It was rewrapped at
+  whatever work factor the file already carried, so a vault set up weak stayed
+  weak.
+- **An encrypted note that will not open stays in the list**, sealed, instead of
+  disappearing as though deleted.
+- **Encrypting a note no longer puts its plaintext in the day's backup.** The
+  daily ZIP runs before the sealed file is published and archived the note as it
+  was on disk. Backups made earlier in the day still hold the old text, as the
+  README says.
+- **An imported file cannot pass its first lines off as metadata.** A file
+  starting with something that looked like a Jotline header could file itself
+  into a collection, star and backdate itself, and hide those lines from the
+  preview. A header counts only where Jotline would read that file as a note,
+  and the preview says when an item's collection came from one.
+- **Importing a folder that is itself a vault no longer pulls in its history**,
+  which brought every old draft in as its own note.
+- **Indent and outdent keep a tab that is content.** A Makefile recipe inside a
+  fenced code block survives moving the item, and indent followed by outdent
+  gives back the line you started with.
+- **Quarantined backups are pruned and listed.** `.invalid-*.zip` files built up
+  without limit and appeared nowhere; `doctor` names them.
+- **A malformed backup cannot exhaust memory during validation**: a 199 KB
+  archive could cost 400 MiB, now 18 MiB.
+- **Smaller shell fixes**: an unknown `--encoding` value is escaped before it
+  reaches the terminal, `import --apply` exits 0 on warnings that need nothing
+  from you, and a vault path containing `%` produces a working desktop entry.
+
 ## 0.9.8 — 2026-09-18
 
 - Copy uses `pbcopy` on macOS and `wl-copy` / `xclip` / `xsel` on Linux when
