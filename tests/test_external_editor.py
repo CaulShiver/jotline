@@ -33,7 +33,6 @@ async def test_an_external_edit_is_read_back_into_the_editor(tmp_path, monkeypat
     async with app.run_test(size=(110, 34)) as pilot:
         await pilot.press(*'first draft')
         await pilot.pause()
-        note_id = app.current.id
 
         def edit(command, path):
             path.write_text(path.read_text().replace('first draft', 'rewritten outside'))
