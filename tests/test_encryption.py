@@ -1,4 +1,5 @@
 """Opt-in note encryption: storage, history, backups, the shell and the app."""
+import base64
 import json
 import os
 from pathlib import Path
@@ -15,7 +16,7 @@ from textual.widgets import Input
 
 from jotline.actions import run_action
 from jotline.app import Jotline, TextPrompt
-from jotline.crypto import EncryptionError, KeyFile
+from jotline.crypto import SCRYPT_N, EncryptionError, KeyFile
 from jotline.importing import preview_import
 from jotline.store import Vault, wiki_link
 
@@ -113,11 +114,30 @@ def test_wrong_passphrases_tampering_and_swapped_files_are_refused(tmp_path):
     assert any("could not be decrypted" in warning for warning in fresh.warnings)
 
 
+def test_an_undecryptable_note_stays_listed_and_is_reported(tmp_path):
+    vault = encrypted_vault(tmp_path)
+    one = encrypted_note(vault, "one")
+    two = encrypted_note(vault, "two")
+    # A sync conflict settled the wrong way: two's file holds text sealed under one's ID.
+    (tmp_path / f"{two.id}.md").write_text((tmp_path / f"{one.id}.md").read_text())
+    fresh = Vault(tmp_path)
+    fresh.unlock(PASSPHRASE)
+    listed = {note.id: note for note in fresh.notes()}
+    assert listed[one.id].body == "one"
+    assert listed[two.id].locked and listed[two.id].title == "Encrypted note (locked)"
+    assert [warning for warning in fresh.warnings if "could not be decrypted" in warning] == [
+        f"{two.id}.md: Encrypted note could not be decrypted; the file is damaged or was encrypted "
+        "with another vault's key"]
+    # It is not cached, so the next scan reports it again rather than forgetting it.
+    assert {note.id for note in fresh.notes()} == {one.id, two.id}
+    assert sum(two.id in warning for warning in fresh.warnings) == 1
+
+
 def test_passphrase_changes_rewrap_the_key_without_touching_notes(tmp_path):
     vault = encrypted_vault(tmp_path)
     note = encrypted_note(vault, "secret")
     before = (tmp_path / f"{note.id}.md").read_bytes()
-    vault.change_passphrase(PASSPHRASE, "battery staple")
+    vault.change_passphrase(PASSPHRASE, "battery staple", n=FAST)
     assert (tmp_path / f"{note.id}.md").read_bytes() == before
     fresh = Vault(tmp_path)
     with pytest.raises(EncryptionError, match="Wrong passphrase"):
@@ -130,6 +150,15 @@ def test_passphrase_changes_rewrap_the_key_without_touching_notes(tmp_path):
         vault.setup_encryption("another passphrase", n=FAST)
 
 
+def test_passphrase_changes_rewrap_at_the_current_work_factor(tmp_path):
+    vault = encrypted_vault(tmp_path)
+    path = tmp_path / ".jotline-key.json"
+    assert json.loads(path.read_text())["n"] == FAST
+    vault.change_passphrase(PASSPHRASE, "battery staple")
+    assert json.loads(path.read_text())["n"] == SCRYPT_N
+    Vault(tmp_path).unlock("battery staple")
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
 def test_key_file_is_private(tmp_path):
     encrypted_vault(tmp_path)
@@ -137,7 +166,7 @@ def test_key_file_is_private(tmp_path):
 
 
 @pytest.mark.parametrize("change", [{"n": 2 ** 30}, {"n": 1000}, {"r": 0}, {"salt": "!!"}, {"wrapped": ""},
-                                    {"cipher": "none"}, {"jotline_key": 2}])
+                                    {"cipher": "none"}, {"jotline_key": 2}, {"checksum": "not this wrapping"}])
 def test_damaged_or_hostile_key_files_are_refused(tmp_path, change):
     encrypted_vault(tmp_path)
     path = tmp_path / ".jotline-key.json"
@@ -146,6 +175,34 @@ def test_damaged_or_hostile_key_files_are_refused(tmp_path, change):
     path.write_text(json.dumps(data))
     with pytest.raises(EncryptionError):
         Vault(tmp_path).unlock(PASSPHRASE)
+
+
+def test_a_damaged_key_file_is_told_from_a_wrong_passphrase(tmp_path):
+    encrypted_vault(tmp_path)
+    path = tmp_path / ".jotline-key.json"
+    data = json.loads(path.read_text())
+    wrapped = bytearray(base64.b64decode(data["wrapped"]))
+    wrapped[0] ^= 1  # One flipped bit, as a bad sector or a botched sync merge leaves behind
+    data["wrapped"] = base64.b64encode(bytes(wrapped)).decode()
+    path.write_text(json.dumps(data))
+    with pytest.raises(EncryptionError, match="damaged"):
+        Vault(tmp_path).unlock(PASSPHRASE)
+
+
+def test_a_key_file_without_a_checksum_still_unwraps(tmp_path):
+    # Written by 0.9.8: the same fields, minus the ID. It must keep working as it is.
+    vault = encrypted_vault(tmp_path)
+    note = encrypted_note(vault, "secret")
+    path = tmp_path / ".jotline-key.json"
+    data = json.loads(path.read_text())
+    del data["checksum"]
+    path.write_text(json.dumps(data))
+    fresh = Vault(tmp_path)
+    fresh.unlock(PASSPHRASE)
+    assert fresh.read(note.id).body == "secret"
+    assert "checksum" not in json.loads(path.read_text())
+    fresh.change_passphrase(PASSPHRASE, "battery staple", n=FAST)
+    assert json.loads(path.read_text())["checksum"]
 
 
 def test_missing_library_explains_how_to_install_it(tmp_path, monkeypatch):

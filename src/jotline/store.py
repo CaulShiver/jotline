@@ -278,7 +278,8 @@ class Vault:
         stamp = now()
         return Note(uuid4().hex, body, created=stamp, updated=stamp, workspace=validate_workspace(workspace))
 
-    def read(self, note_id: str, *, workspace: str | None = None, directory: int | None = None) -> Note:
+    def read(self, note_id: str, *, workspace: str | None = None, directory: int | None = None,
+             locked: bool = False) -> Note:
         filename = self.file(note_id).name
         own_directory = directory is None
         if own_directory:
@@ -292,7 +293,7 @@ class Vault:
         finally:
             if own_directory:
                 os.close(directory)
-        note = self.parse_note(note_id, raw, self.cipher)
+        note = self.parse_note(note_id, raw, None if locked else self.cipher)
         if workspace is not None and note.workspace != workspace:
             raise ValueError(OTHER_WORKSPACE)
         return note
@@ -435,6 +436,14 @@ class Vault:
                     retained_bytes += cost
             except (ValueError, OSError) as error:
                 self.warnings.append(f"{file.name}: {error}")
+                if isinstance(error, EncryptionError):
+                    # An encrypted note that will not open stays listed, sealed as
+                    # when locked, rather than vanish as though deleted. It is not
+                    # cached, so every scan reports it again.
+                    try:
+                        notes.append(self.read(file.stem, locked=True))
+                    except (ValueError, OSError):
+                        pass
         self._cache = refreshed
         return sorted(notes, key=lambda n: (n.starred, n.updated, n.id), reverse=True)
 
@@ -862,12 +871,14 @@ class Vault:
         self.cipher = NoteCipher(note_key)
         self.invalidate_cache()
 
-    def change_passphrase(self, old: str, new: str) -> None:
+    def change_passphrase(self, old: str, new: str, *, n: int | None = None) -> None:
         """Rewrap the note key; encrypted notes themselves are not rewritten."""
         with self.write_lock() as directory:
             current = self._read_key(directory)
             note_key = current.unwrap(old)
-            self._write_key(directory, KeyFile.create(new, note_key, n=current.n), replace_existing=True)
+            # The current work factor, not the file's: this is the one time a
+            # vault set up with a weaker n gets stronger, and its key ID is written.
+            self._write_key(directory, KeyFile.create(new, note_key, n=n or SCRYPT_N), replace_existing=True)
 
     def set_encrypted(self, note_id: str, workspace: str, encrypted: bool) -> tuple[Note, bool]:
         """Encrypt or decrypt one note; returns the note and whether anything changed."""

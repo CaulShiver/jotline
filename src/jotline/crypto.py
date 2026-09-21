@@ -34,6 +34,7 @@ MISSING_LIBRARY = ("Note encryption needs the cryptography package; install it w
 LOCKED = "This note is encrypted; unlock encrypted notes first"
 _NOTE_CONTEXT = b"jotline-note-v1\0"
 _KEY_CONTEXT = b"jotline-key-v1"
+_CHECKSUM_CONTEXT = b"jotline-key-checksum-v1"
 
 
 class EncryptionError(ValueError):
@@ -113,10 +114,20 @@ class KeyFile:
         except _invalid_tag():
             raise EncryptionError("Wrong passphrase for encrypted notes") from None
 
+    @property
+    def checksum(self) -> str:
+        # A fingerprint of this wrapping, hashed from the salt, nonce and
+        # ciphertext the file already carries in the clear, so it reveals
+        # nothing the file does not: the passphrase, the wrapping key and the
+        # note key never enter it. It tells a key file damaged on disk or by
+        # a sync tool from a wrong passphrase, which the AES-GCM tag alone
+        # cannot, since both fail the same check. A rewrap gets a new one.
+        return hashlib.sha256(_CHECKSUM_CONTEXT + self.salt + self.nonce + self.wrapped).hexdigest()[:16]
+
     def dumps(self) -> str:
         return json.dumps({"jotline_key": 1, "kdf": "scrypt", "salt": _b64(self.salt), "n": self.n, "r": self.r,
                            "p": self.p, "cipher": "aes-256-gcm", "nonce": _b64(self.nonce),
-                           "wrapped": _b64(self.wrapped)}, indent=2) + "\n"
+                           "wrapped": _b64(self.wrapped), "checksum": self.checksum}, indent=2) + "\n"
 
     @classmethod
     def loads(cls, raw: str) -> "KeyFile":
@@ -129,8 +140,13 @@ class KeyFile:
             raise EncryptionError("The encryption key file is damaged or from a newer Jotline")
         n, r, p = data.get("n"), data.get("r"), data.get("p")
         _validate_scrypt(n, r, p)
-        return cls(_unb64(data.get("salt"), SALT_BYTES), n, r, p, _unb64(data.get("nonce"), NONCE_BYTES),
-                   _unb64(data.get("wrapped"), KEY_BYTES + TAG_BYTES))
+        key = cls(_unb64(data.get("salt"), SALT_BYTES), n, r, p, _unb64(data.get("nonce"), NONCE_BYTES),
+                  _unb64(data.get("wrapped"), KEY_BYTES + TAG_BYTES))
+        # Key files written before 0.9.9 carry no checksum; damage to one still reads as a
+        # wrong passphrase. It catches corruption, not a hostile edit, which can recompute it.
+        if data.get("checksum") is not None and data["checksum"] != key.checksum:
+            raise EncryptionError("The encryption key file is damaged; restore it from a backup")
+        return key
 
 
 class NoteCipher:
