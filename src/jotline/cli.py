@@ -1,4 +1,11 @@
-"""Launch the workspace or capture text without leaving your shell."""
+"""Launch the workspace or capture text without leaving your shell.
+
+Textual is imported where a screen is actually drawn, not at the top of this
+module. It costs about 0.3 of the 0.4 seconds a bare `jotline capture` used to
+take, and capture is bound to a desktop hotkey: that is the gap between the
+key press and the thought being caught. `list`, `tasks`, `backlinks`, `stats`
+and `done` never draw anything at all and were paying it too.
+"""
 import argparse
 from dataclasses import dataclass
 from datetime import date
@@ -12,8 +19,6 @@ import sys
 from . import __version__, history
 from .action_history import run_recorded_action
 from .actions import ActionCommitError, preview_action
-from .app import Jotline
-from .capture_ui import QuickCapture
 from .cli_doctor import (
     check_managed_directory,
     doctor_report as _doctor_report,
@@ -169,6 +174,8 @@ def can_open_editor() -> bool:
 
 
 def quick_capture(settings: Settings, daily: bool, workspace: str, when: date | None = None) -> str | None:
+    from .capture_ui import QuickCapture  # Deferred: see the note on run_workspace.
+
     if daily:
         destination = f"daily log · {(when or date.today()).isoformat()} · {workspace}"
     else:
@@ -653,6 +660,8 @@ def run_app(run: Invocation) -> None:
         initial_note = read_note_here(run, run.args.id)
     else:
         initial_note = None
+    from .app import Jotline  # Deferred: see the note on this module's imports.
+
     Jotline(run.vault, workspace=run.workspace, initial_note=initial_note).run()
 
 

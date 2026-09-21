@@ -56,6 +56,7 @@ HOTKEY_ACTIONS = {
     "daily_date": ("", "Open daily log by date (optional)"),
     "extract_note": ("", "Extract selection to new note (optional)"),
     "process_inbox": ("", "Process next inbox note (optional)"),
+    "external_editor": ("", "Edit this note in $EDITOR (optional)"),
     "backlinks": ("alt+k", "Show connections"),
     "format_strike": ("", "Format strikethrough (optional)"),
     "format_numbered": ("", "Format numbered list (optional)"),

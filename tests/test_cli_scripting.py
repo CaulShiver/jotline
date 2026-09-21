@@ -368,3 +368,35 @@ def test_fish_completion(completion_env, line, expected):
     result = subprocess.run(["fish", "--no-config", "-c", program], capture_output=True, text=True, env=env,
                             timeout=60)
     assert {row.split("\t")[0] for row in result.stdout.splitlines()} == expected, result.stderr
+
+
+def test_shell_commands_do_not_import_the_terminal_ui(tmp_path):
+    """Capture is bound to a desktop hotkey, so its startup cost is felt.
+
+    Importing Textual and markdown-it took about 0.3s of a 0.4s `jotline
+    capture`, for screens the command never draws. A fresh interpreter is used
+    because an in-process import would already be satisfied by another test.
+    """
+    probe = ("import sys, jotline.cli;"
+             "print('textual' in sys.modules, 'markdown_it' in sys.modules)")
+    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, check=True, timeout=60)
+    assert result.stdout.split() == [b"False", b"False"]
+
+
+def test_capture_still_opens_the_editor_when_no_text_is_given(tmp_path, monkeypatch):
+    """The deferred import has to happen before the screen is needed, not after."""
+    from jotline import cli
+    from jotline.settings import Settings
+
+    opened = {}
+
+    class Recorder:
+        def __init__(self, destination, theme):
+            opened["destination"] = destination
+
+        def run(self):
+            return "typed in the editor"
+
+    monkeypatch.setattr("jotline.capture_ui.QuickCapture", Recorder)
+    assert cli.quick_capture(Settings(), False, "default") == "typed in the editor"
+    assert "default" in opened["destination"]
