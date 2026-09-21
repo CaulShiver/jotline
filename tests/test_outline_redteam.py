@@ -5,7 +5,7 @@ from textual.widgets import TextArea
 
 from jotline.app import Jotline
 from jotline.modal import Palette
-from jotline.outliner import Outline
+from jotline.outliner import Outline, dedent_line
 from jotline.store import Vault
 
 
@@ -189,3 +189,25 @@ async def test_an_external_change_commits_the_open_block_before_re_deriving(tmp_
         screen.update_save_status()
         await pilot.pause()
         assert 'IMPORTANT' in app.editor().text or 'IMPORTANT' in editor.text
+
+
+async def test_a_block_operation_does_not_rewrite_a_tab_as_spaces(tmp_path):
+    # Indentation was rebuilt as spaces on every block operation, including
+    # ones that reindent nothing. A tab inside a fenced code block is content,
+    # so a Makefile recipe line in a note quietly stopped working.
+    note = '- Build steps\n  ```make\n  all:\n  \techo hi\n  ```\n- Ship it'
+    app, opened = outline_app(tmp_path, note)
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.action_outliner()
+        await pilot.pause()
+        app.screen.action_task()
+        await pilot.pause(0.3)
+        assert app.editor().text == '- [ ] Build steps\n  ```make\n  all:\n  \techo hi\n  ```\n- Ship it'
+
+
+def test_dedenting_only_touches_the_columns_it_removes():
+    assert dedent_line('  \techo hi', 2) == '\techo hi'
+    assert dedent_line('  \techo hi', 0) == '  \techo hi'
+    assert dedent_line('    echo hi', 2) == '  echo hi'
+    assert dedent_line('\techo hi', 2) == '  echo hi'  # A straddling tab leaves spaces.
+    assert dedent_line('  echo hi', 4) == '  echo hi'  # Less indentation than asked for.
