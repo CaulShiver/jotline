@@ -128,10 +128,37 @@ def rank(note: NoteQuery, terms: list[Term]) -> Match | None:
     return Match(score, *excerpt(note.body, words, note.title))
 
 
-def line_bounds(folded: str, body: str, at: int) -> tuple[int, int]:
-    start = folded.rfind('\n', 0, at) + 1
-    stop = folded.find('\n', at)
-    return start, len(body) if stop == -1 else stop
+def fold_origins(text: str) -> tuple[str, list[int]]:
+    """Case-fold text, and map every folded index back to the index it came from.
+
+    Folding is not length-preserving — ß folds to ss, ﬁ to fi, İ to i̇ — so an
+    offset into the folded text is not an offset into the text itself. Anything
+    that slices or marks the original has to come back through this map. Full
+    case folding is defined per character, so folding character by character
+    gives the same text as folding the whole string at once.
+    """
+    pieces, origins = [], []
+    for index, character in enumerate(text):
+        piece = character.casefold()
+        pieces.append(piece)
+        origins += [index] * len(piece)
+    origins.append(len(text))
+    return ''.join(pieces), origins
+
+
+def folded_spans(text: str, words: list[str]) -> list[tuple[int, int]]:
+    """Every occurrence of any word in text, ignoring case, as spans into text."""
+    folded, origins = fold_origins(text)
+    spans = []
+    for word in words:
+        index = folded.find(word)
+        while index != -1:
+            start = origins[index]
+            # A word can end inside one source character's expansion, as "s"
+            # does inside "ß". Mark the whole character rather than nothing.
+            spans.append((start, max(origins[index + len(word)], start + 1)))
+            index = folded.find(word, index + 1)
+    return spans
 
 
 def excerpt(body: str, words: list[str], title: str = '') -> tuple[str, tuple[tuple[int, int], ...]]:
@@ -141,20 +168,24 @@ def excerpt(body: str, words: list[str], title: str = '') -> tuple[str, tuple[tu
     title is already on the row above and repeating it says nothing. Offsets
     are spans into the returned line, so a caller can mark the words without
     searching the text a second time.
+
+    Lines are walked in order and folded one at a time, so every offset here
+    is an offset into the body. Searching the whole folded body instead mixes
+    the two coordinate systems, which on a note that grows when folded both
+    quotes the wrong line and can fail to make progress at all.
     """
-    folded = body.casefold()
     heading = title.casefold().strip()
-    at = 0
-    while True:
-        found = min((located for word in words if (located := folded.find(word, at)) != -1), default=-1)
-        if found == -1:
-            return '', ()
-        start, stop = line_bounds(folded, body, found)
+    start = 0
+    while start <= len(body):
+        stop = body.find('\n', start)
+        if stop == -1:
+            stop = len(body)
         line = body[start:stop]
-        if heading and line.casefold().lstrip('# ').strip() == heading:
-            at = stop + 1  # Keep looking past the note's own title heading.
-            continue
-        return window(line, found - start, words)
+        spans = folded_spans(line, words)
+        if spans and not (heading and line.casefold().lstrip('# ').strip() == heading):
+            return window(line, min(begin for begin, _ in spans), words)
+        start = stop + 1
+    return '', ()
 
 
 def window(line: str, at: int, words: list[str]) -> tuple[str, tuple[tuple[int, int], ...]]:
@@ -166,11 +197,4 @@ def window(line: str, at: int, words: list[str]) -> tuple[str, tuple[tuple[int, 
         windowed = '…' + windowed
     if right < len(line):
         windowed += '…'
-    folded = windowed.casefold()
-    offsets = []
-    for word in words:
-        index = folded.find(word)
-        while index != -1:
-            offsets.append((index, index + len(word)))
-            index = folded.find(word, index + 1)
-    return windowed, tuple(sorted(offsets))
+    return windowed, tuple(sorted(folded_spans(windowed, words)))
