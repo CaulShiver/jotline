@@ -27,7 +27,7 @@ from .filesystem import (
     read_regular_fd,
     read_regular_file,  # noqa: F401
     replace_at,
-    rename_noreplace,
+    restore_displaced,
     unlink_quietly,
     vault_lock,
 )
@@ -76,6 +76,22 @@ def validate_note_id(note_id: str) -> str:
     if not re.fullmatch(r"[a-zA-Z0-9_-]+", note_id):
         raise ValueError("Invalid note ID")
     return note_id
+
+
+def displaced_note_id(name: str) -> str | None:
+    """The note a displaced original belongs to, or None when the name predates it."""
+    if not name.startswith(history.DISPLACED_PREFIX):
+        return None
+    # A note ID cannot contain a dot, so the first one separates it from the
+    # unique suffix. Names written before 0.9.9 are only the suffix and name
+    # no note; those stay for the user to sort out, as doctor already says.
+    stem, separator, _ = name[len(history.DISPLACED_PREFIX):].partition(".")
+    if not separator:
+        return None
+    try:
+        return validate_note_id(stem)
+    except ValueError:
+        return None
 
 
 def parse_calendar_date(value: str, *, today: date | None = None) -> date:
@@ -226,6 +242,7 @@ class Vault:
         # Set by unlock(); while None, encrypted notes read as locked and their text stays sealed.
         self.cipher: NoteCipher | None = None
         self._cache: dict[str, tuple[FileSignature, Note, int, float]] = {}
+        self._recovered_displaced = False
         self.permission_warning = ("Vault is writable by other users; use chmod go-w to protect note replacement"
                                    if self.path.stat().st_mode & 0o022 else "")
         if self.permission_warning:
@@ -320,11 +337,59 @@ class Vault:
         """Force the next scan to reread note bodies from disk."""
         self._cache.clear()
 
+    def recover_displaced(self) -> list[str]:
+        """Put back displaced originals whose note file is missing.
+
+        A save moves the note aside and then publishes the new text under its
+        name. A crash in that window, or a filesystem that refuses both a hard
+        link and an exclusive rename, leaves the only copy of the note under a
+        hidden name that nothing lists: the note is simply gone from the app.
+        Where the note's own name is free again, the displaced file is that
+        note, so put it back. A displaced file whose note does exist is the
+        litter of a save that did finish, and doctor already reports it.
+        """
+        recovered: list[str] = []
+        try:
+            with os.scandir(self.path) as entries:
+                names = [entry.name for index, entry in enumerate(entries)
+                         if index < MAX_SCAN_ENTRIES and entry.name.startswith(history.DISPLACED_PREFIX)]
+        except OSError:
+            return recovered
+        pending = [(name, note_id) for name in names
+                   if (note_id := displaced_note_id(name)) and not self.file(note_id).exists()]
+        if not pending:
+            return recovered
+        try:
+            with self.write_lock():
+                directory = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                try:
+                    for name, note_id in pending:
+                        try:
+                            # Read it first: a symlink or a directory under that
+                            # name is not a note and must not be published as one.
+                            read_regular_at(directory, name)
+                            restore_displaced(directory, name, self.file(note_id).name)
+                        except (OSError, ValueError):
+                            continue
+                        recovered.append(note_id)
+                    if recovered:
+                        history.sync_directory(directory)
+                finally:
+                    os.close(directory)
+        except OSError:
+            return recovered
+        for note_id in recovered:
+            self.warnings.append(f"Recovered note {note_id}; a save had left it under a hidden name")
+        return recovered
+
     def notes(self) -> list[Note]:
         notes = []
         self.warnings = ([self.permission_warning] if self.permission_warning else []) + list(self.sticky_warnings)
         if self.backup_warning and self.backup_warning not in self.warnings:
             self.warnings.append(self.backup_warning)
+        if not self._recovered_displaced:
+            self._recovered_displaced = True
+            self.recover_displaced()
         refreshed = {}
         retained_bytes = 0
         scanned_bytes = 0
@@ -432,7 +497,10 @@ class Vault:
 
     def _publish_replace(self, directory: int, temp: str, filename: str, note_id: str,
                          actual: str) -> None:
-        displaced = ".jotline-displaced-" + uuid4().hex
+        # The note ID is in the name because nothing else records it: the note
+        # file has no ID in its header, its name is the ID. Without it a
+        # displaced original cannot be put back by anything but a human.
+        displaced = f"{history.DISPLACED_PREFIX}{note_id}.{uuid4().hex}"
         keep_displaced = False
         try:
             # Move aside precisely the inode present at publication time,
@@ -452,8 +520,7 @@ class Vault:
                     try:
                         # Restore only into a free name. A creator after the
                         # read above must not lose its own content.
-                        rename_noreplace(displaced, filename,
-                                         src_dir_fd=directory, dst_dir_fd=directory)
+                        restore_displaced(directory, displaced, filename)
                     except BaseException as restore_error:
                         self.retain_warning(
                             f"Save failed; the original note was retained as {displaced}: {restore_error}")

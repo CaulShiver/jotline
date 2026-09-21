@@ -22,7 +22,7 @@ from .limits import (
     MAX_SCAN_ENTRIES,
     MAX_SETTINGS_BYTES,
 )
-from .store import Vault, validate_note_id, validate_workspace
+from .store import Vault, displaced_note_id, validate_note_id, validate_workspace
 from .templates import MAX_TEMPLATE_ENTRIES, Templates
 
 
@@ -189,8 +189,10 @@ def check_displaced(vault: Vault, warnings: list[str]) -> dict[str, object]:
     for path in bounded_children(vault.path, "vault", MAX_SCAN_ENTRIES, warnings):
         if path.name.startswith(history.DISPLACED_PREFIX):
             names.append(path.name)
+            note_id = displaced_note_id(path.name)
+            belongs = f" of note {note_id}" if note_id else ""
             warnings.append(
-                f"conflicts: {path.name} is a displaced original from a failed save; "
+                f"conflicts: {path.name} is a displaced original{belongs} from a failed save; "
                 "copy it out before deleting")
     return {"files": names, "count": len(names)}
 

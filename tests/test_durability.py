@@ -1,12 +1,17 @@
 from datetime import datetime
+import errno
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import time
 
+import pytest
 from textual.widgets import TextArea
+
+from jotline import filesystem
 
 from jotline.app import Jotline, Palette
 from jotline.bench import CI_BUDGET_SECONDS, CI_NOTE_COUNT, measure_vault, populate_synthetic_vault, verdict
@@ -162,3 +167,88 @@ async def test_health_and_recovery_copy_commands(tmp_path):
         await pilot.pause()
         assert app.current.id == recovered.id
         assert app.editor().text == "# Keep\n\nDraft text"
+
+
+def test_a_crash_between_moving_the_note_aside_and_publishing_gets_the_note_back(tmp_path):
+    # A save moves the note aside, then publishes the new text under its name.
+    # Killed in between, the only copy of the note was left under a hidden name
+    # that nothing lists, so the note was gone from the app with no warning.
+    vault = Vault(tmp_path)
+    note = vault.new("Important\n\nORIGINAL TEXT\n")
+    vault.save(note)
+    crash = """
+import os, pathlib, signal, sys
+from jotline.store import Vault
+vault = Vault(pathlib.Path(sys.argv[1]))
+note = vault.read(sys.argv[2])
+import jotline.filesystem as filesystem
+filesystem.fs.link = lambda *a, **k: os.kill(os.getpid(), signal.SIGKILL)
+note.body = "NEW TEXT\\n"
+vault.save(note)
+"""
+    killed = subprocess.run([sys.executable, "-c", crash, str(tmp_path), note.id],
+                            capture_output=True)
+    assert killed.returncode == -signal.SIGKILL
+    assert not (tmp_path / f"{note.id}.md").exists()  # The save really was interrupted.
+
+    reopened = Vault(tmp_path)
+    assert [found.id for found in reopened.notes()] == [note.id]
+    assert reopened.read(note.id).body == "Important\n\nORIGINAL TEXT\n"
+    assert any("Recovered note" in warning for warning in reopened.warnings)
+
+
+def test_a_save_survives_a_filesystem_with_neither_links_nor_exclusive_rename(tmp_path, monkeypatch):
+    # Hard links are refused on FAT, SMB and shared folders; several of those
+    # also reject renameat2's flags, which the restore path relied on. Both
+    # refused, the note was deterministically lost on its first overwrite.
+    vault = Vault(tmp_path)
+    note = vault.new("Important\n\nORIGINAL TEXT\n")
+    vault.save(note)
+
+    def no_links(*args, **kwargs):
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    def no_flags(source, target, **kwargs):
+        raise OSError(errno.EINVAL, "Invalid argument", str(target))
+
+    monkeypatch.setattr(filesystem.fs, "link", no_links)
+    monkeypatch.setattr(filesystem, "rename_noreplace", no_flags)
+    edited = vault.read(note.id)
+    edited.body = "NEW TEXT\n"
+    with pytest.raises(OSError):
+        vault.save(edited)
+
+    monkeypatch.undo()
+    reopened = Vault(tmp_path)
+    assert [found.id for found in reopened.notes()] == [note.id]
+    assert reopened.read(note.id).body == "Important\n\nORIGINAL TEXT\n"
+
+
+def test_recovery_leaves_a_displaced_file_whose_note_is_still_there(tmp_path):
+    # A save that finished can leave the displaced original behind as litter.
+    # Putting that back would overwrite the note with its previous text.
+    vault = Vault(tmp_path)
+    note = vault.new("Current text\n")
+    vault.save(note)
+    litter = tmp_path / f"{DISPLACED_PREFIX}{note.id}.{'0' * 32}"
+    litter.write_text("stale previous text")
+    assert vault.recover_displaced() == []
+    assert litter.exists()
+    assert "Current text" in vault.read(note.id).body
+
+
+def test_recovery_ignores_a_displaced_name_that_does_not_say_which_note_it_is(tmp_path):
+    vault = Vault(tmp_path)
+    leftover = tmp_path / (DISPLACED_PREFIX + "abcd")
+    leftover.write_text("original body")
+    assert vault.recover_displaced() == []
+    assert leftover.exists()
+
+
+def test_recovery_refuses_to_publish_a_symlink_as_a_note(tmp_path):
+    vault = Vault(tmp_path)
+    secret = tmp_path.parent / "secret.txt"
+    secret.write_text("not a note")
+    (tmp_path / f"{DISPLACED_PREFIX}{'a' * 32}.{'0' * 32}").symlink_to(secret)
+    assert vault.recover_displaced() == []
+    assert not (tmp_path / f"{'a' * 32}.md").exists()

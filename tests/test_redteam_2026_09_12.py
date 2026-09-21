@@ -64,7 +64,9 @@ def test_displaced_note_warning_survives_sidebar_refresh(tmp_path, monkeypatch):
     def fail(*args, **kwargs):
         raise OSError(errno.EIO, "boom")
     monkeypatch.setattr(store, "publish_new", fail)
-    monkeypatch.setattr(store, "rename_noreplace", fail)
+    # The restore, and the recovery pass a later listing runs, both go through
+    # restore_displaced now; fail it so the original really stays displaced.
+    monkeypatch.setattr(store, "restore_displaced", fail)
     note.body = "edited"
     with pytest.raises(OSError):
         vault.save(note)
