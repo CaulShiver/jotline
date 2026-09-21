@@ -28,6 +28,11 @@
   narrows the task list the way `jotline tasks --due today` already did from the
   shell, **Tick off a task** checks one off without leaving the list, and a task
   due today now says so rather than reading as any other dated line.
+- Fix outlining losing text typed or pasted into a block in the moment after a
+  structural edit. That edit leaves the tree waiting to be re-derived from the
+  note, and re-deriving it reloads the block from the note; it now commits what
+  is in the block editor first, the way every other path that reads the note
+  already does.
 - Lint with ruff on Linux and Python 3.13 in CI, configured for defects rather
   than style. It found eight unused imports, six unused variables, an f-string
   with no placeholder, a re-raise that hid its cause and an unused loop
