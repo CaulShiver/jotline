@@ -42,7 +42,7 @@ from .screens import FindInNote, MarkdownPreview, RevisionPreview
 from .search import Match, parse_query, rank, sought
 from .settings import HOTKEY_ACTIONS, Settings, VIEW_COLLECTIONS
 from .store import (COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, daily_date_from_id,
-                    is_daily_id, parse_calendar_date, tagged_body, validate_workspace, wiki_link)
+                    is_daily_id, parse_calendar_date, tagged_body, validate_workspace)
 from .sync import sync_guide
 from .templates import GUIDE, REVIEW, Templates
 from .workflows import Workflows
