@@ -448,6 +448,14 @@ class OutlinerScreen(Modal[None]):
             # A pending timer can outlive the screen's children during teardown.
             self.canonical = True
             return
+        # Text still sitting in the block editor has not reached the note yet,
+        # and reparsing reloads the block from the note, so settling first would
+        # drop it. Commit it the way every other path that reads the note does.
+        if not self.flush():
+            return
+        if self.canonical:
+            # A structural commit reparsed already and stopped this timer.
+            return
         cursor = editor.cursor_location
         self.reparse()
         if self.zoomed and self.current not in set(self.zoomed.walk()):

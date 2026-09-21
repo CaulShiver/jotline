@@ -122,7 +122,30 @@ async def test_structural_text_paste_reconciles_and_preserves_parent_tail(tmp_pa
             (b.content, bool(b.parent)) for b in Outline(app.editor().text).walk()]
         app.copy_to_clipboard('\n- Literal')
         screen.action_paste_text()
+        # Pasting writes into the block editor, whose Changed message carries the
+        # text back to the note when the queue next runs. Commit it here rather
+        # than hope one pause pumps that message, so the assertion below waits
+        # for the write-back instead of racing it.
+        screen.flush()
         await pilot.pause()
+        assert '\\- Literal' in app.editor().text
+
+
+async def test_settling_commits_an_unfinished_block_edit_instead_of_dropping_it(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 32)) as pilot:
+        screen = await open_outline(app, pilot, '- Parent\n  - Child\n- Other')
+        app.copy_to_clipboard('- New\n  - Sub')
+        screen.action_paste_outline()
+        app.copy_to_clipboard('\n- Literal')
+        screen.action_paste_text()
+        assert screen.block_editor().text == 'New\n\\- Literal'
+        # A structural change leaves the tree waiting to be re-derived from the
+        # note. That re-derivation reloads the block from the note, so it has to
+        # take the editor's text with it; settling used to reload over the top
+        # and lose whatever had not been committed yet.
+        screen.settle()
+        assert screen.block_editor().text == 'New\n\\- Literal'
         assert '\\- Literal' in app.editor().text
 
 

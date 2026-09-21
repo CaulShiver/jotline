@@ -5,11 +5,13 @@ import asyncio
 from dataclasses import replace
 from datetime import date, timedelta
 import re
+import subprocess
 from time import monotonic
+from typing import NamedTuple
 
 from textual import events, on
 from textual.geometry import Size
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, SuspendNotSupported
 from textual.binding import Binding
 from textual.containers import Horizontal, HorizontalScroll, Vertical, VerticalScroll
 from textual.screen import ModalScreen
@@ -24,6 +26,7 @@ from .cli_doctor import doctor_report, format_doctor
 from .commands import Command
 from .connect_ui import Connections, ConnectionsBar
 from .encryption_ui import Encryption
+from .external_editor import ENCRYPTED, NO_EDITOR, UNSAVED, configured_editor
 from .import_ui import RecoveryImport
 from .links import wiki_link_at, wiki_target_from_href
 from .markdown_editor import JOTLINE_THEME, MarkdownEditor
@@ -36,12 +39,25 @@ from .preferences import Preferences
 from .recovery_ui import HealthScreen
 from .review_ui import Review
 from .screens import FindInNote, MarkdownPreview, RevisionPreview
+from .search import Match, parse_query, rank, sought
 from .settings import HOTKEY_ACTIONS, Settings, VIEW_COLLECTIONS
 from .store import (COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, daily_date_from_id,
-                    is_daily_id, parse_calendar_date, tagged_body, validate_workspace, wiki_link)
+                    is_daily_id, parse_calendar_date, tagged_body, validate_workspace)
 from .sync import sync_guide
 from .templates import GUIDE, REVIEW, Templates
 from .workflows import Workflows
+
+class Row(NamedTuple):
+    """One line of the note list, and everything that decides how it is drawn.
+
+    Compared whole to tell a redraw from a refresh that changes nothing, so the
+    marked spans belong in it: the same quoted line can be marked differently
+    as a query grows.
+    """
+    id: str
+    text: str
+    marks: tuple[tuple[int, int], ...]
+
 
 __all__ = ["Command", "FindInNote", "Jotline", "MarkdownPreview", "Palette", "RevisionPreview", "TextPrompt"]
 
@@ -132,7 +148,7 @@ class Jotline(App):
         self._note_summary_timer = None
         self._search_timer = None
         self._listed_query: str | None = None
-        self._listed_rows: list[tuple[str, str]] | None = None
+        self._listed_rows: list[Row] | None = None
         self.inbox_capture_count = 0
         self.recent_note_ids = []
         self.note_positions = {}
@@ -325,6 +341,46 @@ class Jotline(App):
         self.editor().focus()
         self.notify('Settings saved. Startup choices apply next launch.')
 
+    @staticmethod
+    def note_matches(notes: list[Note], query: str) -> dict[str, Match]:
+        """Why each note matched, keyed by note id.
+
+        Empty when the query has no words in it. A bare `#tag` or date filter
+        matches every result equally well, so there is nothing to rank and no
+        line worth quoting back.
+        """
+        try:
+            terms = parse_query(query)
+        except ValueError:
+            return {}
+        if not sought(terms):
+            return {}
+        return {note.id: found for note in notes if (found := rank(note, terms)) is not None}
+
+    @staticmethod
+    def note_row(note: Note, found: Match | None) -> Row:
+        """A note as the list draws it: title, then when and where.
+
+        While a search is running a third line quotes the matched text, so the
+        list says why a note is in it rather than only that it is. Without a
+        query the row stays two lines, which is what fits an 80x24 terminal.
+        """
+        text = (("★ " if note.starred else "") + ("🔒 " if note.encrypted else "") + note.title
+                + "\n  " + (note.updated[:10] or "imported") + " · " + note.collection)
+        if found is None or not found.line:
+            return Row(note.id, text, ())
+        lead = len(text) + 3  # The newline and the two spaces before the quote.
+        return Row(note.id, text + "\n  " + found.line,
+                   tuple((lead + start, lead + stop) for start, stop in found.offsets))
+
+    @staticmethod
+    def marked_row(row: Row) -> Text:
+        """The row as Rich text, with the matched words in bold."""
+        marked = Text(row.text)
+        for start, stop in row.marks:
+            marked.stylize("bold", start, stop)
+        return marked
+
     def refresh_notes(self) -> None:
         if self._search_timer is not None:
             self._search_timer.stop()
@@ -347,16 +403,21 @@ class Jotline(App):
             notes.sort(key=lambda n: (not n.starred, n.title.casefold(), n.id))
         elif order == 'created':
             notes.sort(key=lambda n: (n.starred, n.created, n.id), reverse=True)
+        matches = self.note_matches(notes, query)
+        if matches:
+            # Sorting is stable, so the configured order above still decides
+            # between notes the query matched equally well.
+            notes.sort(key=lambda n: -matches[n.id].score)
         listing = self.query_one("#notes", OptionList)
-        rows = [(n.id, ("★ " if n.starred else "") + ("🔒 " if n.encrypted else "") + n.title + "\n" +
-                       "  " + (n.updated[:10] or "imported") + " · " + n.collection)
-                for n in notes]
+        rows = [self.note_row(note, matches.get(note.id)) for note in notes]
         # Rebuilding measures and wraps every row, and a save or a filter that leaves the
         # same rows on screen is common, so redraw only when the rows themselves changed.
+        # The marked spans are part of a row: the same line can be highlighted
+        # differently as the query grows, and that is a redraw.
         if rows != self._listed_rows:
             self._listed_rows = rows
             listing.clear_options()
-            listing.add_options([Option(Text(label), id=note_id) for note_id, label in rows])
+            listing.add_options([Option(self.marked_row(row), id=row.id) for row in rows])
         listing.highlighted = next((index for index, note in enumerate(notes)
                                     if note.id == self.current.id), None)
         label = f"{self.collection.upper()} / {len(notes)}"
@@ -686,6 +747,71 @@ class Jotline(App):
             self.load(note)
         except (OSError, ValueError) as error:
             self.notify(str(error), severity="error")
+
+    def action_external_editor(self) -> None:
+        """Save, hand the file to $EDITOR, then read back whatever came home."""
+        command = configured_editor()
+        if not command:
+            self.notify(NO_EDITOR, severity="warning", timeout=12)
+            return
+        if self.current.encrypted:
+            self.notify(ENCRYPTED, severity="warning", timeout=12)
+            return
+        if not self.save_current(explicit=True):
+            return
+        note_id = self.current.id
+        path = self.vault.file(note_id)
+        if not path.exists():
+            self.notify(UNSAVED, severity="warning", timeout=8)
+            return
+        if problem := self.hand_to_editor(command, path):
+            self.notify(problem, severity="error", timeout=12)
+            return
+        self.reload_external_edit(note_id)
+
+    def hand_to_editor(self, command: list[str], path) -> str:
+        """Give the terminal to the editor until it exits. Empty means it ran.
+
+        Suspending needs a terminal to hand over; a driver without one raises
+        rather than leaving the editor drawing into a screen Jotline still
+        owns, and that has to be reported instead of looking like a note that
+        came back unchanged.
+        """
+        try:
+            with self.suspend():
+                subprocess.run([*command, str(path)], check=False)
+        except SuspendNotSupported:
+            return ("This terminal cannot hand itself to another program, so "
+                    f"{command[0]} was not started.")
+        except OSError as error:
+            return f"{command[0]} did not start: {error}"
+        return ""
+
+    def reload_external_edit(self, note_id: str) -> None:
+        """Take the file back after an external editor had it.
+
+        Anything could have happened to it out there, including a broken header
+        or a delete, so a failure here has to say so rather than leave a stale
+        note on screen looking saved.
+        """
+        try:
+            note = self.vault.read(note_id)
+        except FileNotFoundError:
+            self.notify("That note is no longer on disk. Nothing was reloaded.", severity="error", timeout=12)
+            return
+        except (OSError, ValueError) as error:
+            self.notify(f"The note could not be read back: {error}", severity="error", timeout=15)
+            return
+        if note.locked:
+            self.prompt_unlock(then=lambda: self.reload_external_edit(note_id))
+            return
+        try:
+            self.load(note)
+        except ValueError as error:
+            self.notify(str(error), severity="error", timeout=12)
+            return
+        self.refresh_notes()
+        self.notify("Reloaded from disk.")
 
     def action_new(self) -> None:
         if self.save_current(explicit=True):
@@ -1069,6 +1195,8 @@ class Jotline(App):
             Command("copy", "Copy note to the clipboard", self.copy_current_note,
                     group="everyday"),
             Command("accessibility", "Clipboard, IME, and screen-reader notes", self.show_accessibility_notes),
+            Command("external-editor", "Edit this note in $EDITOR", self.action_external_editor,
+                    "external_editor"),
             Command("recovery", "Save recovery copy", self.save_recovery_copy, group="everyday"),
             Command("sync-recipe", "How to sync this vault with Git or Syncthing", self.show_sync_guide,
                     group="everyday"),

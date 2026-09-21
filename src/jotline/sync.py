@@ -6,7 +6,7 @@ from pathlib import Path
 from .cli_io import terminal_text
 from .crypto import KEY_FILE
 
-GITIGNORE = f"""\
+GITIGNORE = """\
 .jotline.lock
 .jotline-displaced-*
 """

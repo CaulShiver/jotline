@@ -17,6 +17,8 @@ from textual.widgets import Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
 from rich.text import Text
 
+from . import fuzzy
+
 
 class Modal(ModalScreen[ScreenResultType]):
     _dismissed = False
@@ -64,15 +66,46 @@ class Palette(Modal[str | None]):
         self.filter("")
         self.query_one(Input).focus()
 
+    @staticmethod
+    def mark(label: str, offsets: list[int]) -> Text:
+        """The label with matched characters underlined.
+
+        Built one span at a time rather than through console markup, because a
+        label is a note title and a title may contain square brackets.
+        """
+        marked = Text(label)
+        if len(label.casefold()) != len(label):
+            # Folding grew the text (ß becomes ss), so the offsets no longer
+            # line up with the original. Matching still stands; only the
+            # underlining is dropped.
+            return marked
+        for offset in offsets:
+            if offset < len(label) and not label[offset].isspace():
+                marked.stylize("bold underline", offset, offset + 1)
+        return marked
+
     def filter(self, query: str) -> None:
         terms = query.casefold().split()
         pool = self.choices
         if not terms and self.everyday is not None:
             pool = [(key, label) for key, label in self.choices if key in self.everyday]
-        self.filtered = [(key, label) for key, label in pool if all(t in label.casefold() for t in terms)]
+        if terms:
+            # Rank by match quality, keeping the source order among equal scores
+            # so a stable list does not shuffle as the query grows.
+            scored = []
+            for position, (key, label) in enumerate(pool):
+                score, offsets = fuzzy.match(terms, label)
+                if score:
+                    scored.append((-score, position, key, label, offsets))
+            scored.sort()
+            self.filtered = [(key, label) for _, _, key, label, _ in scored]
+            rows = [(key, self.mark(label, offsets)) for _, _, key, label, offsets in scored]
+        else:
+            self.filtered = list(pool)
+            rows = [(key, Text(label)) for key, label in pool]
         options = self.query_one(OptionList)
         options.clear_options()
-        options.add_options([Option(Text(label), id=key) for key, label in self.filtered])
+        options.add_options([Option(label, id=key) for key, label in rows])
         count = self.query_one("#command-count", Static)
         hidden = 0 if self.everyday is None else len(self.choices) - len(pool)
         if self.filtered:

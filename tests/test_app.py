@@ -224,3 +224,42 @@ def test_bind_capabilities_rejects_collisions_and_keeps_target_methods():
     assert Target.added == 3
     assert Target().own() == "own"
     assert Target().extra() == "extra"
+
+
+async def test_palette_matches_letters_in_order_and_ranks_the_best_first(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    choices = [('pdf', 'Export to PDF'), ('meeting', 'Meeting notes'), ('my-tags', 'My tag notes')]
+    async with app.run_test() as pilot:
+        app.push_screen(Palette(choices))
+        await pilot.pause()
+        palette = app.screen
+        palette.query_one('#command-query', Input).value = 'mtgnts'
+        await pilot.pause()
+        keys = [key for key, _ in palette.filtered]
+        assert 'pdf' not in keys
+        assert set(keys) == {'meeting', 'my-tags'}
+        palette.query_one('#command-query', Input).value = 'notes'
+        await pilot.pause()
+        assert palette.query_one('#commands', OptionList).highlighted == 0
+
+
+async def test_palette_keeps_source_order_when_nothing_is_typed(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    choices = [('c', 'Zebra'), ('b', 'Apple'), ('a', 'Mango')]
+    async with app.run_test() as pilot:
+        app.push_screen(Palette(choices))
+        await pilot.pause()
+        assert [key for key, _ in app.screen.filtered] == ['c', 'b', 'a']
+
+
+async def test_palette_marks_a_title_holding_square_brackets(tmp_path):
+    # Console markup would swallow "[v2]"; the label has to survive intact.
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test() as pilot:
+        app.push_screen(Palette([('draft', 'Draft [v2] notes')]))
+        await pilot.pause()
+        palette = app.screen
+        palette.query_one('#command-query', Input).value = 'v2'
+        await pilot.pause()
+        option = palette.query_one('#commands', OptionList).get_option_at_index(0)
+        assert str(option.prompt) == 'Draft [v2] notes'

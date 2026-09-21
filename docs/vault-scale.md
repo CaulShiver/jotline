@@ -48,6 +48,21 @@ Linux cloud agent, Python 3.12, 2026-09-15, idle tmpfs vault:
 Until a 2,000-note run misses 1s, **do not add an index**. Double down on
 `doctor`, conflict recovery copies, and ZIP backups instead.
 
+## Ranking and the quoted line
+
+Ordering results by match quality and quoting the matched line are a second
+pass over the notes the query already returned, not a second scan of the vault.
+Measured on the same synthetic 2,000-note vault, 2026-09-21, worst case being a
+word every note contains:
+
+| Query | Hits | Search | Ranking | Total |
+| --- | --- | --- | --- | --- |
+| `alpha` | 1 | 0.0037s | 0.0001s | 0.0038s |
+| `note` (in every note) | 2,000 | 0.0030s | 0.0194s | 0.0224s |
+
+0.022s against a 1.00s bar, so this changes nothing about the rule above:
+speed was never what search was missing.
+
 ## What *is* in product
 
 - Recovery copies store `recovery_of` in the note header. The draft body is

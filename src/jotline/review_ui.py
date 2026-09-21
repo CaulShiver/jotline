@@ -11,7 +11,7 @@ from .export import FORMAT_NAMES, ExportError, export_bytes, printable_markdown,
 from .markdown_editor import MarkdownEditor, headings
 from .modal import Palette, TextPrompt
 from .screens import MarkdownPreview
-from .tasks import gather
+from .tasks import gather, set_done
 
 
 class Review:
@@ -20,6 +20,8 @@ class Review:
     def review_commands(self, Command):
         return [
             Command("tasks", "Open tasks across notes", self.show_tasks, group="everyday"),
+            Command("tasks-due", "Open tasks due today or overdue", self.show_tasks_due, group="everyday"),
+            Command("task-done", "Tick off a task", self.choose_task_to_tick, group="everyday"),
             Command("process-inbox", "Process next inbox note", self.action_process_inbox, "process_inbox",
                     group="everyday"),
             Command("export-html", "Export note as HTML…", lambda: self.prompt_export("html")),
@@ -52,21 +54,97 @@ class Review:
         self.refresh_notes()
         self.notify(f"Next inbox capture · {len(queue)} remaining")
 
+    def task_label(self, task, today: date) -> str:
+        """One task as the picker shows it, saying plainly when it is due.
+
+        Overdue was already marked; today was not, and a task due today reads
+        as just another dated line without it.
+        """
+        label = "☐ " + task.text
+        if task.due:
+            if task.overdue(today):
+                label += f" · due {task.due} (overdue)"
+            elif task.due == today.isoformat():
+                label += " · due today"
+            else:
+                label += f" · due {task.due}"
+        return label + " · " + task.note_title
+
+    def open_tasks(self, due_by: str | None = None):
+        return gather(self.vault.search(workspace=self.workspace), due_by=due_by)
+
+    def task_picker(self, title: str, empty: str, due_by: str | None = None) -> list[tuple[str, str]] | None:
+        """Choices for a task picker, or None when there is nothing to pick."""
+        found = self.open_tasks(due_by)
+        if not found:
+            self.notify(empty)
+            return None
+        today = date.today()
+        return [(task.reference(), self.task_label(task, today)) for task in found]
+
     def show_tasks(self) -> None:
         if not self.save_current():
             return
-        found = gather(self.vault.search(workspace=self.workspace))
-        if not found:
-            self.notify("No open tasks in this workspace. Start a line with - [ ] in any note to add one.")
+        choices = self.task_picker(
+            "tasks", "No open tasks in this workspace. Start a line with - [ ] in any note to add one.")
+        if choices is None:
+            return
+        self.push_screen(Palette(choices, f"Open tasks · {len(choices)}"), self.open_task)
+
+    def show_tasks_due(self) -> None:
+        """The same list narrowed to what is actually owed, which is the agenda question.
+
+        `jotline tasks --due today` has answered it from the shell since tasks
+        arrived; inside the app the only list was everything, at any date.
+        """
+        if not self.save_current():
             return
         today = date.today()
-        choices = []
-        for task in found:
-            label = "☐ " + task.text
-            if task.due:
-                label += f" · due {task.due}" + (" (overdue)" if task.overdue(today) else "")
-            choices.append((task.reference(), label + " · " + task.note_title))
-        self.push_screen(Palette(choices, f"Open tasks · {len(found)}"), self.open_task)
+        choices = self.task_picker("due", f"Nothing is due by {today.isoformat()}. Open tasks lists the rest.",
+                                   due_by=today.isoformat())
+        if choices is None:
+            return
+        self.push_screen(Palette(choices, f"Due today or overdue · {len(choices)}"), self.open_task)
+
+    def choose_task_to_tick(self) -> None:
+        if not self.save_current():
+            return
+        choices = self.task_picker("tick", "No open tasks in this workspace.")
+        if choices is None:
+            return
+        self.push_screen(Palette(choices, "Tick off a task"), self.tick_task)
+
+    def tick_task(self, reference: str | None) -> None:
+        """Check a task off where it lives, without leaving the list to do it.
+
+        The note is rewritten line for line by set_done, the same call the
+        `jotline done` command uses, so a task ticked here and one ticked from
+        the shell leave the file in the same state.
+        """
+        if not reference:
+            return
+        note_id, _, line = reference.rpartition(":")
+        try:
+            note = self.vault.read(note_id)
+            if note.locked:
+                self.prompt_unlock(then=lambda: self.tick_task(reference))
+                return
+            checked = {}
+
+            def check(body: str) -> str:
+                updated, checked["task"] = set_done(body, int(line), True)
+                return updated
+
+            note = self.vault.update_body(note_id, self.workspace, check)
+        except (OSError, ValueError) as error:
+            self.notify(str(error), severity="error", timeout=12)
+            return
+        if self.current.id == note_id:
+            # load_id would see the same id and do nothing; the note in hand is
+            # the one that changed.
+            self.load(note)
+        self.refresh_notes()
+        self.notify("[x] " + checked["task"].text)
 
     def open_task(self, reference: str | None) -> None:
         if not reference:

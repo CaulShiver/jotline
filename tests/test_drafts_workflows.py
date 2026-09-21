@@ -320,7 +320,6 @@ def test_oversized_action_settings_leave_previous_file(tmp_path):
 
 
 async def test_replace_all_rejects_oversized_output_before_editing(tmp_path, monkeypatch):
-    import jotline.app as module
     app = Jotline(Vault(tmp_path))
     async with app.run_test() as pilot:
         editor = app.query_one('#editor', TextArea)

@@ -13,17 +13,19 @@ from time import monotonic
 from uuid import uuid4
 
 from .crypto import KEY_FILE, LOCKED, SCRYPT_N, EncryptionError, KeyFile, NoteCipher, is_sealed, new_note_key
+# Several names below are re-exported: other modules and the tests import
+# them from jotline.store rather than reaching into jotline.filesystem.
 from .filesystem import (
     FileSignature,
     create_private_temp,
     file_signature,
-    follow_root_prefix_symlinks,
+    follow_root_prefix_symlinks,  # noqa: F401
     fs as os,
-    pin_ancestors,
+    pin_ancestors,  # noqa: F401
     publish_new,
     read_regular_at,
     read_regular_fd,
-    read_regular_file,
+    read_regular_file,  # noqa: F401
     replace_at,
     rename_noreplace,
     unlink_quietly,
@@ -31,7 +33,7 @@ from .filesystem import (
 )
 from .limits import (
     CACHE_TTL_SECONDS,
-    EDIT_LIMIT_BYTES,
+    EDIT_LIMIT_BYTES,  # noqa: F401
     LOCK_TIMEOUT_SECONDS,
     MAX_CACHE_BYTES,
     MAX_CACHED_NOTES,
@@ -41,7 +43,7 @@ from .limits import (
     MAX_SCAN_ENTRIES,
     MAX_SETTINGS_BYTES,
 )
-from .links import LINK, NoteConnections, connect_note, wiki_link_targets
+from .links import LINK, NoteConnections, connect_note, wiki_link_targets  # noqa: F401
 from .search import compile_query
 from .tasks import gather
 

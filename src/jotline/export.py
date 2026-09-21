@@ -237,14 +237,16 @@ def converters(fmt: str, page: Path, work: Path):
     for index, browser in enumerate(find_browsers() if fmt == "pdf" else []):
         name = Path(browser).stem
 
-        def browser_command(profile: str, *extra: str) -> list[str]:
+        # Called inside this iteration, so the browser it reads is this one.
+        def browser_command(profile: str, *extra: str) -> list[str]:  # noqa: B023
             # The mock keychain keeps macOS Chrome from waiting on a keychain
             # prompt a headless run can never answer. Each attempt gets its own
             # profile, because a crashed browser can leave a profile lock that
             # makes the next launch wait. Do not add --blink-settings=
             # scriptEnabled=false: headless Chrome then exits 0 without printing.
             # The page's CSP already blocks every script.
-            return [browser, *extra, "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
+            return [browser, *extra, "--headless", "--disable-gpu",  # noqa: B023
+                    "--no-first-run", "--no-default-browser-check",
                     "--disable-extensions", "--use-mock-keychain", "--password-store=basic",
                     f"--user-data-dir={work / profile}",
                     "--no-pdf-header-footer", "--print-to-pdf-no-header", f"--print-to-pdf={target}", page.as_uri()]

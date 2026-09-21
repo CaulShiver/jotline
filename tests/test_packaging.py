@@ -24,7 +24,8 @@ def test_build_backend_and_runtime_dependency_bounds_are_explicit():
 
     assert data["build-system"]["requires"] == ["hatchling==1.32.0"]
     assert data["project"]["dependencies"] == ["textual>=8.2.8,<9", "markdown-it-py>=4,<5"]
-    assert data["project"]["optional-dependencies"]["dev"] == ["pytest>=8.2", "pytest-asyncio>=0.24"]
+    assert data["project"]["optional-dependencies"]["dev"] == ["pytest>=8.2", "pytest-asyncio>=0.24",
+                                                               "ruff>=0.14,<0.15"]
     assert data["project"]["urls"]["Repository"] == "https://github.com/CaulShiver/jotline"
     assert data["project"]["urls"]["Documentation"] == "https://github.com/CaulShiver/jotline/blob/main/docs/install.md"
     assert "Operating System :: Microsoft :: Windows" not in data["project"]["classifiers"]
@@ -38,6 +39,20 @@ def test_ci_gives_pytest_eight_minutes():
 
     assert "      - name: Run tests\n        timeout-minutes: 8\n" in workflow
     assert "timeout-minutes: 15" in workflow
+
+
+def test_ruff_lints_for_defects_rather_than_style():
+    """The narrow rule set is the point, not an oversight.
+
+    Turning on the style sets reports about a hundred findings across the tree,
+    so widening this is a decision someone makes deliberately rather than by
+    bumping a linter.
+    """
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    workflow = (ROOT / ".github/workflows/test.yml").read_text()
+
+    assert data["tool"]["ruff"]["lint"]["select"] == ["F", "E9", "B"]
+    assert "uv run --locked ruff check ." in workflow
 
 
 def test_wheel_package_includes_desktop_capture_snippets():

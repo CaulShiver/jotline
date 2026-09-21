@@ -84,7 +84,7 @@ async def test_keyboard_branch_operations_and_global_undo(tmp_path):
     app = Jotline(Vault(tmp_path))
     original = '- First\n- Parent\n  - Child\n- Last'
     async with app.run_test(size=(110, 35)) as pilot:
-        screen = await open_outline(app, pilot, original)
+        await open_outline(app, pilot, original)
         await pilot.press('down', 'tab')
         assert app.editor().text == '- First\n  - Parent\n    - Child\n- Last'
         await pilot.press('shift+tab', 'alt+shift+down')
@@ -98,7 +98,7 @@ async def test_keyboard_branch_operations_and_global_undo(tmp_path):
 async def test_new_note_tasks_and_empty_child_outdent(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test(size=(110, 35)) as pilot:
-        screen = await open_outline(app, pilot, '')
+        await open_outline(app, pilot, '')
         await pilot.press('f2', *'Parent', 'enter', 'tab')
         assert app.editor().text == '- Parent\n\n  - '
         await pilot.press('enter')
@@ -124,7 +124,7 @@ async def test_read_only_outline_cannot_mutate_source(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test(size=(110, 35)) as pilot:
         app.editor().read_only = True
-        screen = await open_outline(app, pilot, '- First\n- Second')
+        await open_outline(app, pilot, '- First\n- Second')
         await pilot.press('down', 'tab', 'ctrl+enter', 'alt+shift+up', 'f2', 'x', 'enter')
         assert app.editor().text == '- First\n- Second'
 
@@ -172,7 +172,7 @@ async def test_block_selection_edit_and_undo_do_not_touch_children(tmp_path):
 async def test_crlf_outline_edit_and_move_keep_line_endings(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test(size=(110, 35)) as pilot:
-        screen = await open_outline(app, pilot, '- First\r\n- Parent\r\n  - Child')
+        await open_outline(app, pilot, '- First\r\n- Parent\r\n  - Child')
         await pilot.press('down', 'f2', '!', 'tab')
         assert app.editor().text == '- First\r\n  - Parent!\r\n    - Child'
         await pilot.press('ctrl+s')
