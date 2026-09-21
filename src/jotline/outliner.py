@@ -197,11 +197,16 @@ class Block:
             # whitespace should change either.
             return
         for block in self.walk():
+            # Only the columns up to the item's content column are indentation.
+            # Whitespace past it is content and stays verbatim: inside a fenced
+            # code block a tab there is a Makefile recipe, not a nesting level.
+            width = len(block.prefix.expandtabs(4))
             shifted = []
             for line in block.lines:
                 content = line.lstrip(' \t')
-                width = len(line[:len(line) - len(content)].expandtabs(4))
-                shifted.append(' ' * max(0, width + amount) + content if line else '')
+                indentation = min(width, len(line[:len(line) - len(content)].expandtabs(4)))
+                shifted.append(' ' * max(0, indentation + amount) + dedent_line(line, indentation)
+                               if line else '')
             block.lines = shifted
 
 
