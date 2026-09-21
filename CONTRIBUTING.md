@@ -8,7 +8,10 @@ large change. Recipes and terminal compatibility reports are useful contribution
 alongside code. Security issues should follow [SECURITY.md](SECURITY.md).
 
 Install with `uv sync --extra dev`. Before opening a pull request, run the locked
-suite with `uv run --locked pytest -q`. CI also checks an unlocked latest resolve
+suite with `uv run --locked pytest -q` and the linter with `uv run --locked ruff
+check .`. Ruff is configured for defects rather than style: pyflakes and bugbear
+only. The style rule sets are deliberately off, so a finding it does report is
+worth reading rather than silencing. CI also checks an unlocked latest resolve
 with `uv lock --upgrade --dry-run`, a direct lower-bound environment, and a clean
 installed-wheel smoke run. For local release checks, build with `uv build --clear`
 and run `python scripts/install.py --from-dir dist --installer pip` into a fresh

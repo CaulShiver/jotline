@@ -70,7 +70,7 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 | `Ctrl+P` | Searchable command palette |
 | `Ctrl+O` | Open a note by title |
 | `Ctrl+D` | Today's daily log |
-| `Ctrl+F` | Search across notes |
+| `Ctrl+F` | Search across notes (results are ranked and quote the matched line) |
 | `Ctrl+B` | Toggle quiet focus mode |
 | `Alt+K` | Show incoming and outgoing connections |
 | `Ctrl+S` | Save immediately |
@@ -94,6 +94,24 @@ the editor formats the selection; it hides in focus mode. Type **format** in
 Ctrl+P for the rest, including heading levels, tables, and preview. Details:
 [Markdown editing](docs/markdown.md). Omarchy desktop follow:
 [Omarchy](docs/omarchy.md).
+
+## Your own editor
+
+Ctrl+P → **Edit this note in $EDITOR** hands the note's file to the editor
+named in `$JOTLINE_EDITOR`, `$VISUAL` or `$EDITOR`, gives it the terminal until
+it exits, then reads the file back. The vault is plain Markdown, so nothing is
+converted on the way out or the way in. An encrypted note stays in Jotline: the
+file on disk holds sealed text. Assign a key for it in **Ctrl+, → Keyboard
+shortcuts**.
+
+## Tasks
+
+Write `- [ ] Call the plumber due:2026-10-03` anywhere. Ctrl+P → **Open tasks
+across notes** lists every open task, dated ones first; **Open tasks due today
+or overdue** narrows it to what is owed now; **Tick off a task** checks one off
+without leaving the list. The same three answers come from the shell as
+`jotline tasks`, `jotline tasks --due today` and `jotline done NOTE:LINE`.
+Obsidian's 📅 due marker is understood alongside `due:`.
 
 ## Move or delete with the mouse
 

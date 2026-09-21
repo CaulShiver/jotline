@@ -42,6 +42,11 @@ External executable actions, regex search, dictation, AI and plugin APIs need
 separate designs and evidence of user demand. They are not required to capture
 or process notes locally.
 
+**Edit this note in $EDITOR** is not one of those. Local actions still run only
+built-in steps and evaluate no shell; that boundary is unchanged. This runs one
+program, named by the user in their own environment, on an explicit command,
+with no scripting surface and nothing configurable inside the app.
+
 ## Starter contributions
 
 Each item can be proposed as a focused issue or PR:

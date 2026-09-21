@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- Say why a note matched. A search with words in it now orders the note list by
+  match quality and gives each row a third line quoting the matched text with
+  the words in bold; a title hit, matching more of the query and a word near the
+  top of a note all count for more. A query of only tags or dates leaves the
+  order and the two-line rows alone. Still an in-memory scan with no index: at
+  2,000 notes the ranking pass costs 0.02s against the published 1.00s bar.
+- Match the letters you type in order in every picker, so `mtgnts` finds
+  *Meeting notes*. Results are ordered best first with the matched letters
+  underlined, and anything the old substring filter found is still found. The
+  matcher is linear in the length of a label rather than exhaustive, because a
+  label is a note title: `textual.fuzzy` takes 1.3 seconds on a five-letter
+  query against a 239-character line of repeated vowels and does not finish a
+  six-letter one, which in a picker is a freeze on every keystroke.
+- Add **Edit this note in $EDITOR**: save, hand the note's file to the editor
+  named in `$JOTLINE_EDITOR`, `$VISUAL` or `$EDITOR`, then read back whatever
+  comes home. An encrypted note is never handed out; a missing file, a broken
+  header or a terminal that cannot suspend is reported and leaves the draft on
+  screen. Bind a key for it in Settings.
+- Start `jotline capture` in about a tenth of a second instead of four tenths by
+  importing Textual only where a screen is drawn. `list`, `tasks`, `backlinks`,
+  `stats` and `done` never draw one and were paying for it too; capture is bound
+  to a desktop hotkey, so that was the gap between the key and the thought.
+- Answer the agenda question in the app. **Open tasks due today or overdue**
+  narrows the task list the way `jotline tasks --due today` already did from the
+  shell, **Tick off a task** checks one off without leaving the list, and a task
+  due today now says so rather than reading as any other dated line.
+- Lint with ruff on Linux and Python 3.13 in CI, configured for defects rather
+  than style. It found eight unused imports, six unused variables, an f-string
+  with no placeholder, a re-raise that hid its cause and an unused loop
+  variable; the two closures it flagged over a loop variable are called inside
+  their own iteration and are marked as such.
 - Make outlining keep up with a large note. Pressing Enter, Tab, Shift+Tab or a
   move key writes Markdown immediately and repaints from the tree it just built,
   re-deriving that tree from CommonMark once editing pauses rather than once per
