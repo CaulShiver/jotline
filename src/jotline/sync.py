@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shlex
 
 from .cli_io import terminal_text
 from .crypto import KEY_FILE
@@ -17,18 +18,29 @@ RECOVERY_KEEP_EDITING = "Keep editing"
 
 
 def vault_display(path: Path) -> str:
+    """The vault path as prose, safe to print."""
     return terminal_text(Path(path).expanduser().resolve())
 
 
+def vault_argument(path: Path) -> str:
+    """The vault path as a shell word, for a line the reader is told to run.
+
+    The default macOS vault lives under "Application Support", so an unquoted
+    cd is simply wrong out of the box, and any path holding shell
+    metacharacters turns a recipe into something else when it is pasted.
+    """
+    return terminal_text(shlex.quote(str(Path(path).expanduser().resolve())))
+
+
 def git_recipe(vault: Path) -> str:
-    shown = vault_display(vault)
+    quoted = vault_argument(vault)
     return f"""\
 ## Git
 
 Use Git when you want history you can clone. Jotline does not run Git for you.
 
 1. `jotline backup` (or Ctrl+P → Back up vault now).
-2. `cd {shown}`
+2. `cd {quoted}`
 3. Create a `.gitignore` with:
 
 {GITIGNORE.rstrip()}

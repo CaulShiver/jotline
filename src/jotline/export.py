@@ -310,7 +310,11 @@ def write_export(target: Path, data: bytes, *, force: bool = False) -> Path:
         raise ExportError(exists)
     temporary = target.with_name(f".{target.name}.jotline-{uuid4().hex}")
     try:
-        with open(temporary, "xb") as stream:
+        # Notes are 0600 and the key file is 0600; an export of an encrypted
+        # note carries the same text in the clear, so it is created private
+        # too rather than taking whatever the umask happens to allow.
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with open(descriptor, "wb") as stream:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())

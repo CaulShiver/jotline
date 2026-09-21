@@ -456,9 +456,13 @@ def run_action(run: Invocation) -> None:
     guard_output = sys.stdout.isatty() and not args.raw
     if guard_output and any(step['type'] == 'export' for step in steps):
         # Decide before any step runs, so a refused export cannot leave
-        # an append applied and then repeat it on every retry.
-        _, effects = preview_action(run.vault, note, steps)
-        if any(has_terminal_controls(effect) for effect in effects):
+        # an append applied and then repeat it on every retry. Check what
+        # would actually be written: the effect strings stop at 20,000
+        # characters, so a control character past that was invisible here
+        # and the append committed anyway, once more on each retry.
+        printed = []
+        preview_action(run.vault, note, steps, printed=printed)
+        if any(has_terminal_controls(body) for body in printed):
             raise ValueError(REFUSED_CONTROLS)
 
     def output(body):

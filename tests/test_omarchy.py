@@ -166,3 +166,17 @@ async def test_missing_palette_recovers_and_capture_follows(palette):
         assert editor._theme.cursor_style.bgcolor == Color.parse('#eceff2').rich_color
         assert editor._theme.selection_style.bgcolor == Color.parse('#2b2f37').rich_color
         assert app.omarchy_sync._timer is not None
+
+
+def test_a_malformed_theme_file_does_not_stop_jotline_starting(tmp_path, monkeypatch):
+    # Omarchy themes come from third-party git repos, and the sync object is
+    # built whether or not the theme is in use. Deeply nested TOML raises
+    # RecursionError, which is not a ValueError, so a 1.8 KB file stopped the
+    # app with a traceback that never named the file.
+    theme = tmp_path / ".local/state/omarchy/current/theme"
+    theme.mkdir(parents=True)
+    (theme / "colors.toml").write_text("a = " + "[" * 900 + "]" * 900 + "\n")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    assert load_omarchy_theme() is None

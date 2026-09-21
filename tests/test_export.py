@@ -1,4 +1,5 @@
 """HTML, Word and PDF exports from the shell and the app."""
+import stat
 import os
 from pathlib import Path
 import shutil
@@ -216,3 +217,14 @@ async def test_app_suggests_a_file_name_and_exports_in_the_background(tmp_path):
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert "<h1>Weekly plan: Sam/Alex</h1>" in target.read_text(encoding="utf-8")
+
+
+def test_an_export_is_created_as_private_as_the_note_it_came_from(tmp_path, monkeypatch):
+    # Notes and the key file are 0600. An export took whatever the umask
+    # allowed, which is 0644 by default -- including the export of an
+    # encrypted note, which carries the same text in the clear.
+    monkeypatch.setattr(os, "umask", lambda mask: 0o022)
+    os.umask(0o022)
+    target = tmp_path / "exported.md"
+    write_export(target, b"secret plaintext\n")
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600

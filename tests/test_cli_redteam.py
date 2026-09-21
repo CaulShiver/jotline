@@ -3,6 +3,8 @@ from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 from pathlib import Path
+import os
+import pty
 import subprocess
 import sys
 import zipfile
@@ -216,3 +218,30 @@ def test_export_refuses_terminal_controls_to_tty_without_raw(tmp_path, monkeypat
     redirected = run_cli(tmp_path, "export", note.id)
     assert redirected.returncode == 0
     assert redirected.stdout == note.body.encode()
+
+
+def test_an_action_guard_sees_control_characters_past_the_preview_cut(tmp_path):
+    # The pre-flight check read the effect strings, which stop at 20,000
+    # characters for display. A control character further into the note was
+    # invisible to it, so the export was refused only after the append had
+    # already committed -- and committed again on every retry.
+    vault = Vault(tmp_path)
+    source = vault.new("A" * 25_000 + "\x1b]0;OWNED\x07tail")
+    vault.save(source)
+    target = vault.new("Log\n")
+    vault.save(target)
+    settings = {"actions": {"append-then-export": [{"type": "append", "value": target.id},
+                                                   {"type": "export"}]}}
+    (tmp_path / ".jotline-settings.json").write_text(json.dumps(settings))
+
+    before = vault.read(target.id).body
+    # The guard only applies when stdout is a terminal, so give it one.
+    parent, child = pty.openpty()
+    result = subprocess.run([sys.executable, "-m", "jotline", "--vault", str(tmp_path),
+                             "run", "append-then-export", source.id],
+                            stdout=child, stderr=subprocess.PIPE, check=False)
+    os.close(child)
+    os.close(parent)
+    assert result.returncode == 1
+    assert b"terminal controls" in result.stderr
+    assert Vault(tmp_path).read(target.id).body == before

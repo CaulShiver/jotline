@@ -107,3 +107,16 @@ def test_parser_lists_sync_without_cloud():
     assert "Jotline cloud" in help_text
     sync_help = build_parser().parse_args(["sync", "git"])
     assert sync_help.tool == "git"
+
+
+def test_the_git_recipe_quotes_the_vault_path(tmp_path):
+    # The default macOS vault is under "Application Support", so an unquoted
+    # cd was wrong out of the box, and a path with shell metacharacters turned
+    # a line the reader is told to run into something else.
+    spaced = tmp_path / "Application Support" / "jotline" / "notes"
+    spaced.mkdir(parents=True)
+    assert f"cd '{spaced}'" in git_recipe(spaced)
+    hostile = tmp_path / "x;touch PWNED"
+    hostile.mkdir()
+    assert "cd '" in git_recipe(hostile)
+    assert "`cd " + str(hostile) + "`" not in git_recipe(hostile)
