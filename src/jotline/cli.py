@@ -20,7 +20,6 @@ from . import __version__, history
 from .action_history import run_recorded_action
 from .actions import ActionCommitError, preview_action
 from .cli_doctor import (
-    check_managed_directory,
     doctor_report as _doctor_report,
     print_doctor,
 )
@@ -737,7 +736,7 @@ def main() -> None:
         # not an error, and Python must not print one while flushing at exit.
         devnull = os.open(os.devnull, os.O_WRONLY)
         os.dup2(devnull, sys.stdout.fileno())
-        raise SystemExit(0)
+        raise SystemExit(0) from None
     except UnicodeDecodeError as error:
         parser.exit(1, f"jotline: {utf8_error_message(error)}\n")
     except FileNotFoundError as error:
