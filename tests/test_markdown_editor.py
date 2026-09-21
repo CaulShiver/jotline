@@ -441,3 +441,44 @@ def test_tags_do_not_overlap_url_destinations(line):
 
 def test_numeric_tags_follow_vault_index_rule():
     assert 'md.tag' in names(highlight_markdown(['issue #123']), 0)
+
+
+async def test_document_size_tracks_edits_without_remeasuring_every_line(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 32)) as pilot:
+        editor = app.editor()
+        editor.load_text('alpha\nbeta\ngamma')
+        await pilot.pause()
+        measured = lambda: sum(len(line) for line in editor.document.lines)
+        assert editor._document_size() == measured()
+        editor.move_cursor((1, 0))
+        editor.insert_checked('one\ntwo ')
+        assert editor._document_size() == measured()
+        editor.replace('', (0, 0), (2, 2))
+        assert editor._document_size() == measured()
+        editor.action_undo()
+        assert editor._document_size() == measured()
+        # A document splits on every separator Python recognizes, so the count
+        # has to follow the same rule rather than counting newlines.
+        editor.insert_checked('carriage\r\nreturn\u2028split\u0085end')
+        assert editor._document_size() == measured()
+        editor.action_undo()
+        assert editor._document_size() == measured()
+        # A fresh document is measured again rather than carried across.
+        editor.load_text('replaced entirely\nwith other text')
+        assert editor._document_size() == measured()
+
+
+async def test_status_line_catches_up_with_the_note_after_a_burst_of_typing(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.current.body = 'one two three #alpha'
+        app.refresh_status()
+        assert app.note_summary() == (4, ['alpha'])
+        app.current.body = 'one two three four five #alpha #beta'
+        # Rescanning the whole note on every keystroke is what this avoids, so a
+        # second scan inside the window still reports the previous count.
+        assert app.note_summary() == (4, ['alpha'])
+        app.refresh_status()
+        await pilot.pause()
+        assert app.note_summary() == (7, ['alpha', 'beta'])

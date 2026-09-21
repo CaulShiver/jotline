@@ -4,8 +4,10 @@ from unittest.mock import PropertyMock
 
 from textual.widgets import TextArea
 
+from jotline import outliner
 from jotline.app import Jotline
 from jotline.outline_session import OutlineSession, revision
+from jotline.outline_view import OutlineView
 from jotline.outliner import Outline
 from jotline.store import Vault
 
@@ -65,3 +67,83 @@ async def test_short_outline_rows_only_build_rich_text_for_viewport(tmp_path, mo
         app.editor().load_text('- External replacement')
         screen.update_save_status()
         assert screen.outline.text == '- External replacement'
+
+
+def test_derived_block_text_is_reused_until_raw_lines_change():
+    outline = Outline('- Parent\n  - Child')
+    parent = outline.roots[0]
+    assert parent.content == 'Parent'
+    # Raw lines stay authoritative; the derived text is only a cache of them.
+    parent.lines = ['- Renamed']
+    assert parent.content == 'Renamed'
+    child = parent.children[0]
+    assert child.prefix == '  - '
+    outline.outdent(child)
+    assert child.parent is None
+    assert child.prefix == '- '
+    assert outline.text == '- Renamed\n- Child'
+
+
+async def test_structural_edit_parses_the_note_once_editing_has_paused(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.editor().load_text('\n'.join(f'- Item {index}' for index in range(200)))
+        await pilot.pause()
+        app.action_outliner()
+        await pilot.pause()
+        screen = app.screen
+        screen.choose(screen.outline.roots[5])
+        parses = []
+        with mock_patch.object(outliner.PARSER, 'parse',
+                               side_effect=lambda *a, **k: parses.append(a) or []):
+            # A burst of structural edits writes Markdown immediately and waits
+            # to re-derive the tree, so it cannot pay a whole-note parse a key.
+            screen.action_indent()
+            screen.action_outdent()
+            screen.action_move_down()
+            assert not parses
+            assert not screen.canonical
+            assert screen.source.text == screen.outline.text
+        screen.settle()
+        assert screen.canonical
+        assert screen.source.text == screen.outline.text
+        assert screen.outline.text.startswith('- Item 0')
+
+
+async def test_leaving_the_outliner_re_derives_the_tree_before_saving(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.editor().load_text('- One\n- Two\n- Three')
+        await pilot.pause()
+        app.action_outliner()
+        await pilot.pause()
+        screen = app.screen
+        screen.choose(screen.outline.roots[1])
+        screen.action_indent()
+        assert not screen.canonical
+        screen.action_done()
+        await pilot.pause()
+        assert app.editor().text == '- One\n  - Two\n- Three'
+
+
+async def test_wrapped_rows_survive_a_reparse_and_are_built_only_when_painted(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.editor().load_text('\n'.join(f'- Item {index} ' + 'word ' * 30 for index in range(120)))
+        await pilot.pause()
+        app.action_outliner()
+        await pilot.pause()
+        screen = app.screen
+        view = screen.view()
+        assert view.row_count > len(view.blocks)
+        before = dict(view.cache)
+        screen.reparse()
+        screen.rebuild()
+        # Wrapping depends on the text and the column, never on block identity,
+        # so re-deriving the tree must not re-wrap a note that did not change.
+        with mock_patch.object(OutlineView, 'wrapped_lines',
+                               side_effect=AssertionError('re-wrapped unchanged rows')):
+            view.reflow()
+        assert dict(view.cache) == before
+        painted = view.render_line(0)
+        assert painted.text.startswith('•')

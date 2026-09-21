@@ -42,6 +42,12 @@ ACTIONS = {
     'undo': 'Undo edit', 'redo': 'Redo edit', 'save': 'Save note', 'done': 'Switch to Markdown',
 }
 
+# A structural edit already knows the tree it built, and writes it to the note
+# immediately. Re-deriving that tree from CommonMark costs a whole-note parse,
+# so it waits for a pause in editing; a burst of keys then pays for one parse
+# instead of one per key. Anything that reads the note settles it first.
+SETTLE_SECONDS = 0.15
+
 
 class BlockEditor(MarkdownEditor):
     def check_consume_key(self, key: str, character: str | None = None) -> bool:
@@ -136,6 +142,8 @@ class OutlinerScreen(Modal[None]):
         self.inspector = False
         self.command_keys = {key for binding in self.BINDINGS if binding.priority for key in binding.key.split(',')}
         self.note_id = ''
+        self.canonical = True
+        self._settle_timer = None
 
     def compose(self) -> ComposeResult:
         yield Static('Outliner · ' + self.app.current.title, id='outline-title', markup=False)
@@ -206,6 +214,8 @@ class OutlinerScreen(Modal[None]):
         elif self.source.text != self._synced_source_text:
             self.reparse()
             self.rebuild()
+        else:
+            self.settle()
         self.query_one('#outline-save', Static).update(
             self.app._status_message + f' · {len(self.nodes)} blocks' +
             (f' · {len(self.selection)} selected' if self.selection else '') + ' · local Markdown')
@@ -292,6 +302,10 @@ class OutlinerScreen(Modal[None]):
         self.current = ids.get(uid) or self.outline.at_row(row)
         self.zoomed = ids.get(zoom)
         self.selection.intersection_update(ids)
+        self.canonical = True
+        if self._settle_timer is not None:
+            self._settle_timer.stop()
+            self._settle_timer = None
 
     def flush(self) -> bool:
         editor = self.block_editor()
@@ -410,12 +424,36 @@ class OutlinerScreen(Modal[None]):
         cursor = self.block_editor().cursor_location
         operation()
         self.sync()
-        self.reparse()
+        self.defer_settle()
         self.source.history.checkpoint()
         if self.zoomed and self.current not in set(self.zoomed.walk()):
             self.zoomed = None
         self.rebuild()
         self.block_editor().move_cursor(cursor)
+
+    def defer_settle(self):
+        """Mark the live tree as not yet re-derived from the note's Markdown."""
+        self.canonical = False
+        if self._settle_timer is not None:
+            self._settle_timer.stop()
+        self._settle_timer = self.set_timer(SETTLE_SECONDS, self.settle) if self.is_mounted else None
+
+    def settle(self):
+        """Re-derive the outline from the note text, if an edit left that pending."""
+        if self.canonical:
+            return
+        try:
+            editor = self.block_editor()
+        except NoMatches:
+            # A pending timer can outlive the screen's children during teardown.
+            self.canonical = True
+            return
+        cursor = editor.cursor_location
+        self.reparse()
+        if self.zoomed and self.current not in set(self.zoomed.walk()):
+            self.zoomed = None
+        self.rebuild()
+        editor.move_cursor(cursor)
 
     def action_indent(self):
         self.change(lambda: self.outline.indent_many(self.targets()))
@@ -592,6 +630,7 @@ class OutlinerScreen(Modal[None]):
     def history(self, redo=False):
         if self.source.read_only or not self.flush():
             return
+        self.settle()
         self.session.outline = self.outline
         self.session.remember()
         self.source.action_redo() if redo else self.source.action_undo()
@@ -620,6 +659,7 @@ class OutlinerScreen(Modal[None]):
     def action_search(self):
         if not self.flush():
             return
+        self.settle()
         choices = [(b.uid, self.path_label(b)) for b in self.outline.walk()]
         def found(uid):
             block = next((b for b in self.outline.walk() if b.uid == uid), None)
@@ -678,6 +718,7 @@ class OutlinerScreen(Modal[None]):
         self.view().refresh()
 
     def action_move_to(self):
+        self.settle()
         excluded = {b for root in self.targets() for b in root.walk()}
         choices = [('root', 'Note root')] + [(b.uid, self.path_label(b)) for b in self.outline.walk() if b not in excluded]
         def picked(uid):
@@ -710,6 +751,7 @@ class OutlinerScreen(Modal[None]):
 
     def action_copy(self):
         if self.flush():
+            self.settle()
             self.app.copy_note_text(self.selected_markdown())
 
     def action_cut(self):
@@ -859,6 +901,7 @@ class OutlinerScreen(Modal[None]):
         self._restored_scroll = state.get('scroll', 0)
 
     def persist_state(self):
+        self.settle()
         rows = self.outline.rows()
         data = {'revision': revision(self.source.text), 'folded': [row for b, row in rows.items() if b.collapsed],
                 'current': rows.get(self.current, 0), 'zoom': rows.get(self.zoomed),
@@ -871,6 +914,7 @@ class OutlinerScreen(Modal[None]):
 
     def action_save(self):
         if self.flush():
+            self.settle()
             self.app.save_current(explicit=True)
             self.persist_state()
             self.update_save_status()
@@ -885,6 +929,7 @@ class OutlinerScreen(Modal[None]):
     def action_done(self):
         if not self.flush():
             return
+        self.settle()
         self.source.history.checkpoint()
         self.source.move_cursor((self.outline.row(self.current), 0))
         self.app.save_current(explicit=True)
