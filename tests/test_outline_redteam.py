@@ -1,6 +1,8 @@
 """Synthetic regressions for outliner data preservation and hidden selections."""
 import pytest
 
+from textual.widgets import TextArea
+
 from jotline.app import Jotline
 from jotline.modal import Palette
 from jotline.outliner import Outline
@@ -143,3 +145,47 @@ async def test_delayed_layout_tolerates_editor_removed_during_teardown(tmp_path)
         assert screen.is_mounted
         screen.position_editor()
         assert app.editor().text == note.body
+
+
+async def test_a_refused_structural_edit_does_not_leave_the_tree_ahead_of_the_note(tmp_path, monkeypatch):
+    # The size guard refuses the write but the operation stayed in the live
+    # tree, so block_rows described a note that did not exist. Every later
+    # block edit was then written at a row belonging to a different block.
+    original = '- AAAA\n- BBBB\n- CCCC'
+    app, note = outline_app(tmp_path, original)
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.action_outliner()
+        await pilot.pause()
+        screen = app.screen
+        monkeypatch.setattr('jotline.outliner_ui.EDIT_LIMIT_BYTES', len(original.encode()))
+        screen.action_duplicate()
+        await pilot.pause()
+        assert screen.outline.text == original  # The tree matches the refused note.
+
+        monkeypatch.undo()
+        screen.choose(screen.outline.roots[1])  # Move to the BBBB block.
+        screen.action_edit_block()
+        editor = screen.block_editor()
+        editor.select_all()
+        editor.replace('X', *sorted((editor.selection.start, editor.selection.end)))
+        await pilot.pause(0.3)
+        assert app.editor().text == '- AAAA\n- X\n- CCCC'
+        assert 'CCCC' in app.editor().text
+
+
+async def test_an_external_change_commits_the_open_block_before_re_deriving(tmp_path):
+    # Re-deriving the outline reloads the block editor from the note, so a path
+    # that re-derives without committing first throws away what was typed.
+    app, note = outline_app(tmp_path, '- First\n- Second')
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.action_outliner()
+        await pilot.pause()
+        screen = app.screen
+        screen.action_edit_block()
+        editor = screen.block_editor()
+        with editor.prevent(TextArea.Changed):
+            editor.insert_checked('IMPORTANT')
+        app.editor().replace('\n- Third', app.editor().document.end, app.editor().document.end)
+        screen.update_save_status()
+        await pilot.pause()
+        assert 'IMPORTANT' in app.editor().text or 'IMPORTANT' in editor.text
