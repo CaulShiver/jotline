@@ -17,6 +17,7 @@ import subprocess
 import sys
 from typing import Literal
 
+from .environment import child_environment
 from .filesystem import (
     create_private_temp,
     fs,
@@ -257,7 +258,8 @@ def refresh_desktop_database(directory: Path) -> None:
     if tool is None:
         return
     try:
-        subprocess.run([tool, str(directory)], check=False, capture_output=True, timeout=10)
+        subprocess.run([tool, str(directory)], check=False, capture_output=True, timeout=10,
+                       env=child_environment())
     except (OSError, subprocess.TimeoutExpired):
         return
 
@@ -397,10 +399,10 @@ def launch_plan(capture: list[str], *, in_terminal: bool) -> LaunchPlan:
 
 def execute_launch(plan: LaunchPlan) -> None:
     if plan.mode == "spawn":
-        subprocess.Popen(plan.argv, start_new_session=True, close_fds=True)
+        subprocess.Popen(plan.argv, start_new_session=True, close_fds=True, env=child_environment())
         return
     if plan.mode == "exec":
-        os.execvp(plan.argv[0], plan.argv)
+        os.execvpe(plan.argv[0], plan.argv, child_environment())
         return
     raise ValueError("Unknown launch mode: " + plan.mode)
 

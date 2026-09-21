@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 
+from .environment import child_environment
+
 
 def clipboard_command(platform: str | None = None) -> list[str] | None:
     host = sys.platform if platform is None else platform
@@ -44,6 +46,7 @@ def write_system_clipboard(text: str) -> bool:
             input=text.encode("utf-8"),
             check=True,
             timeout=5,
+            env=child_environment(),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

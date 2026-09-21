@@ -17,6 +17,7 @@ import tempfile
 import time
 from uuid import uuid4
 
+from .environment import child_environment
 from .links import rewrite_wiki_links, wiki_href
 from .filesystem import link_unsupported, rename_noreplace
 from .tasks import TASK, fenced_pairs
@@ -189,7 +190,8 @@ def _run(command: list[str], output: Path, timeout: float = TIMEOUT_SECONDS) -> 
     wants_pdf = output.suffix == ".pdf"
     with tempfile.TemporaryFile() as errors:
         try:
-            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=errors)
+            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=errors,
+                                       env=child_environment())
         except OSError as error:
             return error.strerror or str(error)
         deadline = time.monotonic() + timeout

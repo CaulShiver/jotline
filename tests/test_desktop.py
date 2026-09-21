@@ -311,7 +311,7 @@ def test_execute_launch_spawns_detached_and_execs(monkeypatch):
     assert kwargs["start_new_session"] is True
     assert kwargs["close_fds"] is True
     executed = []
-    monkeypatch.setattr(desktop.os, "execvp", lambda file, args: executed.append((file, list(args))))
+    monkeypatch.setattr(desktop.os, "execvpe", lambda file, args, env: executed.append((file, list(args))))
     desktop.execute_launch(desktop.LaunchPlan("exec", ["jotline", "capture"]))
     assert executed == [("jotline", ["jotline", "capture"])]
 

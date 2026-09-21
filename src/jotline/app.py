@@ -26,6 +26,7 @@ from .cli_doctor import doctor_report, format_doctor
 from .commands import Command
 from .connect_ui import Connections, ConnectionsBar
 from .encryption_ui import Encryption
+from .environment import child_environment
 from .external_editor import ENCRYPTED, NO_EDITOR, UNSAVED, configured_editor
 from .import_ui import RecoveryImport
 from .links import wiki_link_at, wiki_target_from_href
@@ -782,7 +783,7 @@ class Jotline(App):
         """
         try:
             with self.suspend():
-                subprocess.run([*command, str(path)], check=False)
+                subprocess.run([*command, str(path)], check=False, env=child_environment())
         except SuspendNotSupported:
             return ("This terminal cannot hand itself to another program, so "
                     f"{command[0]} was not started.")
