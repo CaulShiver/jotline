@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+- **A search no longer hangs the app on a note that grows when it is folded.**
+  ß folds to ss, so the folded body is longer than the body, and the matched-line
+  code walked the folded text with body offsets. On such a note the skip position
+  stopped advancing and the search spun until Jotline was killed, taking any
+  unsaved editing with it. The same drift quoted the wrong line under a search
+  result and put the highlights on the wrong characters. Skipping repeated
+  headings is also linear now rather than quadratic: 64,000 of them took 10.7s
+  and now take 0.15s.
+- **A note interrupted mid-save comes back instead of disappearing.** A save
+  moves the note aside and then publishes the new text under its name. Killed in
+  between -- or on a filesystem that refuses both hard links and exclusive
+  renames, such as sshfs or a VM shared folder -- the only copy was left under a
+  hidden name that nothing listed, so the note was gone from the app with no
+  warning. Opening the vault now puts it back, and `doctor` names the note a
+  displaced file belongs to.
+- **The outliner no longer overwrites a block you were not editing.** A
+  structural edit the size guard refused stayed in the live tree, so every later
+  block edit was written at a row belonging to a different block. Re-deriving the
+  outline after an external change also commits the open block first, rather than
+  dropping what was typed into it.
+- **Encrypted notes stay encrypted.** Extract selection to new note keeps the new
+  note encrypted instead of writing the selection out in the clear; Save this
+  note as a template and an action's append step refuse an encrypted note and say
+  why; a link to an encrypted note carries no label, because the label was its
+  decrypted first line.
+- **Note text can no longer drive your terminal.** The shell commands escaped
+  control sequences; the app did not, so a note's title or a matched line could
+  retitle the window, clear the screen, or write your clipboard through OSC 52.
+  Applied to the note list, the note heading, the quoted search line and the
+  import review dialog.
+- **`jotline capture` is fast again for everyone who has saved a preference.**
+  Reading a settings file imported the whole terminal UI to check outline
+  shortcut names, which put back most of the deferred-import win: 0.10s without a
+  settings file, 0.29s with one, and 0.11s now.
+- A partly invalid settings file keeps the same fields every time. Which of two
+  colliding fields survived depended on the hash seed, and the next ordinary save
+  wrote the loser back as empty -- losing a hotkey map for good in three runs out
+  of eight.
+- A malformed Omarchy `colors.toml` falls back to the built-in theme instead of
+  stopping Jotline with a traceback.
+- Exports are created private (0600), like notes and the key file. An export of
+  an encrypted note carries the same text in the clear.
+- `jotline run` checks the whole output before an action commits, not the first
+  20,000 characters, so a control character further into a note no longer lets an
+  append apply and then repeat on every retry.
+- `jotline sync git` quotes the vault path, which was wrong out of the box on the
+  default macOS vault and a paste hazard on any path with shell metacharacters.
+- History keeps the newest revisions when the clock steps backwards (DST, an NTP
+  correction, a resumed VM snapshot); it was deleting them and keeping stale ones.
+  A revision left half-written by a crash is also collected now, and removed when
+  a note is encrypted -- it held the note in the clear and nothing swept it.
+- Block operations no longer rewrite a tab as spaces, so a Makefile recipe line
+  kept in a note survives toggling a task or editing a neighbouring block.
+
 - Say why a note matched. A search with words in it now orders the note list by
   match quality and gives each row a third line quoting the matched text with
   the words in bold; a title hit, matching more of the query and a word near the
