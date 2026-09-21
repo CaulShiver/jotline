@@ -123,6 +123,15 @@ async def test_structural_text_paste_reconciles_and_preserves_parent_tail(tmp_pa
         app.copy_to_clipboard('\n- Literal')
         screen.action_paste_text()
         await pilot.pause()
+        # Pasting writes into the block editor, whose Changed message carries the
+        # text back to the note. One pause used to pump that message in time;
+        # since the outliner gained its settle timer there is other queued work
+        # competing for the same pause, and on a loaded runner the write-back
+        # can land after the assertion. Flush it rather than hope: with the
+        # flush the assertion holds even with no pause at all, and without both
+        # it never holds, so this waits for the write-back instead of weakening
+        # what is checked.
+        screen.flush()
         assert '\\- Literal' in app.editor().text
 
 
