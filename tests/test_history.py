@@ -1,8 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from dataclasses import replace
 import json
 from jotline.filesystem import fs as os
 import zipfile
+from uuid import uuid4
 
 import pytest
 from jotline import history
@@ -470,3 +472,60 @@ def test_daily_backup_survives_concurrent_prune(tmp_path, monkeypatch, fault_ent
     with zipfile.ZipFile(archives[0]) as archive:
         assert archive.testzip() is None
         assert note.id + '.md' in archive.namelist()
+
+
+def test_a_clock_that_steps_backwards_does_not_delete_the_newest_revisions(tmp_path, monkeypatch):
+    # Survivors were ranked by the wall-clock stamp inside the revision ID, so
+    # after DST ends or an NTP correction the revisions just written sorted
+    # below the old ones and were pruned away while stale ones were retained.
+    vault = Vault(tmp_path)
+    note = vault.new("Draft 0\n")
+    vault.save(note)
+    base = datetime(2026, 11, 1, 1, 26, 0)
+    clock = {"now": base}
+
+    def stepping_clock():
+        moment = clock["now"]
+        clock["now"] = moment + timedelta(seconds=61)
+        return moment.strftime("%Y%m%dT%H%M%S%f") + "-" + uuid4().hex[:8]
+
+    monkeypatch.setattr(history, "stamp", stepping_clock)
+    for draft in range(1, 35):
+        note.body = f"Draft {draft}\n"
+        vault.save(note)
+
+    clock["now"] = base - timedelta(hours=1)  # Local time repeats the hour.
+    for draft in range(35, 45):
+        note.body = f"Draft {draft}\n"
+        vault.save(note)
+
+    # A snapshot records the text a save is about to overwrite, so the last
+    # draft written is the live note rather than a revision.
+    folder = tmp_path / ".jotline-history" / note.id
+    kept = [path.read_text() for path in folder.glob("*.md")]
+    for draft in range(35, 44):
+        assert any(f"Draft {draft}\n" in text for text in kept), draft
+
+
+def test_a_revision_left_half_written_by_a_crash_is_not_a_plaintext_leak(tmp_path):
+    # A crash during a revision write leaves a .revision-* temp holding the
+    # whole note. It carries no revision ID, so the purge that runs when a note
+    # is encrypted never saw it, and no pruning pass covered this folder.
+    pytest.importorskip("cryptography")
+    secret = "ZQPLATNTXT dosage 200mg"
+    vault = Vault(tmp_path)
+    vault.setup_encryption("correct horse battery", n=2 ** 10)
+    vault.unlock("correct horse battery")
+    note = vault.new(f"{secret} therapy\n")
+    vault.save(note)
+    note.body += "more\n"
+    vault.save(note)
+
+    orphan = tmp_path / ".jotline-history" / note.id / (".revision-" + "a" * 32)
+    orphan.write_text(f"{secret} therapy\nmore\n")
+
+    note.encrypted = True
+    vault.save(note)
+    remaining = [path for path in tmp_path.rglob("*")
+                 if path.is_file() and secret.encode() in path.read_bytes()]
+    assert remaining == []

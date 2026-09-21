@@ -189,14 +189,37 @@ def prune_history(vault, note_id: str, *, vault_directory: int | None = None) ->
     try:
         with _revision_directory(vault, note_id, create=False, vault_directory=vault_directory) as (_, folder):
             entries = _revisions_at(vault, note_id, folder)
+            # _revisions_at orders by the file's own write time; hold on to that
+            # order. Ranking the survivors by the wall-clock stamp inside the ID
+            # instead means a clock that steps backwards -- DST ending, an NTP
+            # correction, a VM resumed from a snapshot -- sorts the newest
+            # revisions below the old ones, so the work just done is what gets
+            # deleted and the stale revisions are what is kept.
+            newest_first = {entry.id: index for index, entry in enumerate(entries)}
             first_per_minute = {}
             for entry in reversed(entries):
                 first_per_minute.setdefault(entry.id[:13], entry.id)
-            keep = set(sorted(first_per_minute.values(), reverse=True)[:HISTORY_LIMIT])
+            keep = set(sorted(first_per_minute.values(),
+                              key=lambda revision: newest_first[revision])[:HISTORY_LIMIT])
             keep.update(entry.id for entry in entries[:2])
             for entry in entries:
                 if entry.id not in keep:
                     os.unlink(f"{entry.id}.md", dir_fd=folder)
+            # prune_stale_temps only ever ran over the vault root and the
+            # backups folder, so a temp in here was never anyone's to collect.
+            cutoff = time.time() - STALE_TEMP_SECONDS
+            with os.scandir(folder) as leftovers:
+                for index, entry in enumerate(leftovers):
+                    if index >= MAX_HISTORY_ENTRIES:
+                        break
+                    if not STALE_TEMP.fullmatch(entry.name):
+                        continue
+                    try:
+                        info = entry.stat(follow_symlinks=False)
+                        if stat.S_ISREG(info.st_mode) and info.st_mtime < cutoff:
+                            os.unlink(entry.name, dir_fd=folder)
+                    except OSError:
+                        continue
             sync_directory(folder)
     except FileNotFoundError:
         pass
@@ -213,6 +236,23 @@ def remove_revision(vault, note_id: str, revision_id: str, *, vault_directory: i
         pass
 
 
+def _remove_revision_temps(folder: int) -> int:
+    """Remove partly written revisions from a note's history folder."""
+    removed = 0
+    with os.scandir(folder) as entries:
+        for index, entry in enumerate(entries):
+            if index >= MAX_HISTORY_ENTRIES:
+                break
+            if not STALE_TEMP.fullmatch(entry.name):
+                continue
+            try:
+                os.unlink(entry.name, dir_fd=folder)
+                removed += 1
+            except OSError:
+                continue
+    return removed
+
+
 def remove_unencrypted_revisions(vault, note_id: str, is_encrypted, *, vault_directory: int | None = None) -> int:
     """Delete saved versions of a note that could hold its text unencrypted."""
     removed = 0
@@ -226,6 +266,10 @@ def remove_unencrypted_revisions(vault, note_id: str, is_encrypted, *, vault_dir
                 if not keep:
                     os.unlink(f"{entry.id}.md", dir_fd=folder)
                     removed += 1
+            # A crash during a revision write leaves a .revision-* temp holding
+            # the whole note in the clear. It has no revision ID, so the loop
+            # above never sees it, and until now nothing else removed it either.
+            removed += _remove_revision_temps(folder)
             sync_directory(folder)
     except FileNotFoundError:
         pass
