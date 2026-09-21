@@ -102,7 +102,15 @@ def test_key_publication_refuses_concurrent_key_without_hardlinks(tmp_path, monk
     assert key_path.read_text() == 'existing wrapped key'
 
 
-def test_unavailable_exclusive_publication_keeps_original_and_draft(tmp_path, monkeypatch):
+def test_unavailable_exclusive_publication_puts_the_original_back(tmp_path, monkeypatch):
+    """Links refused and RENAME_NOREPLACE refused: sshfs, vboxsf, hgfs, some 9p.
+
+    This used to leave the note under a hidden name that nothing lists, so the
+    note disappeared from the app on its first overwrite -- deterministically,
+    on every save. The restore falls back to a plain rename into a name this
+    process observed free while holding the vault lock, so the note stays where
+    the user can see it. The save still fails and the draft is still unsaved.
+    """
     vault = store.Vault(tmp_path)
     note = vault.new('original')
     vault.save(note)
@@ -113,17 +121,22 @@ def test_unavailable_exclusive_publication_keeps_original_and_draft(tmp_path, mo
     def unavailable(*args, **kwargs):
         raise OSError(errno.ENOTSUP, 'exclusive rename unavailable')
 
-    monkeypatch.setattr(store, 'rename_noreplace', unavailable)
     monkeypatch.setattr(filesystem, 'rename_noreplace', unavailable)
     with pytest.raises(OSError, match='exclusive rename unavailable'):
         vault.save(note)
     assert note.body == 'unsaved draft' and note.original == baseline
-    displaced = list(tmp_path.glob('.jotline-displaced-*'))
-    assert len(displaced) == 1 and displaced[0].read_text() == baseline
-    assert any('original note was retained' in warning for warning in vault.warnings)
+    assert vault.file(note.id).read_text() == baseline
+    assert list(tmp_path.glob('.jotline-displaced-*')) == []
+    assert [found.id for found in store.Vault(tmp_path).notes()] == [note.id]
 
 
 def test_restore_after_failed_save_does_not_overwrite_a_new_creator(tmp_path, monkeypatch):
+    """The exclusive rename is still tried first, and still wins this race.
+
+    Only a filesystem that refuses the flag outright falls back to a plain
+    rename. A name taken by a concurrent creator raises EEXIST, which is not
+    that, so the restore gives way and the original stays displaced.
+    """
     vault = store.Vault(tmp_path)
     note = vault.new('original')
     vault.save(note)
@@ -139,7 +152,7 @@ def test_restore_after_failed_save_does_not_overwrite_a_new_creator(tmp_path, mo
         return native(source, target, **kwargs)
 
     monkeypatch.setattr(store, 'publish_new', fail_publication)
-    monkeypatch.setattr(store, 'rename_noreplace', race_restore)
+    monkeypatch.setattr(filesystem, 'rename_noreplace', race_restore)
     with pytest.raises(OSError, match='publication failed'):
         vault.save(note)
     assert vault.file(note.id).read_text() == 'late external writer'
