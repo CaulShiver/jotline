@@ -121,6 +121,29 @@ before 528–708 ms, after 526–707 ms; nested 10,000 before 1,085–1,259 ms, 
 1,152–1,254 ms), and headless scheduling dominates that spread.
 [Raw samples](performance-measurements-2026-09-21.json) retain every reading.
 
+## Note list and search box
+
+Measured on the same machine on 2026-09-21 under Python 3.13, before and after
+this change rather than against `99ba1dd`, with
+`JOTLINE_LIST_BENCHMARK=1 pytest tests/test_list_measurements.py -q -s`, which
+types `project`, `alpha` and `note 01` into the search box at a fast typist's
+pace and adds up the work the app does for them. Every key rebuilt the whole
+note list, and rebuilding measures and wraps every row.
+
+| Notes | Rebuilds for the three queries | Work for the three queries | A refresh whose rows are unchanged |
+| ---: | ---: | ---: | ---: |
+| 100 | 19 → 3 | 194.9 → 21.7 ms | 9.9 → 2.4 ms |
+| 500 | 19 → 3 | 918.0 → 92.0 ms | 47.8 → 10.5 ms |
+| 2,000 | 19 → 3 | 4,405 → 426 ms | 189.5 → 45.5 ms |
+
+A refresh that does change the rows costs what it always did (500 notes:
+67.2 → 46.7 ms, 2,000 notes: 191.0 → 194.6 ms; the spread between runs is wider
+than the difference). The saving is in not doing it, and the note list is
+refreshed on every save, so an autosave that leaves every row reading the same
+no longer redraws them. Typing now shows results up to 200 ms after the last
+key rather than after every key.
+[Raw samples](performance-measurements-2026-09-21.json) retain every reading.
+
 ## What changed
 
 - A structural edit writes its Markdown to the note straight away, as before,
@@ -138,6 +161,9 @@ before 528–708 ms, after 526–707 ms; nested 10,000 before 1,085–1,259 ms, 
   painted, and a painted row is one styled segment instead of a full Rich render.
 - A reflow works out whether this pass will add a scrollbar before it wraps.
   Reading the not-yet-laid-out width made the next reflow re-wrap the note.
+- Typing in the search box rebuilds the note list once typing pauses rather than
+  on every key, and a refresh redraws the list only when the rows themselves
+  changed. Code that sets the search box and refreshes with it is unaffected.
 - The status line reuses its last whole-note word and tag scan for up to 250 ms
   and catches up when typing stops. The Markdown editor carries its character
   count across each edit instead of re-adding every line's length to decide
@@ -147,5 +173,6 @@ before 528–708 ms, after 526–707 ms; nested 10,000 before 1,085–1,259 ms, 
 
 Opening a large note, and the first settle after a burst of structural edits,
 still parse the whole note through CommonMark. There is still no incremental
-block parser. Nothing about autosave, filesystem sync, conflict detection,
+block parser. A note-list refresh still stats every note in the vault to
+validate its cache, which is what an unchanged-row refresh above costs. Nothing about autosave, filesystem sync, conflict detection,
 encryption or recovery was relaxed.
