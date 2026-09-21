@@ -148,7 +148,7 @@ class Jotline(App):
         self._note_summary_timer = None
         self._search_timer = None
         self._listed_query: str | None = None
-        self._listed_rows: list[tuple[str, str]] | None = None
+        self._listed_rows: list[Row] | None = None
         self.inbox_capture_count = 0
         self.recent_note_ids = []
         self.note_positions = {}
@@ -365,8 +365,8 @@ class Jotline(App):
         list says why a note is in it rather than only that it is. Without a
         query the row stays two lines, which is what fits an 80x24 terminal.
         """
-        text = (("\u2605 " if note.starred else "") + ("\U0001f512 " if note.encrypted else "") + note.title
-                + "\n  " + (note.updated[:10] or "imported") + " \u00b7 " + note.collection)
+        text = (("★ " if note.starred else "") + ("🔒 " if note.encrypted else "") + note.title
+                + "\n  " + (note.updated[:10] or "imported") + " · " + note.collection)
         if found is None or not found.line:
             return Row(note.id, text, ())
         lead = len(text) + 3  # The newline and the two spaces before the quote.

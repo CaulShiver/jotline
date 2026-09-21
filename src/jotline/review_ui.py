@@ -60,15 +60,15 @@ class Review:
         Overdue was already marked; today was not, and a task due today reads
         as just another dated line without it.
         """
-        label = "\u2610 " + task.text
+        label = "☐ " + task.text
         if task.due:
             if task.overdue(today):
-                label += f" \u00b7 due {task.due} (overdue)"
+                label += f" · due {task.due} (overdue)"
             elif task.due == today.isoformat():
-                label += " \u00b7 due today"
+                label += " · due today"
             else:
-                label += f" \u00b7 due {task.due}"
-        return label + " \u00b7 " + task.note_title
+                label += f" · due {task.due}"
+        return label + " · " + task.note_title
 
     def open_tasks(self, due_by: str | None = None):
         return gather(self.vault.search(workspace=self.workspace), due_by=due_by)
@@ -89,7 +89,7 @@ class Review:
             "tasks", "No open tasks in this workspace. Start a line with - [ ] in any note to add one.")
         if choices is None:
             return
-        self.push_screen(Palette(choices, f"Open tasks \u00b7 {len(choices)}"), self.open_task)
+        self.push_screen(Palette(choices, f"Open tasks · {len(choices)}"), self.open_task)
 
     def show_tasks_due(self) -> None:
         """The same list narrowed to what is actually owed, which is the agenda question.
@@ -104,7 +104,7 @@ class Review:
                                    due_by=today.isoformat())
         if choices is None:
             return
-        self.push_screen(Palette(choices, f"Due today or overdue \u00b7 {len(choices)}"), self.open_task)
+        self.push_screen(Palette(choices, f"Due today or overdue · {len(choices)}"), self.open_task)
 
     def choose_task_to_tick(self) -> None:
         if not self.save_current():
