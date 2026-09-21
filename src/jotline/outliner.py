@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from uuid import uuid4
 
@@ -42,35 +41,87 @@ def literal_text(text: str) -> str:
     return re.sub(r'(?m)^([ \t]*)([-+*#>~`])', r'\1\\\2', text)
 
 
-@dataclass(eq=False)
 class Block:
-    lines: list[str]
-    children: list[Block] = field(default_factory=list)
-    parent: Block | None = field(default=None, repr=False)
-    collapsed: bool = False
-    uid: str = field(default_factory=lambda: uuid4().hex)
-    slot: int = 1
+    """One outline row over its authoritative raw lines.
+
+    ``prefix`` and ``content`` are derived on demand and memoized: reflow, row
+    labels and identity reconciliation each read them for every block, and
+    recomputing a regex match and a dedent per read dominated large outlines.
+    Both caches hang off the ``lines`` and ``parent`` setters, so raw lines are
+    always replaced rather than mutated in place.
+    """
+
+    __slots__ = ('_lines', 'children', '_parent', 'collapsed', 'uid', 'slot', '_prefix', '_content')
+
+    def __init__(self, lines: list[str], children: list[Block] | None = None,
+                 parent: Block | None = None, collapsed: bool = False,
+                 uid: str | None = None, slot: int = 1):
+        self._lines = lines
+        self.children = [] if children is None else children
+        self._parent = parent
+        self.collapsed = collapsed
+        self.uid = uuid4().hex if uid is None else uid
+        self.slot = slot
+        self._prefix: str | None = None
+        self._content: str | None = None
+
+    def __repr__(self) -> str:
+        return (f'Block(lines={self._lines!r}, children={self.children!r}, '
+                f'collapsed={self.collapsed!r}, uid={self.uid!r}, slot={self.slot!r})')
+
+    @property
+    def lines(self) -> list[str]:
+        return self._lines
+
+    @lines.setter
+    def lines(self, value: list[str]) -> None:
+        self._lines = value
+        self._prefix = self._content = None
+
+    @property
+    def parent(self) -> Block | None:
+        return self._parent
+
+    @parent.setter
+    def parent(self, value: Block | None) -> None:
+        # A root at four spaces is indented code, not a list item, so the
+        # derived prefix depends on having a parent as well as on the lines.
+        self._parent = value
+        self._prefix = self._content = None
 
     @property
     def indent(self) -> int:
-        line = self.lines[0]
+        line = self._lines[0]
         return len(line[:len(line) - len(line.lstrip(' \t'))].expandtabs(4))
 
     @property
     def prefix(self) -> str:
-        line = self.lines[0]
-        item = list_item(line)
-        if item is None or self.indent >= 4 and self.parent is None:
-            return ''
-        end = item.start('task') if item['task'] else item.end()
-        return line[:end]
+        prefix = self._prefix
+        if prefix is None:
+            line = self._lines[0]
+            item = list_item(line)
+            if item is None or self.indent >= 4 and self._parent is None:
+                prefix = ''
+            else:
+                end = item.start('task') if item['task'] else item.end()
+                prefix = line[:end]
+            self._prefix = prefix
+        return prefix
 
     @property
     def content(self) -> str:
-        prefix = self.prefix
-        width = len(prefix.expandtabs(4))
-        return '\n'.join([self.lines[0][len(prefix):],
-                          *(dedent_line(line, width) for line in self.lines[1:])])
+        content = self._content
+        if content is None:
+            lines = self._lines
+            prefix = self.prefix
+            if len(lines) == 1:
+                content = lines[0][len(prefix):]
+            else:
+                width = len(prefix.expandtabs(4))
+                content = '\n'.join([lines[0][len(prefix):],
+                                     *(dedent_line(line, width) for line in lines[1:])])
+            self._content = content
+        return content
 
     def set_content(self, content: str) -> None:
         prefix = self.prefix
@@ -106,6 +157,9 @@ class Block:
             item = pending.pop()
             if isinstance(item, str):
                 yield item
+                continue
+            if not item.children:
+                yield from item.lines
                 continue
             entries: list[Block | str] = []
             position = 0
@@ -146,7 +200,7 @@ class Outline:
         if _plain_flat_list(items):
             self.roots = [Block([line]) for line in items]
             if lines[-1] == '':
-                self.roots[-1].lines.append('')
+                self.roots[-1].lines = [*self.roots[-1].lines, '']
             return
         tokens = PARSER.parse(text)
         ranges: dict[Block, tuple[int, int]] = {}
@@ -181,13 +235,15 @@ class Outline:
                 stack.pop()
         # Populate raw own lines, and record the insertion point of each child.
         for block, (start, end) in ranges.items():
+            own: list[str] = []
             position = start
             for child in block.children:
                 a, b = ranges[child]
-                block.lines.extend(lines[position:a])
-                child.slot = len(block.lines)
+                own.extend(lines[position:a])
+                child.slot = len(own)
                 position = b
-            block.lines.extend(lines[position:end])
+            own.extend(lines[position:end])
+            block.lines = own
         # Preserve all non-list containers verbatim as ordinary Markdown blocks.
         roots = self.roots
         self.roots = []
@@ -205,7 +261,7 @@ class Outline:
         if not lines:
             return
         if self.roots and not any(line.strip() for line in lines):
-            self.roots[-1].lines.extend(lines)
+            self.roots[-1].lines = [*self.roots[-1].lines, *lines]
         else:
             self.roots.append(Block(lines))
 
@@ -215,7 +271,30 @@ class Outline:
 
     @property
     def text(self) -> str:
-        return self.newline.join(line for root in self.roots for line in root.source_lines())
+        # Serializing runs on every structural edit and every history snapshot,
+        # so walk the tree into one list rather than through nested generators.
+        out: list[str] = []
+        pending: list[Block | str] = list(reversed(self.roots))
+        while pending:
+            item = pending.pop()
+            if isinstance(item, str):
+                out.append(item)
+                continue
+            lines = item.lines
+            if not item.children:
+                out.extend(lines)
+                continue
+            entries: list[Block | str] = []
+            position = 0
+            for child in item.children:
+                slot = max(position, min(child.slot, len(lines)))
+                entries.extend(lines[position:slot])
+                entries.append(child)
+                position = slot
+            entries.extend(lines[position:])
+            entries.reverse()
+            pending.extend(entries)
+        return self.newline.join(out)
 
     def rows(self) -> dict[Block, int]:
         result = {}
@@ -227,28 +306,35 @@ class Outline:
                 row += 1
                 continue
             result[item] = row
+            lines = item.lines
+            if not item.children:
+                row += len(lines)
+                continue
             entries: list[Block | str] = []
             position = 0
             for child in item.children:
-                slot = max(position, min(child.slot, len(item.lines)))
-                entries.extend(item.lines[position:slot])
+                slot = max(position, min(child.slot, len(lines)))
+                entries.extend(lines[position:slot])
                 entries.append(child)
                 position = slot
-            entries.extend(item.lines[position:])
-            pending.extend(reversed(entries))
+            entries.extend(lines[position:])
+            entries.reverse()
+            pending.extend(entries)
         return result
 
     def row(self, target: Block) -> int:
         return self.rows().get(target, 0)
 
     def at_row(self, row: int) -> Block:
+        rows = self.rows()
         result = self.roots[0]
-        for block, start in sorted(self.rows().items(), key=lambda pair: pair[1]):
+        for block, start in sorted(rows.items(), key=lambda pair: pair[1]):
             if start > row:
                 break
             # Ascend out of the child's source range for trailing parent text.
             result = block
-        while result.parent and row >= self.row(result) + len(list(result.source_lines())):
+        # Reuse the one row map; rebuilding it per ancestor walked the tree again.
+        while result.parent and row >= rows[result] + sum(1 for _ in result.source_lines()):
             result = result.parent
         return result
 
@@ -312,7 +398,7 @@ class Outline:
             item = list_item(block.lines[0])
             if parent.lines[-1].strip() and (not block.content.strip() or
                                             item and item['number'] and item['number'] != '1'):
-                parent.lines.append('')
+                parent.lines = [*parent.lines, '']
                 block.slot = len(parent.lines)
             parent.collapsed = False
         return True

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Make outlining keep up with a large note. Pressing Enter, Tab, Shift+Tab or a
+  move key writes Markdown immediately and repaints from the tree it just built,
+  re-deriving that tree from CommonMark once editing pauses rather than once per
+  key; on a 10,000-block note those keys drop from about a second to under a
+  tenth. Cache each block's derived prefix and content against its raw lines,
+  key wrapped rows by text and column so re-deriving the tree no longer re-wraps
+  the note, build a row's bullet gutter only when it is painted, and work out a
+  new scrollbar before wrapping instead of after.
+- Keep typing cheap in a long note: the status line reuses its last whole-note
+  word and tag scan for up to a quarter second and catches up when typing stops,
+  and the Markdown editor carries its character count across edits instead of
+  re-adding every line's length on each keystroke.
 - Integrate the earlier publication-race hardening: when hard links are
   unavailable, use exclusive rename on Linux/macOS so saves, key setup and
   exports cannot overwrite a competing creator. Failed-save recovery keeps

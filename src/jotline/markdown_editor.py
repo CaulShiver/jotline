@@ -513,6 +513,8 @@ class MarkdownEditor(TextArea):
     # Fence state of the current highlight map; None when the map is not built.
     _fenced: set[int] | None = None
     _fence_markers: set[int] = set()
+    # Characters across all lines, kept current across edits; None when unknown.
+    _document_chars: int | None = None
 
     def on_mount(self) -> None:
         self._register_markdown_theme()
@@ -556,16 +558,48 @@ class MarkdownEditor(TextArea):
 
     def edit(self, edit: Edit):
         self._pending_edit = edit
+        self._resize_document(edit)
         try:
             return super().edit(edit)
         finally:
             self._pending_edit = None
 
+    def _resize_document(self, edit: Edit) -> None:
+        """Carry the document's character count across one edit.
+
+        The highlighting guard needs the whole document's size, and Textual
+        rebuilds the highlight map inside every edit. Re-adding every line's
+        length there made each keystroke scale with the note. Line separators
+        are not part of the count, and a document splits its text on every
+        separator Python recognizes, not only on newlines.
+        """
+        total = self._document_chars
+        if total is None:
+            return
+        try:
+            replaced = self.document.get_text_range(edit.top, edit.bottom)
+            delta = sum(map(len, edit.text.splitlines())) - sum(map(len, replaced.splitlines()))
+        except (AttributeError, IndexError, ValueError):
+            self._document_chars = None
+            return
+        self._document_chars = total + delta
+
+    def _document_size(self) -> int:
+        total = self._document_chars
+        if total is None:
+            total = sum(len(line) for line in self.document.lines)
+            self._document_chars = total
+        return total
+
     def _build_highlight_map(self) -> None:
         self._line_cache.clear()
         highlights = self._highlights
         lines = self.document.lines
-        if not self.markdown_highlighting or sum(len(line) for line in lines) > HIGHLIGHT_MAX_CHARS:
+        if self._pending_edit is None:
+            # Loading a document, or any other rebuild outside an edit, may
+            # have replaced the text wholesale; measure it again.
+            self._document_chars = None
+        if not self.markdown_highlighting or self._document_size() > HIGHLIGHT_MAX_CHARS:
             highlights.clear()
             self._fenced = None
             return

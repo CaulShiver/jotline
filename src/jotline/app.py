@@ -5,6 +5,7 @@ import asyncio
 from dataclasses import replace
 from datetime import date, timedelta
 import re
+from time import monotonic
 
 from textual import events, on
 from textual.geometry import Size
@@ -43,6 +44,9 @@ from .templates import GUIDE, REVIEW, Templates
 from .workflows import Workflows
 
 __all__ = ["Command", "FindInNote", "Jotline", "MarkdownPreview", "Palette", "RevisionPreview", "TextPrompt"]
+
+# How long the status line may reuse the previous whole-note scan while typing.
+STATUS_SUMMARY_SECONDS = 0.25
 
 
 def _bind_capabilities(target, *sources):
@@ -119,6 +123,9 @@ class Jotline(App):
         self._shown_storage_warnings: set[str] = set()
         self._recovery_dialog_open = False
         self._status_message = "Ready"
+        self._note_summary: tuple[str, str, int, list[str]] | None = None
+        self._note_summary_at = 0.0
+        self._note_summary_timer = None
         self.inbox_capture_count = 0
         self.recent_note_ids = []
         self.note_positions = {}
@@ -534,10 +541,38 @@ class Jotline(App):
         self.status("Saving…")
         return True
 
+    def note_summary(self) -> tuple[int, list[str]]:
+        """Word count and leading tags for the status line.
+
+        Both scan the whole note, and the status line is rewritten on every
+        keystroke, so a long note spent more time counting words than editing.
+        Reuse the last scan during a burst of typing and catch up once it ends.
+        """
+        body = self.current.body
+        cached = self._note_summary
+        if cached is not None and cached[0] is body and cached[1] == self.current.id:
+            return cached[2], cached[3]
+        now = monotonic()
+        if (cached is not None and cached[1] == self.current.id
+                and now - self._note_summary_at < STATUS_SUMMARY_SECONDS):
+            if self._note_summary_timer is None:
+                self._note_summary_timer = self.set_timer(STATUS_SUMMARY_SECONDS, self.refresh_status)
+            return cached[2], cached[3]
+        summary = (len(body.split()), sorted(self.current.tags)[:5])
+        self._note_summary = (body, self.current.id, *summary)
+        self._note_summary_at = now
+        return summary
+
+    def refresh_status(self) -> None:
+        self._note_summary_timer = None
+        self._note_summary_at = 0.0
+        if self.is_running:
+            self.status(self._status_message)
+
     def status(self, message: str) -> None:
         self._status_message = message
-        tags = sorted(self.current.tags)[:5]
-        details = f"{message}  ·  {len(self.current.body.split())} words"
+        words, tags = self.note_summary()
+        details = f"{message}  ·  {words} words"
         if self.inbox_capture_count:
             details += f"  ·  {self.inbox_capture_count} inbox"
         if self.compact_layout:

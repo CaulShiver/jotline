@@ -6,11 +6,12 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from rich.cells import cell_len
+from rich.segment import Segment
 from rich.style import Style
 from rich.text import Text
 from textual import events
 from textual.binding import Binding
-from textual.geometry import Size
+from textual.geometry import Region, Size
 from textual.message import Message
 from textual.scroll_view import ScrollView
 from textual.strip import Strip
@@ -47,12 +48,19 @@ class OutlineView(ScrollView, can_focus=True):
         super().__init__(**kwargs)
         self.blocks: list[Block] = []
         self.starts: list[int] = []
-        self.lines: list[str] = []
+        # Wrapped content per block, with the gutter added only when a row is
+        # painted. A long outline reflows on every fold; building one prefixed
+        # string per source line made that cost scale with the whole note.
+        self.wrapped: list[list[str]] = []
+        self.gutters: list[tuple[str, str]] = []
         self.locations: dict[str, tuple[int, int, int]] = {}
+        self.row_count: int = 0
         self.active: str = ''
         self.selected: set[str] = set()
         self.cache = {}
+        self.wrap_width = 0
         self.roots = []
+        self._paint_style: Style | None = None
 
     def populate(self, roots, active, selected):
         self.roots, self.active, self.selected = roots, active.uid, selected
@@ -61,77 +69,136 @@ class OutlineView(ScrollView, can_focus=True):
     def wrapped_lines(self, content: str, width: int) -> list[str]:
         """Keep plain rows cheap; create Rich text only for wrapping or paint."""
         wrapped = []
+        console = self.app.console
         for line in content.split('\n'):
-            if cell_len(line) <= width and '\t' not in line:
+            # An ASCII row occupies one cell per character, which is the common
+            # case and skips Rich's cell measurement on every reflow.
+            length = len(line) if line.isascii() else cell_len(line)
+            if length <= width and '\t' not in line:
                 wrapped.append(line or ' ')
             else:
-                wrapped.extend(part.plain for part in Text(line or ' ').wrap(self.app.console, width))
+                wrapped.extend(part.plain for part in Text(line or ' ').wrap(console, width))
         return wrapped
 
-    def reflow(self):
-        if self.size.width <= 0:
-            return
-        width = max(12, self.scrollable_content_region.width)
-        self.blocks, self.starts, self.lines, self.locations = [], [], [], {}
+    def visible_order(self) -> list[tuple[Block, int]]:
+        """Every block a fold leaves on screen, with its depth, top to bottom."""
+        order = []
         pending = [(root, 0) for root in reversed(self.roots)]
-        cache = {}
         while pending:
             block, depth = pending.pop()
+            order.append((block, depth))
+            if not block.collapsed:
+                pending.extend((child, depth + 1) for child in reversed(block.children))
+        return order
+
+    def content_width(self, visible: int) -> int:
+        """The column rows wrap into, allowing for a scrollbar this pass will add.
+
+        Every visible block takes at least one row, so an outline longer than
+        the viewport certainly needs one. Textual only lays the scrollbar out on
+        the next refresh, and reading the stale width here re-wrapped the whole
+        note the next time anything reflowed.
+        """
+        width = max(12, self.scrollable_content_region.width)
+        bar = self.styles.scrollbar_size_vertical
+        if bar and not self.show_vertical_scrollbar and visible > self.size.height:
+            width = max(12, width - bar)
+        return width
+
+    def reflow(self, *, again: bool = False):
+        if self.size.width <= 0:
+            return
+        order = self.visible_order()
+        width = self.content_width(len(order))
+        blocks, starts, wrapped_rows, gutters, locations = [], [], [], [], {}
+        previous, cache = self.cache, {}
+        row = 0
+        for block, depth in order:
             indent = min(depth * 2, max(0, width - 12))
             content = block.content or 'Empty block'
-            key = (block.uid, content, width - indent - 4)
-            wrapped = self.cache.get(key)
+            # Wrapping depends only on the text and the column it wraps into,
+            # so the cache survives a reparse that hands every block a new uid.
+            key = (content, width - indent - 4)
+            wrapped = previous.get(key)
             if wrapped is None:
                 wrapped = self.wrapped_lines(content, max(8, width - indent - 4))
             cache[key] = wrapped
-            start = len(self.lines)
-            self.locations[block.uid] = (start, len(wrapped), indent)
-            self.blocks.append(block)
-            self.starts.append(start)
-            for index, line in enumerate(wrapped):
-                marker = ('▸' if block.collapsed else '▾') if block.children else '•'
-                prefix = ' ' * indent + ((marker + ' ') if index == 0 else '  ')
-                self.lines.append(prefix + line)
-            if not block.collapsed:
-                pending.extend((child, depth + 1) for child in reversed(block.children))
+            locations[block.uid] = (row, len(wrapped), indent)
+            blocks.append(block)
+            starts.append(row)
+            wrapped_rows.append(wrapped)
+            marker = ('▸' if block.collapsed else '▾') if block.children else '•'
+            pad = ' ' * indent
+            gutters.append((pad + marker + ' ', pad + '  '))
+            row += len(wrapped)
+        self.blocks, self.starts, self.wrapped = blocks, starts, wrapped_rows
+        self.gutters, self.locations, self.row_count = gutters, locations, row
+        if len(cache) < len(previous):
+            # Folding hides most of a large outline. Keep the hidden rows, oldest
+            # first out, so expanding a branch again does not re-wrap it.
+            retained = {key: value for key, value in previous.items() if key not in cache}
+            retained.update(cache)
+            while len(retained) > 4 * len(cache) + 512:
+                del retained[next(iter(retained))]
+            cache = retained
         self.cache = cache
-        self.virtual_size = Size(width, len(self.lines))
+        self.wrap_width = width
+        self.virtual_size = Size(width, row)
         self.refresh()
+        if not again:
+            self.call_after_refresh(self.settle_width)
         self.screen.call_after_refresh(self.screen.position_editor)
+
+    def settle_width(self):
+        """Re-wrap once if the laid-out content column was not the predicted one."""
+        if self.is_mounted and self.size.width > 0 and self.content_width(len(self.blocks)) != self.wrap_width:
+            self.reflow(again=True)
 
     def update_block(self, block):
         location = self.locations.get(block.uid)
         if location is None:
             return
         start, height, indent = location
-        width = max(8, self.scrollable_content_region.width - indent - 4)
-        wrapped = self.wrapped_lines(block.content or 'Empty block', width)
+        column = (self.wrap_width or max(12, self.scrollable_content_region.width)) - indent - 4
+        content = block.content or 'Empty block'
+        wrapped = self.wrapped_lines(content, max(8, column))
         if len(wrapped) != height:
             self.reflow()
             return
-        for index, line in enumerate(wrapped):
-            marker = ('▸' if block.collapsed else '▾') if block.children else '•'
-            prefix = ' ' * indent + ((marker + ' ') if index == 0 else '  ')
-            self.lines[start + index] = prefix + line
+        self.cache[(content, column)] = wrapped
+        self.wrapped[bisect_right(self.starts, start) - 1] = wrapped
         self.refresh_lines(start, height)
         self.screen.position_editor()
+
+    def render_lines(self, crop: Region) -> list[Strip]:
+        # Resolving the widget's style walks the CSS tree; do it once a frame
+        # rather than once per painted row.
+        self._paint_style = self.rich_style
+        try:
+            return super().render_lines(crop)
+        finally:
+            self._paint_style = None
 
     def render_line(self, y: int) -> Strip:
         row = y + int(self.scroll_y)
         width = self.scrollable_content_region.width
-        if row >= len(self.lines):
-            return Strip.blank(width, self.rich_style)
-        line = Text(self.lines[row])
+        base = self._paint_style if self._paint_style is not None else self.rich_style
+        if row >= self.row_count:
+            return Strip.blank(width, base)
         index = bisect_right(self.starts, row) - 1
         block = self.blocks[index]
-        style = self.rich_style
+        style = base
         if block.uid in self.selected:
             style += Style(reverse=True)
         elif block.uid == self.active:
             style += Style(bold=True)
-        segments = self.app.console.render_lines(line, self.app.console.options.update(width=width),
-                                                 style=style, pad=True)[0]
-        return Strip(segments).adjust_cell_length(width, style)
+        offset = row - self.starts[index]
+        first, rest = self.gutters[index]
+        # Rows are already wrapped to the content width and carry no markup, so
+        # one styled segment replaces a full Rich render per painted line.
+        line = (first if offset == 0 else rest) + self.wrapped[index][offset]
+        length = len(line) if line.isascii() else cell_len(line)
+        return Strip([Segment(line, style)], length).adjust_cell_length(width, style)
 
     def watch_scroll_y(self, old: float, new: float):
         super().watch_scroll_y(old, new)
