@@ -237,3 +237,16 @@ def test_folder_import_warns_and_continues_after_unreadable_entry(tmp_path, faul
     assert not result.errors
     assert len(result.imported) == 1
     assert vault.read(result.imported[0]).body == 'import me'
+
+
+def test_recursive_import_of_a_vault_folder_leaves_its_history_behind(tmp_path):
+    old = Vault(tmp_path / 'old')
+    note = old.new('# Quarterly numbers\n')
+    old.save(note)
+    for draft in range(3):
+        note.body = f'# Quarterly numbers\ndraft {draft}\n'
+        old.save(note)
+    assert list((old.path / '.jotline-history').rglob('*.md')), 'expected the saves to leave revisions'
+    new = Vault(tmp_path / 'new')
+    plan = preview_import(new, old.path, recursive=True)
+    assert [item.source for item in plan.items] == [f'{note.id}.md (Jotline note)']

@@ -189,7 +189,10 @@ def _scan_folder(root: Path, recursive: bool, plan: ImportPlan) -> list[Path]:
                     if stat.S_ISLNK(info.st_mode):
                         plan.notice(f'Skipped link: {child.name}')
                     elif stat.S_ISDIR(info.st_mode) and recursive:
-                        pending.append(child)
+                        # A vault's own folders hold revisions and archives whose names are
+                        # ID-shaped, so scanning them would import every old draft as a note.
+                        if not child.name.startswith('.jotline-'):
+                            pending.append(child)
                     elif stat.S_ISREG(info.st_mode) and child.suffix.lower() in IMPORT_SUFFIXES:
                         paths.append(child)
         except OSError as error:
