@@ -44,7 +44,7 @@ from .settings import HOTKEY_ACTIONS, Settings, VIEW_COLLECTIONS
 from .store import (COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, daily_date_from_id,
                     is_daily_id, parse_calendar_date, tagged_body, validate_workspace)
 from .sync import sync_guide
-from .templates import GUIDE, REVIEW, Templates
+from .templates import GUIDE, REVIEW, TEMPLATE_ENCRYPTED, Templates
 from .workflows import Workflows
 
 class Row(NamedTuple):
@@ -1027,6 +1027,12 @@ class Jotline(App):
 
     def save_template(self, name: str | None) -> None:
         if not name:
+            return
+        if self.current.encrypted:
+            # Templates are never encrypted, and the daily backup archives
+            # .jotline-templates as well, so this would put the decrypted note
+            # on disk in the clear and then into a retained ZIP.
+            self.notify(TEMPLATE_ENCRYPTED, severity="warning", timeout=12)
             return
         try:
             Templates(self.vault.path).save(name, self.editor().text)

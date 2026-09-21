@@ -15,6 +15,8 @@ class ActionCommitError(OSError):
         self.note = note
 
 
+APPEND_ENCRYPTED = ("An append step would copy this encrypted note's text into another note, "
+                    "which is stored unencrypted")
 MAX_STEPS = 16
 STEP_TYPES = ('uppercase', 'lowercase', 'strip', 'quote', 'template', 'append', 'archive', 'copy', 'export', 'restore')
 PREVIEW_CHARS = 20_000
@@ -78,6 +80,10 @@ def run_action(vault, note, steps, *, selection='', copy=None, export=None, on_s
                 step['value'], note.workspace, title=working.title,
                 body=working.body, selection=selection)
         elif kind == 'append':
+            if note.encrypted:
+                # The target is a different note and is not encrypted, so this
+                # would copy the decrypted body into a plaintext file.
+                raise ValueError(APPEND_ENCRYPTED)
             vault.append_note(step['value'], working.body, note.workspace)
         elif kind == 'archive':
             working.collection = 'archive'

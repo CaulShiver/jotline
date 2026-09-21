@@ -13,10 +13,11 @@ pytest.importorskip("cryptography")
 
 from textual.widgets import Input
 
+from jotline.actions import run_action
 from jotline.app import Jotline, TextPrompt
 from jotline.crypto import EncryptionError, KeyFile
 from jotline.importing import preview_import
-from jotline.store import Vault
+from jotline.store import Vault, wiki_link
 
 PASSPHRASE = "correct horse"
 FAST = 2 ** 10  # A light work factor keeps tests quick; real setups use the default.
@@ -235,3 +236,73 @@ async def test_app_encrypts_locks_and_unlocks(tmp_path):
         await pilot.press("enter")
         await pilot.pause()
         assert app.current.id == note.id and app.current.body == "Sam secret"
+
+
+def plaintext_in_vault(path: Path, secret: str) -> list[str]:
+    """Every file under the vault, archives included, still holding the secret."""
+    found = []
+    for item in sorted(path.rglob("*")):
+        if not item.is_file():
+            continue
+        raw = item.read_bytes()
+        if secret.encode() in raw:
+            found.append(str(item.relative_to(path)))
+        if item.suffix == ".zip":
+            with zipfile.ZipFile(item) as archive:
+                found += [f"{item.name}::{member}" for member in archive.namelist()
+                          if secret.encode() in archive.read(member)]
+    return found
+
+
+async def test_extracting_a_selection_keeps_it_encrypted(tmp_path):
+    # A new note inherits nothing, so the selection used to be written to disk
+    # in the clear, snapshotted into history and archived in the next backup.
+    vault = encrypted_vault(tmp_path)
+    note = encrypted_note(vault, "Sam therapy\nSECRETLINE dosage 200mg\n")
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.vault.unlock(PASSPHRASE)
+        app.load_id(note.id)
+        await pilot.pause()
+        editor = app.editor()
+        editor.move_cursor((1, 0))
+        editor.move_cursor((1, 10), select=True)
+        assert editor.selected_text == "SECRETLINE"
+        app.action_extract_note()
+        await pilot.pause()
+        assert plaintext_in_vault(tmp_path, "SECRETLINE") == []
+
+
+async def test_an_encrypted_note_cannot_be_saved_as_a_template(tmp_path):
+    # Templates are stored unencrypted and the daily backup archives them.
+    vault = encrypted_vault(tmp_path)
+    note = encrypted_note(vault, "Sam therapy\nSECRETLINE dosage 200mg\n")
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.vault.unlock(PASSPHRASE)
+        app.load_id(note.id)
+        await pilot.pause()
+        app.save_template("my-template")
+        await pilot.pause()
+        assert plaintext_in_vault(tmp_path, "SECRETLINE") == []
+
+
+def test_an_action_refuses_to_append_an_encrypted_note_to_another(tmp_path):
+    vault = encrypted_vault(tmp_path)
+    vault.unlock(PASSPHRASE)
+    note = encrypted_note(vault, "Sam therapy\nSECRETLINE dosage 200mg\n")
+    target = vault.new("Log\n")
+    vault.save(target)
+    with pytest.raises(ValueError, match="unencrypted"):
+        run_action(vault, vault.read(note.id), [{"type": "append", "value": target.id}])
+    assert plaintext_in_vault(tmp_path, "SECRETLINE") == []
+
+
+def test_a_link_to_an_encrypted_note_carries_no_label(tmp_path):
+    # The label is the first line of the decrypted body, and the note being
+    # linked from is usually not encrypted.
+    vault = encrypted_vault(tmp_path)
+    vault.unlock(PASSPHRASE)
+    note = encrypted_note(vault, "SECRETLINE Sam HIV status\n")
+    assert wiki_link(vault.read(note.id)) == f"[[{note.id}]]"
+    assert wiki_link(vault.new("Ordinary note")).endswith("|Ordinary note]]")

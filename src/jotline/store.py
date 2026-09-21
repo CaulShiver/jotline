@@ -221,7 +221,16 @@ class Note:
 
 
 def wiki_link(note: Note) -> str:
-    """Stable wiki-link markup for a note, with a title label safe for [[id|label]]."""
+    """Stable wiki-link markup for a note, with a title label safe for [[id|label]].
+
+    An encrypted note contributes no label. Its title is the first line of the
+    decrypted body, and the note being linked from is usually not encrypted, so
+    a label would copy that line into a plaintext file, its history and every
+    backup, where it would stay after the vault was locked again. A bare link
+    still resolves, and the list and the picker still show the real title.
+    """
+    if note.encrypted:
+        return f"[[{note.id}]]"
     label = note.title.replace("|", " ").replace("[", "").replace("]", "")
     return f"[[{note.id}|{label}]]"
 
