@@ -58,6 +58,17 @@ def test_daily_and_corrupt_file(tmp_path):
         vault.read('../escape')
 
 
+def test_hand_edited_note_file_still_parses_its_header(tmp_path):
+    vault = Vault(tmp_path)
+    (tmp_path / 'todo.md').write_text('---\r\njotline: 1\r\nstarred: true\r\ncollection: "areas"\r\n---\r\n# By hand\r\n',
+                                      encoding='utf-8', newline='')
+    (tmp_path / 'my note.md').write_text('---\njotline: 1\ncollection: "areas"\n---\n# Not an ID\n', encoding='utf-8')
+    note = vault.read('todo')
+    assert (note.collection, note.starred, note.body) == ('areas', True, '# By hand\r\n')
+    assert [n.id for n in vault.notes()] == ['todo']
+    assert vault.warnings == ['my note.md: Invalid note ID']
+
+
 def test_dated_daily_logs_are_per_day_and_workspace(tmp_path):
     vault = Vault(tmp_path)
     past = vault.daily(when=date(2026, 9, 1))

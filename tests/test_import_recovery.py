@@ -53,6 +53,42 @@ def test_folder_preview_symlinks_duplicates_and_partial_failure(tmp_path, monkey
     assert len(list(source.glob('*.md'))) == 2
 
 
+def test_outside_files_keep_a_jotline_header_in_their_body(tmp_path):
+    vault = Vault(tmp_path / 'vault')
+    source = tmp_path / 'handed-over'
+    source.mkdir()
+    header = ('---\njotline: 1\ncollection: "archive"\nstarred: true\n'
+              'created: "2001-01-01T00:00:00+00:00"\nupdated: "2001-01-02T00:00:00+00:00"\n---\n')
+    (source / 'Meeting notes.md').write_text(header + '# Spaced name\n', encoding='utf-8')
+    (source / 'notes.txt').write_text('﻿' + header + '# Text file\n', encoding='utf-8')
+    plan = preview_import(vault, source)
+    assert [item.source for item in plan.items] == ['Meeting notes.md', 'notes.txt']
+    apply_import(vault, plan)
+    notes = vault.notes()
+    assert len(notes) == 2
+    for note in notes:
+        assert note.body.startswith(header)
+        assert note.collection == 'inbox' and not note.starred
+        assert not note.created.startswith('2001') and not note.updated.startswith('2001')
+
+
+def test_folder_import_carries_metadata_from_note_files_only(tmp_path):
+    old = Vault(tmp_path / 'old')
+    saved = old.new('# Saved by Jotline\n')
+    saved.collection, saved.starred = 'projects', True
+    old.save(saved)
+    # A hand-edited vault can hold a note file written by hand under a name of the user's choosing.
+    (old.path / 'todo.md').write_text('---\njotline: 1\ncollection: "areas"\n---\n# Hand written\n', encoding='utf-8')
+    new = Vault(tmp_path / 'new')
+    plan = preview_import(new, old.path)
+    assert sorted(item.source for item in plan.items) == sorted([f'{saved.id}.md (Jotline note)',
+                                                                 'todo.md (Jotline note)'])
+    apply_import(new, plan)
+    got = {note.title: note for note in new.notes()}
+    assert (got['Saved by Jotline'].collection, got['Saved by Jotline'].starred) == ('projects', True)
+    assert got['Hand written'].collection == 'areas' and got['Hand written'].body == '# Hand written\n'
+
+
 def test_import_rejects_links(tmp_path):
     vault = Vault(tmp_path / 'vault')
     source = tmp_path / 'source'

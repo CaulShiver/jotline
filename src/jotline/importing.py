@@ -11,7 +11,7 @@ from uuid import UUID
 
 from .filesystem import fs, pin_ancestors, read_regular_file
 from .limits import MAX_NOTE_BYTES
-from .store import COLLECTIONS, Note, Vault, decode_problem, tagged_body, validate_workspace
+from .store import COLLECTIONS, Note, Vault, decode_problem, tagged_body, validate_note_id, validate_workspace
 
 MAX_IMPORT_BYTES = 32 * 1024 * 1024
 MAX_IMPORT_ENTRIES = 1000
@@ -150,6 +150,22 @@ def _jotline_note(vault, raw, workspace, default_collection):
     return note
 
 
+def _note_file(source):
+    """Whether a vault would read this file as one of its notes: an ID-shaped .md name.
+
+    Only such a file's header is metadata. Any other file is outside text, so a
+    header at its start stays in the body where the review shows it; a file
+    cannot pick its own collection, star or dates just by starting with one.
+    """
+    if source.suffix.lower() != '.md':
+        return False
+    try:
+        validate_note_id(source.stem)
+    except ValueError:
+        return False
+    return True
+
+
 def _scan_folder(root: Path, recursive: bool, plan: ImportPlan) -> list[Path]:
     """Importable files under a folder, bounded by MAX_IMPORT_ENTRIES and never following links."""
     paths = []
@@ -226,8 +242,10 @@ def preview_import(vault: Vault, path: Path, workspace='default', default_collec
                 try:
                     if is_drafts:
                         note = _draft(vault, entry, workspace)
-                    elif re.match(r'\A\ufeff?---\r?\njotline: 1\r?\n', entry):
+                    elif _note_file(source) and re.match(r'\A\ufeff?---\r?\njotline: 1\r?\n', entry):
                         note = _jotline_note(vault, entry, workspace, default_collection)
+                        # The header is gone from the body, so say where the collection came from.
+                        label += ' (Jotline note)'
                     else:
                         note = vault.new(entry.removeprefix('\ufeff'), workspace=workspace)
                         note.collection = default_collection
