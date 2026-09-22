@@ -21,12 +21,17 @@ BACKUP_LIMIT = 7
 MAX_HISTORY_ENTRIES = 4096
 MAX_BACKUP_ENTRIES = 10_000
 MAX_BACKUP_BYTES = 256 * 1024 * 1024
+# A manifest Jotline wrote lists at most two scan budgets of skipped paths, a
+# few megabytes at the outside. An entry's declared size is whatever the file
+# says, so the cap is on the bytes actually inflated.
+MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 REVISION_ID = re.compile(r"[0-9]{8}T[0-9]{12}-[0-9a-f]{8}")
 # Every create_private_temp caller uses one of these prefixes, followed by a uuid4 hex.
 TEMP_PREFIXES = ("jotline", "backup", "revision", "settings", "action-history", "tmp", "recipe")
 STALE_TEMP = re.compile(r"\.(?:" + "|".join(TEMP_PREFIXES) + r")-[0-9a-f]{32}")
 STALE_TEMP_SECONDS = 3600
 BACKUP_NAME = re.compile(r"(?:daily-[0-9]{4}-[0-9]{2}-[0-9]{2}|manual-[0-9]{8}T[0-9]{12}-[0-9a-f]{8})\.zip")
+QUARANTINE_NAME = re.compile(r"\.invalid-[0-9]{8}T[0-9]{12}-[0-9a-f]{8}\.zip")
 DISPLACED_PREFIX = ".jotline-displaced-"
 STALE_BACKUP_SECONDS = 2 * 24 * 3600
 
@@ -189,14 +194,37 @@ def prune_history(vault, note_id: str, *, vault_directory: int | None = None) ->
     try:
         with _revision_directory(vault, note_id, create=False, vault_directory=vault_directory) as (_, folder):
             entries = _revisions_at(vault, note_id, folder)
+            # _revisions_at orders by the file's own write time; hold on to that
+            # order. Ranking the survivors by the wall-clock stamp inside the ID
+            # instead means a clock that steps backwards -- DST ending, an NTP
+            # correction, a VM resumed from a snapshot -- sorts the newest
+            # revisions below the old ones, so the work just done is what gets
+            # deleted and the stale revisions are what is kept.
+            newest_first = {entry.id: index for index, entry in enumerate(entries)}
             first_per_minute = {}
             for entry in reversed(entries):
                 first_per_minute.setdefault(entry.id[:13], entry.id)
-            keep = set(sorted(first_per_minute.values(), reverse=True)[:HISTORY_LIMIT])
+            keep = set(sorted(first_per_minute.values(),
+                              key=lambda revision: newest_first[revision])[:HISTORY_LIMIT])
             keep.update(entry.id for entry in entries[:2])
             for entry in entries:
                 if entry.id not in keep:
                     os.unlink(f"{entry.id}.md", dir_fd=folder)
+            # prune_stale_temps only ever ran over the vault root and the
+            # backups folder, so a temp in here was never anyone's to collect.
+            cutoff = time.time() - STALE_TEMP_SECONDS
+            with os.scandir(folder) as leftovers:
+                for index, entry in enumerate(leftovers):
+                    if index >= MAX_HISTORY_ENTRIES:
+                        break
+                    if not STALE_TEMP.fullmatch(entry.name):
+                        continue
+                    try:
+                        info = entry.stat(follow_symlinks=False)
+                        if stat.S_ISREG(info.st_mode) and info.st_mtime < cutoff:
+                            os.unlink(entry.name, dir_fd=folder)
+                    except OSError:
+                        continue
             sync_directory(folder)
     except FileNotFoundError:
         pass
@@ -213,6 +241,23 @@ def remove_revision(vault, note_id: str, revision_id: str, *, vault_directory: i
         pass
 
 
+def _remove_revision_temps(folder: int) -> int:
+    """Remove partly written revisions from a note's history folder."""
+    removed = 0
+    with os.scandir(folder) as entries:
+        for index, entry in enumerate(entries):
+            if index >= MAX_HISTORY_ENTRIES:
+                break
+            if not STALE_TEMP.fullmatch(entry.name):
+                continue
+            try:
+                os.unlink(entry.name, dir_fd=folder)
+                removed += 1
+            except OSError:
+                continue
+    return removed
+
+
 def remove_unencrypted_revisions(vault, note_id: str, is_encrypted, *, vault_directory: int | None = None) -> int:
     """Delete saved versions of a note that could hold its text unencrypted."""
     removed = 0
@@ -226,6 +271,10 @@ def remove_unencrypted_revisions(vault, note_id: str, is_encrypted, *, vault_dir
                 if not keep:
                     os.unlink(f"{entry.id}.md", dir_fd=folder)
                     removed += 1
+            # A crash during a revision write leaves a .revision-* temp holding
+            # the whole note in the clear. It has no revision ID, so the loop
+            # above never sees it, and until now nothing else removed it either.
+            removed += _remove_revision_temps(folder)
             sync_directory(folder)
     except FileNotFoundError:
         pass
@@ -288,6 +337,8 @@ def _validate_archive(stream, *, require_content: bool) -> tuple[bool, str]:
                         if consumed > MAX_BACKUP_BYTES:
                             return False, "archive contents exceed validation limit"
                         if captured is not None:
+                            if len(captured) + len(chunk) > MAX_MANIFEST_BYTES:
+                                return False, "manifest exceeds validation limit"
                             captured.extend(chunk)
                 if captured is not None:
                     manifest = json.loads(bytes(captured))
@@ -386,16 +437,22 @@ def _reuse_daily_backup(vault, folder: int, name: str) -> bool:
 
 
 def _prune_backups(vault, folder: int, keep_name: str) -> None:
-    """Keep the newest BACKUP_LIMIT archives, always including today's and the one just written."""
+    """Keep the newest BACKUP_LIMIT archives, always including today's and the one just written,
+    and the newest BACKUP_LIMIT quarantined ones."""
     archives = []
+    quarantined = []
     with os.scandir(folder) as entries:
         for index, entry in enumerate(entries):
             if index >= MAX_BACKUP_ENTRIES:
                 vault.warnings.append(f"Backup retention stopped after {MAX_BACKUP_ENTRIES} entries")
                 break
             info = _stat_entry(entry)
-            if info is not None and BACKUP_NAME.fullmatch(entry.name) and stat.S_ISREG(info.st_mode):
+            if info is None or not stat.S_ISREG(info.st_mode):
+                continue
+            if BACKUP_NAME.fullmatch(entry.name):
                 archives.append((info.st_mtime_ns, entry.name))
+            elif QUARANTINE_NAME.fullmatch(entry.name):
+                quarantined.append((info.st_mtime_ns, entry.name))
     archives.sort(reverse=True)
     today = f"daily-{date.today().isoformat()}.zip"
     keep = {keep_name, *(archive_name for _, archive_name in archives if archive_name == today)}
@@ -404,6 +461,8 @@ def _prune_backups(vault, folder: int, keep_name: str) -> None:
             keep.add(archive_name)
         if archive_name not in keep:
             os.unlink(archive_name, dir_fd=folder)
+    for _, quarantine_name in sorted(quarantined, reverse=True)[BACKUP_LIMIT:]:
+        os.unlink(quarantine_name, dir_fd=folder)
     sync_directory(folder)
 
 

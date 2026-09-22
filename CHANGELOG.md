@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+- **A search no longer hangs the app on a note that grows when it is folded.**
+  ß folds to ss, so the folded body is longer than the body, and the matched-line
+  code walked the folded text with body offsets. On such a note the skip position
+  stopped advancing and the search spun until Jotline was killed, taking any
+  unsaved editing with it. The same drift quoted the wrong line under a search
+  result and put the highlights on the wrong characters. Skipping repeated
+  headings is also linear now rather than quadratic: 64,000 of them took 10.7s
+  and now take 0.15s.
+- **A note interrupted mid-save comes back instead of disappearing.** A save
+  moves the note aside and then publishes the new text under its name. Killed in
+  between -- or on a filesystem that refuses both hard links and exclusive
+  renames, such as sshfs or a VM shared folder -- the only copy was left under a
+  hidden name that nothing listed, so the note was gone from the app with no
+  warning. Opening the vault now puts it back, and `doctor` names the note a
+  displaced file belongs to.
+- **The outliner no longer overwrites a block you were not editing.** A
+  structural edit the size guard refused stayed in the live tree, so every later
+  block edit was written at a row belonging to a different block. Re-deriving the
+  outline after an external change also commits the open block first, rather than
+  dropping what was typed into it.
+- **Encrypted notes stay encrypted.** Extract selection to new note keeps the new
+  note encrypted instead of writing the selection out in the clear; Save this
+  note as a template and an action's append step refuse an encrypted note and say
+  why; a link to an encrypted note carries no label, because the label was its
+  decrypted first line.
+- **Note text can no longer drive your terminal.** The shell commands escaped
+  control sequences; the app did not, so a note's title or a matched line could
+  retitle the window, clear the screen, or write your clipboard through OSC 52.
+  Applied to the note list, the note heading, the quoted search line and the
+  import review dialog.
+- **`jotline capture` is fast again for everyone who has saved a preference.**
+  Reading a settings file imported the whole terminal UI to check outline
+  shortcut names, which put back most of the deferred-import win: 0.10s without a
+  settings file, 0.29s with one, and 0.11s now.
+- A partly invalid settings file keeps the same fields every time. Which of two
+  colliding fields survived depended on the hash seed, and the next ordinary save
+  wrote the loser back as empty -- losing a hotkey map for good in three runs out
+  of eight.
+- A malformed Omarchy `colors.toml` falls back to the built-in theme instead of
+  stopping Jotline with a traceback.
+- Exports are created private (0600), like notes and the key file. An export of
+  an encrypted note carries the same text in the clear.
+- `jotline run` checks the whole output before an action commits, not the first
+  20,000 characters, so a control character further into a note no longer lets an
+  append apply and then repeat on every retry.
+- `jotline sync git` quotes the vault path, which was wrong out of the box on the
+  default macOS vault and a paste hazard on any path with shell metacharacters.
+- History keeps the newest revisions when the clock steps backwards (DST, an NTP
+  correction, a resumed VM snapshot); it was deleting them and keeping stale ones.
+  A revision left half-written by a crash is also collected now, and removed when
+  a note is encrypted -- it held the note in the clear and nothing swept it.
+- Block operations no longer rewrite a tab as spaces, so a Makefile recipe line
+  kept in a note survives toggling a task or editing a neighbouring block.
+
 - Say why a note matched. A search with words in it now orders the note list by
   match quality and gives each row a third line quoting the matched text with
   the words in bold; a title hit, matching more of the query and a word near the
@@ -91,6 +145,45 @@
 - Tab indents in the note editor, Shift+Tab outdents, and Enter keeps leading
   indentation. Selected lines and list items indent together. Ctrl+Tab and
   Ctrl+Shift+Tab move focus between controls.
+
+- **Nothing Jotline starts can read your passphrase any more.** `$EDITOR`, the
+  clipboard tool, the export converters and the terminal that quick capture
+  opens all inherited `JOTLINE_PASSPHRASE`, where on Linux any process of yours
+  could read it back out of `/proc`. `encryption change` leaked the replacement
+  passphrase the same way.
+- **A note still saves when its history cannot be written.** A stray file or a
+  symlink where `.jotline-history` belongs used to make every save of that note
+  fail, so the text went nowhere. The save goes through and Jotline says history
+  is not being kept. Nothing is written through a symlink, as before.
+- **A key file damaged on disk says so** instead of reporting a wrong
+  passphrase. A key file from another vault still reports a wrong passphrase;
+  telling those apart needs a note format change.
+- **Changing your passphrase now strengthens the key file.** It was rewrapped at
+  whatever work factor the file already carried, so a vault set up weak stayed
+  weak.
+- **An encrypted note that will not open stays in the list**, sealed, instead of
+  disappearing as though deleted.
+- **Encrypting a note no longer puts its plaintext in the day's backup.** The
+  daily ZIP runs before the sealed file is published and archived the note as it
+  was on disk. Backups made earlier in the day still hold the old text, as the
+  README says.
+- **An imported file cannot pass its first lines off as metadata.** A file
+  starting with something that looked like a Jotline header could file itself
+  into a collection, star and backdate itself, and hide those lines from the
+  preview. A header counts only where Jotline would read that file as a note,
+  and the preview says when an item's collection came from one.
+- **Importing a folder that is itself a vault no longer pulls in its history**,
+  which brought every old draft in as its own note.
+- **Indent and outdent keep a tab that is content.** A Makefile recipe inside a
+  fenced code block survives moving the item, and indent followed by outdent
+  gives back the line you started with.
+- **Quarantined backups are pruned and listed.** `.invalid-*.zip` files built up
+  without limit and appeared nowhere; `doctor` names them.
+- **A malformed backup cannot exhaust memory during validation**: a 199 KB
+  archive could cost 400 MiB, now 18 MiB.
+- **Smaller shell fixes**: an unknown `--encoding` value is escaped before it
+  reaches the terminal, `import --apply` exits 0 on warnings that need nothing
+  from you, and a vault path containing `%` produces a working desktop entry.
 
 ## 0.9.8 — 2026-09-18
 

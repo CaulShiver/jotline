@@ -1,8 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from dataclasses import replace
 import json
 from jotline.filesystem import fs as os
+import tracemalloc
 import zipfile
+from uuid import uuid4
 
 import pytest
 from jotline import history
@@ -105,16 +108,18 @@ def test_daily_backup_once_and_manual_retention(tmp_path, monkeypatch):
     assert archives[0].exists()
 
 
-def test_reject_unsafe_history_directory(tmp_path):
+def test_unsafe_history_directory_is_skipped_with_warning(tmp_path):
+    # History behind a symlink is never followed. The note itself lives in the
+    # vault root, so refusing the save protected nothing and lost the text.
     vault = Vault(tmp_path / 'vault')
     outside = tmp_path / 'outside'
     outside.mkdir()
     (vault.path / '.jotline-history').symlink_to(outside, target_is_directory=True)
     note = vault.new('data')
-    with pytest.raises(OSError):
-        vault.save(note)
-    assert not vault.file(note.id).exists()
+    vault.save(note)
+    assert vault.file(note.id).exists()
     assert not list(outside.iterdir())
+    assert any('history is not being kept' in item for item in vault.warnings)
 
 
 def test_unsafe_backup_directory_is_skipped_with_warning(tmp_path):
@@ -151,10 +156,11 @@ def test_failed_replace_or_history_durability_preserves_old_note(tmp_path, monke
     assert vault.history(note.id) == existing
     monkeypatch.setattr(os, 'link', original_link)
     monkeypatch.setattr(history, 'sync_directory', lambda path: (_ for _ in ()).throw(OSError('history durability failed')))
-    with pytest.raises(OSError, match='durability'):
-        vault.save(note)
-    assert vault.read(note.id).body == 'first'
+    # History that cannot be made durable no longer costs the save; the user is told instead.
+    vault.save(note)
+    assert vault.read(note.id).body == 'second'
     assert vault.history(note.id) == existing
+    assert any('history is not being kept' in item for item in vault.warnings)
 
 
 def test_conflicting_save_does_not_snapshot_uncommitted_body(tmp_path):
@@ -470,3 +476,104 @@ def test_daily_backup_survives_concurrent_prune(tmp_path, monkeypatch, fault_ent
     with zipfile.ZipFile(archives[0]) as archive:
         assert archive.testzip() is None
         assert note.id + '.md' in archive.namelist()
+
+
+def test_a_clock_that_steps_backwards_does_not_delete_the_newest_revisions(tmp_path, monkeypatch):
+    # Survivors were ranked by the wall-clock stamp inside the revision ID, so
+    # after DST ends or an NTP correction the revisions just written sorted
+    # below the old ones and were pruned away while stale ones were retained.
+    vault = Vault(tmp_path)
+    note = vault.new("Draft 0\n")
+    vault.save(note)
+    base = datetime(2026, 11, 1, 1, 26, 0)
+    clock = {"now": base}
+
+    def stepping_clock():
+        moment = clock["now"]
+        clock["now"] = moment + timedelta(seconds=61)
+        return moment.strftime("%Y%m%dT%H%M%S%f") + "-" + uuid4().hex[:8]
+
+    monkeypatch.setattr(history, "stamp", stepping_clock)
+    for draft in range(1, 35):
+        note.body = f"Draft {draft}\n"
+        vault.save(note)
+
+    clock["now"] = base - timedelta(hours=1)  # Local time repeats the hour.
+    for draft in range(35, 45):
+        note.body = f"Draft {draft}\n"
+        vault.save(note)
+
+    # A snapshot records the text a save is about to overwrite, so the last
+    # draft written is the live note rather than a revision.
+    folder = tmp_path / ".jotline-history" / note.id
+    kept = [path.read_text() for path in folder.glob("*.md")]
+    for draft in range(35, 44):
+        assert any(f"Draft {draft}\n" in text for text in kept), draft
+
+
+def test_a_revision_left_half_written_by_a_crash_is_not_a_plaintext_leak(tmp_path):
+    # A crash during a revision write leaves a .revision-* temp holding the
+    # whole note. It carries no revision ID, so the purge that runs when a note
+    # is encrypted never saw it, and no pruning pass covered this folder.
+    pytest.importorskip("cryptography")
+    secret = "ZQPLATNTXT dosage 200mg"
+    vault = Vault(tmp_path)
+    vault.setup_encryption("correct horse battery", n=2 ** 10)
+    vault.unlock("correct horse battery")
+    note = vault.new(f"{secret} therapy\n")
+    vault.save(note)
+    note.body += "more\n"
+    vault.save(note)
+
+    orphan = tmp_path / ".jotline-history" / note.id / (".revision-" + "a" * 32)
+    orphan.write_text(f"{secret} therapy\nmore\n")
+
+    note.encrypted = True
+    vault.save(note)
+    remaining = [path for path in tmp_path.rglob("*")
+                 if path.is_file() and secret.encode() in path.read_bytes()]
+    assert remaining == []
+
+
+def test_encrypting_a_note_as_the_first_write_of_the_day_keeps_its_text_out_of_the_backup(tmp_path):
+    # The daily backup ran before the sealed file was published, so the day's
+    # first save archived the note in the clear at the moment the user asked
+    # for it to be sealed.
+    pytest.importorskip("cryptography")
+    secret = "ZQPLATNTXT dosage 200mg"
+    vault = Vault(tmp_path)
+    vault.setup_encryption("correct horse battery", n=2 ** 10)
+    vault.unlock("correct horse battery")
+    note = vault.new(f"{secret} therapy\n")
+    vault.save(note)
+    for archive in (tmp_path / ".jotline-backups").glob("daily-*.zip"):
+        archive.unlink()  # That save was yesterday's; today's first write is the encrypt.
+
+    note.encrypted = True
+    vault.save(note)
+    daily = next((tmp_path / ".jotline-backups").glob("daily-*.zip"))
+    with zipfile.ZipFile(daily) as archive:
+        assert archive.testzip() is None
+        archived = archive.read(f"{note.id}.md").decode()
+    assert secret not in archived
+    assert vault.parse_note(note.id, archived, vault.cipher).body == f"{secret} therapy\n"
+    assert vault.read(note.id).body == f"{secret} therapy\n"
+
+
+def test_backup_validation_does_not_inflate_a_declared_manifest_into_memory(tmp_path):
+    # The manifest was captured whole, bounded only by MAX_BACKUP_BYTES, so a
+    # few hundred kilobytes of deflate on disk cost hundreds of megabytes of
+    # memory before the archive was rejected.
+    bomb = tmp_path / "daily-2026-09-21.zip"
+    with zipfile.ZipFile(bomb, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("note.md", b"data")
+        archive.writestr("jotline-backup-manifest.json", b" " * (128 * 1024 * 1024))
+    assert bomb.stat().st_size < 256 * 1024
+    tracemalloc.start()
+    try:
+        valid, reason = history.validate_backup(bomb)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert (valid, reason) == (False, "manifest exceeds validation limit")
+    assert peak < 4 * history.MAX_MANIFEST_BYTES

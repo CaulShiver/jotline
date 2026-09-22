@@ -27,7 +27,7 @@ from .filesystem import (
     read_regular_fd,
     read_regular_file,  # noqa: F401
     replace_at,
-    rename_noreplace,
+    restore_displaced,
     unlink_quietly,
     vault_lock,
 )
@@ -76,6 +76,22 @@ def validate_note_id(note_id: str) -> str:
     if not re.fullmatch(r"[a-zA-Z0-9_-]+", note_id):
         raise ValueError("Invalid note ID")
     return note_id
+
+
+def displaced_note_id(name: str) -> str | None:
+    """The note a displaced original belongs to, or None when the name predates it."""
+    if not name.startswith(history.DISPLACED_PREFIX):
+        return None
+    # A note ID cannot contain a dot, so the first one separates it from the
+    # unique suffix. Names written before 0.9.9 are only the suffix and name
+    # no note; those stay for the user to sort out, as doctor already says.
+    stem, separator, _ = name[len(history.DISPLACED_PREFIX):].partition(".")
+    if not separator:
+        return None
+    try:
+        return validate_note_id(stem)
+    except ValueError:
+        return None
 
 
 def parse_calendar_date(value: str, *, today: date | None = None) -> date:
@@ -205,7 +221,16 @@ class Note:
 
 
 def wiki_link(note: Note) -> str:
-    """Stable wiki-link markup for a note, with a title label safe for [[id|label]]."""
+    """Stable wiki-link markup for a note, with a title label safe for [[id|label]].
+
+    An encrypted note contributes no label. Its title is the first line of the
+    decrypted body, and the note being linked from is usually not encrypted, so
+    a label would copy that line into a plaintext file, its history and every
+    backup, where it would stay after the vault was locked again. A bare link
+    still resolves, and the list and the picker still show the real title.
+    """
+    if note.encrypted:
+        return f"[[{note.id}]]"
     label = note.title.replace("|", " ").replace("[", "").replace("]", "")
     return f"[[{note.id}|{label}]]"
 
@@ -219,13 +244,15 @@ class Vault:
             raise FileNotFoundError(
                 f"Vault does not exist: {self.path} (start jotline or capture a note to create it)")
         self.warnings: list[str] = []
-        # Warnings that name a retained file survive every sidebar refresh.
+        # Warnings that name a retained file, or a history that is not being
+        # kept, survive every sidebar refresh.
         self.sticky_warnings: list[str] = []
         self.backup_warning = ""
         self.lock_timeout = LOCK_TIMEOUT_SECONDS
         # Set by unlock(); while None, encrypted notes read as locked and their text stays sealed.
         self.cipher: NoteCipher | None = None
         self._cache: dict[str, tuple[FileSignature, Note, int, float]] = {}
+        self._recovered_displaced = False
         self.permission_warning = ("Vault is writable by other users; use chmod go-w to protect note replacement"
                                    if self.path.stat().st_mode & 0o022 else "")
         if self.permission_warning:
@@ -252,7 +279,8 @@ class Vault:
         stamp = now()
         return Note(uuid4().hex, body, created=stamp, updated=stamp, workspace=validate_workspace(workspace))
 
-    def read(self, note_id: str, *, workspace: str | None = None, directory: int | None = None) -> Note:
+    def read(self, note_id: str, *, workspace: str | None = None, directory: int | None = None,
+             locked: bool = False) -> Note:
         filename = self.file(note_id).name
         own_directory = directory is None
         if own_directory:
@@ -266,7 +294,7 @@ class Vault:
         finally:
             if own_directory:
                 os.close(directory)
-        note = self.parse_note(note_id, raw, self.cipher)
+        note = self.parse_note(note_id, raw, None if locked else self.cipher)
         if workspace is not None and note.workspace != workspace:
             raise ValueError(OTHER_WORKSPACE)
         return note
@@ -320,11 +348,59 @@ class Vault:
         """Force the next scan to reread note bodies from disk."""
         self._cache.clear()
 
+    def recover_displaced(self) -> list[str]:
+        """Put back displaced originals whose note file is missing.
+
+        A save moves the note aside and then publishes the new text under its
+        name. A crash in that window, or a filesystem that refuses both a hard
+        link and an exclusive rename, leaves the only copy of the note under a
+        hidden name that nothing lists: the note is simply gone from the app.
+        Where the note's own name is free again, the displaced file is that
+        note, so put it back. A displaced file whose note does exist is the
+        litter of a save that did finish, and doctor already reports it.
+        """
+        recovered: list[str] = []
+        try:
+            with os.scandir(self.path) as entries:
+                names = [entry.name for index, entry in enumerate(entries)
+                         if index < MAX_SCAN_ENTRIES and entry.name.startswith(history.DISPLACED_PREFIX)]
+        except OSError:
+            return recovered
+        pending = [(name, note_id) for name in names
+                   if (note_id := displaced_note_id(name)) and not self.file(note_id).exists()]
+        if not pending:
+            return recovered
+        try:
+            with self.write_lock():
+                directory = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                try:
+                    for name, note_id in pending:
+                        try:
+                            # Read it first: a symlink or a directory under that
+                            # name is not a note and must not be published as one.
+                            read_regular_at(directory, name)
+                            restore_displaced(directory, name, self.file(note_id).name)
+                        except (OSError, ValueError):
+                            continue
+                        recovered.append(note_id)
+                    if recovered:
+                        history.sync_directory(directory)
+                finally:
+                    os.close(directory)
+        except OSError:
+            return recovered
+        for note_id in recovered:
+            self.warnings.append(f"Recovered note {note_id}; a save had left it under a hidden name")
+        return recovered
+
     def notes(self) -> list[Note]:
         notes = []
         self.warnings = ([self.permission_warning] if self.permission_warning else []) + list(self.sticky_warnings)
         if self.backup_warning and self.backup_warning not in self.warnings:
             self.warnings.append(self.backup_warning)
+        if not self._recovered_displaced:
+            self._recovered_displaced = True
+            self.recover_displaced()
         refreshed = {}
         retained_bytes = 0
         scanned_bytes = 0
@@ -361,6 +437,14 @@ class Vault:
                     retained_bytes += cost
             except (ValueError, OSError) as error:
                 self.warnings.append(f"{file.name}: {error}")
+                if isinstance(error, EncryptionError):
+                    # An encrypted note that will not open stays listed, sealed as
+                    # when locked, rather than vanish as though deleted. It is not
+                    # cached, so every scan reports it again.
+                    try:
+                        notes.append(self.read(file.stem, locked=True))
+                    except (ValueError, OSError):
+                        pass
         self._cache = refreshed
         return sorted(notes, key=lambda n: (n.starred, n.updated, n.id), reverse=True)
 
@@ -418,6 +502,14 @@ class Vault:
             os.fsync(stream.fileno())
         return temp
 
+    def _snapshot(self, note_id: str, raw: str, directory: int) -> Path | None:
+        """Record raw in history; a history that cannot be written must not cost the save."""
+        try:
+            return history.snapshot(self, note_id, raw, vault_directory=directory)
+        except OSError as error:
+            self.retain_warning(f"Note history is not being kept: {error}")
+            return None
+
     def _publish_created(self, directory: int, temp: str, filename: str, note_id: str) -> None:
         try:
             publish_new(directory, temp, filename)
@@ -432,7 +524,10 @@ class Vault:
 
     def _publish_replace(self, directory: int, temp: str, filename: str, note_id: str,
                          actual: str) -> None:
-        displaced = ".jotline-displaced-" + uuid4().hex
+        # The note ID is in the name because nothing else records it: the note
+        # file has no ID in its header, its name is the ID. Without it a
+        # displaced original cannot be put back by anything but a human.
+        displaced = f"{history.DISPLACED_PREFIX}{note_id}.{uuid4().hex}"
         keep_displaced = False
         try:
             # Move aside precisely the inode present at publication time,
@@ -452,15 +547,14 @@ class Vault:
                     try:
                         # Restore only into a free name. A creator after the
                         # read above must not lose its own content.
-                        rename_noreplace(displaced, filename,
-                                         src_dir_fd=directory, dst_dir_fd=directory)
+                        restore_displaced(directory, displaced, filename)
                     except BaseException as restore_error:
                         self.retain_warning(
                             f"Save failed; the original note was retained as {displaced}: {restore_error}")
                     else:
                         keep_displaced = False
                 else:
-                    history.snapshot(self, note_id, collision, vault_directory=directory)
+                    self._snapshot(note_id, collision, directory)
                     self.retain_warning(
                         f"Save collided with another writer; the original note was retained as {displaced}")
                 raise
@@ -523,8 +617,10 @@ class Vault:
         candidate = None
         try:
             try:
+                # The archive takes the sealed text of a note being encrypted in
+                # place of the plain text still on disk, as history does below.
                 history.backup(self, automatic=True, vault_directory=directory,
-                               pending=(path.name, raw) if actual is None else None)
+                               pending=(path.name, raw) if actual is None or newly_encrypted else None)
             except OSError as error:
                 # A failed daily backup must never hold the note itself hostage;
                 # the overwritten text is still snapshotted to history below.
@@ -534,8 +630,8 @@ class Vault:
                     self.warnings.append(message)
             if actual is not None and not newly_encrypted:
                 # A note being encrypted must not leave its plain text behind in history.
-                history.snapshot(self, note.id, actual, vault_directory=directory)
-            candidate = history.snapshot(self, note.id, raw, vault_directory=directory)
+                self._snapshot(note.id, actual, directory)
+            candidate = self._snapshot(note.id, raw, directory)
             # Revalidate as late as possible. For a brand-new note, publish with
             # an atomic hard link so an uncooperative creator can never be replaced.
             try:
@@ -544,7 +640,7 @@ class Vault:
                 latest = None
             if latest != actual:
                 if latest is not None:
-                    history.snapshot(self, note.id, latest, vault_directory=directory)
+                    self._snapshot(note.id, latest, directory)
                 raise ConflictError(CONFLICT_MESSAGE)
             if actual is None:
                 self._publish_created(directory, temp, path.name, note.id)
@@ -786,12 +882,14 @@ class Vault:
         self.cipher = NoteCipher(note_key)
         self.invalidate_cache()
 
-    def change_passphrase(self, old: str, new: str) -> None:
+    def change_passphrase(self, old: str, new: str, *, n: int | None = None) -> None:
         """Rewrap the note key; encrypted notes themselves are not rewritten."""
         with self.write_lock() as directory:
             current = self._read_key(directory)
             note_key = current.unwrap(old)
-            self._write_key(directory, KeyFile.create(new, note_key, n=current.n), replace_existing=True)
+            # The current work factor, not the file's: this is the one time a
+            # vault set up with a weaker n gets stronger, and its key ID is written.
+            self._write_key(directory, KeyFile.create(new, note_key, n=n or SCRYPT_N), replace_existing=True)
 
     def set_encrypted(self, note_id: str, workspace: str, encrypted: bool) -> tuple[Note, bool]:
         """Encrypt or decrypt one note; returns the note and whether anything changed."""

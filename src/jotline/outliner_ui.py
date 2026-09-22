@@ -16,31 +16,12 @@ from textual.widgets import Button, Footer, Static, TextArea
 from .limits import EDIT_LIMIT_BYTES
 from .markdown_editor import MarkdownEditor
 from .modal import Modal, Palette
+from .outline_actions import ACTIONS
 from .outline_session import OutlineSession, patch, revision
 from .outline_state import read_state, write_state
 from .outline_view import OutlineNode, OutlineView
 from .outliner import ANCHOR, Block, Outline, dedent_line, literal_text
 
-ACTIONS = {
-    'new_block': 'Insert sibling block', 'new_child': 'Insert child block',
-    'continuation': 'Insert continuation line', 'indent': 'Indent selected branches',
-    'outdent': 'Outdent selected branches', 'move_up': 'Move selected branches up',
-    'move_down': 'Move selected branches down', 'move_to': 'Move selected branches to…',
-    'task': 'Toggle task status', 'fold': 'Fold or expand branch',
-    'collapse_all': 'Fold all branches', 'expand_all': 'Expand all branches',
-    'zoom': 'Focus branch', 'zoom_out': 'Focus parent', 'home': 'Focus whole note',
-    'nav_back': 'Previous outline location', 'nav_forward': 'Next outline location',
-    'search': 'Find block, including folded branches', 'restore_folds': 'Restore folds after search',
-    'select_block': 'Select or deselect branch', 'select_all': 'Select all visible branches',
-    'clear_selection': 'Clear branch selection', 'duplicate': 'Duplicate selected branches',
-    'group': 'Group selected sibling branches', 'copy': 'Copy selected branches as Markdown',
-    'cut': 'Cut selected branches', 'paste_outline': 'Paste clipboard as outline branches',
-    'paste_text': 'Paste clipboard as literal block text', 'delete_branch': 'Delete selected branches',
-    'merge': 'Merge block into previous sibling', 'reference': 'Copy permanent block reference',
-    'insert_link': 'Insert note link', 'snippet': 'Insert snippet', 'follow_reference': 'Open block reference',
-    'embed': 'Preview referenced branch', 'inspector': 'Toggle full-height block inspector',
-    'undo': 'Undo edit', 'redo': 'Redo edit', 'save': 'Save note', 'done': 'Switch to Markdown',
-}
 
 # A structural edit already knows the tree it built, and writes it to the note
 # immediately. Re-deriving that tree from CommonMark costs a whole-note parse,
@@ -212,8 +193,12 @@ class OutlinerScreen(Modal[None]):
             self.rebuild()
             self.call_after_refresh(self.apply_restored_position)
         elif self.source.text != self._synced_source_text:
-            self.reparse()
-            self.rebuild()
+            # Reparsing reloads the block editor from the note, so anything
+            # typed that has not reached the note yet would be dropped. Commit
+            # it first, the way settle() and every other reader of the note do.
+            if self.flush():
+                self.reparse()
+                self.rebuild()
         else:
             self.settle()
         self.query_one('#outline-save', Static).update(
@@ -350,6 +335,11 @@ class OutlinerScreen(Modal[None]):
             return False
         start, end, replacement = patch(old, new)
         row = self.block_rows[self.current]
+        if self.source.document.lines[row:row + len(old_lines)] != old_lines:
+            # Addressing the note by row only works while the tree and the note
+            # agree. They do not, so this row is some other block's text; rewrite
+            # the note from the whole tree instead of overwriting it.
+            return self.sync()
         a = self.source.location_at(start, old)
         b = self.source.location_at(end, old)
         self.source.replace(replacement, (row + a[0], a[1]), (row + b[0], b[1]))
@@ -423,8 +413,14 @@ class OutlinerScreen(Modal[None]):
         self.session.remember()
         cursor = self.block_editor().cursor_location
         operation()
-        self.sync()
-        self.defer_settle()
+        if self.sync():
+            self.defer_settle()
+        else:
+            # The note refused the write, so the live tree must not keep the
+            # operation either. block_rows would go on addressing a tree the
+            # note does not contain, and the next block edit would be written
+            # at a row belonging to some other block, destroying its text.
+            self.reparse()
         self.source.history.checkpoint()
         if self.zoomed and self.current not in set(self.zoomed.walk()):
             self.zoomed = None

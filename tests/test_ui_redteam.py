@@ -1,4 +1,4 @@
-from textual.widgets import Static, Switch, TextArea
+from textual.widgets import Input, Static, Switch, TextArea
 
 from jotline.app import FindInNote, Jotline, Palette
 from jotline.preferences import Preferences
@@ -226,3 +226,22 @@ async def test_daily_read_error_keeps_current_editor(tmp_path):
 
         assert app.query_one('#editor', TextArea).text == 'keep me'
         assert app.current.id == current_id
+
+
+async def test_a_note_cannot_drive_the_terminal_through_the_note_list(tmp_path):
+    # Rich strips BEL, BS, VT, FF and CR but not ESC, so a complete OSC 52
+    # sequence in a note reached the terminal and wrote the system clipboard.
+    # An imported or synced note is untrusted text like any other.
+    payload = '\x1b]52;c;cm0gLXJmIH4vKg==\x1b\\'
+    vault = Vault(tmp_path)
+    vault.save(vault.new(f'Q3 plan {payload} notes\n\nbody\n'))
+    vault.save(vault.new(f'Shopping\n\nmilk {payload}\n'))
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        app.query_one('#search', Input).value = 'milk'
+        app.refresh_notes()  # The search box is debounced; do not wait on the timer.
+        await pilot.pause()
+        painted = '\n'.join(''.join(segment.text for segment in strip)
+                            for strip in app.screen._compositor.render_strips())
+        assert '\x1b' not in painted

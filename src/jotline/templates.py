@@ -16,6 +16,8 @@ BUILTIN_TEMPLATES = {
     "project": "# Project\n\nWorkspace: {{workspace}}\nStarted: {{date}}\n\n## Outcome\n\n## Next actions\n\n- [ ] \n\n## References\n",
     "journal": "# {{date}}\n\n## What's on my mind\n\n## Today’s priorities\n\n- [ ] \n\n## Reflection\n",
 }
+TEMPLATE_ENCRYPTED = ("An encrypted note cannot be saved as a template. Templates are stored "
+                      "unencrypted, and the daily backup archives them too.")
 MAX_TEMPLATE_ENTRIES = 2048
 
 

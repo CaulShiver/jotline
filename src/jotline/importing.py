@@ -11,7 +11,7 @@ from uuid import UUID
 
 from .filesystem import fs, pin_ancestors, read_regular_file
 from .limits import MAX_NOTE_BYTES
-from .store import COLLECTIONS, Note, Vault, decode_problem, tagged_body, validate_workspace
+from .store import COLLECTIONS, Note, Vault, decode_problem, tagged_body, validate_note_id, validate_workspace
 
 MAX_IMPORT_BYTES = 32 * 1024 * 1024
 MAX_IMPORT_ENTRIES = 1000
@@ -30,6 +30,18 @@ class ImportPlan:
     items: list[ImportItem] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     duplicates: str = 'skip'
+    # The warnings that leave nothing for the user to fix: a link the importer
+    # never follows, or a note already in the vault that could not be read.
+    notices: list[str] = field(default_factory=list)
+
+    def notice(self, message):
+        self.warnings.append(message)
+        self.notices.append(message)
+
+    @property
+    def needs_review(self):
+        """Whether a warning means a source was not, or not fully, imported."""
+        return len(self.warnings) > len(self.notices)
 
     @property
     def ready(self):
@@ -138,6 +150,22 @@ def _jotline_note(vault, raw, workspace, default_collection):
     return note
 
 
+def _note_file(source):
+    """Whether a vault would read this file as one of its notes: an ID-shaped .md name.
+
+    Only such a file's header is metadata. Any other file is outside text, so a
+    header at its start stays in the body where the review shows it; a file
+    cannot pick its own collection, star or dates just by starting with one.
+    """
+    if source.suffix.lower() != '.md':
+        return False
+    try:
+        validate_note_id(source.stem)
+    except ValueError:
+        return False
+    return True
+
+
 def _scan_folder(root: Path, recursive: bool, plan: ImportPlan) -> list[Path]:
     """Importable files under a folder, bounded by MAX_IMPORT_ENTRIES and never following links."""
     paths = []
@@ -159,9 +187,12 @@ def _scan_folder(root: Path, recursive: bool, plan: ImportPlan) -> list[Path]:
                         plan.warnings.append(f'{child.name}: {error}')
                         continue
                     if stat.S_ISLNK(info.st_mode):
-                        plan.warnings.append(f'Skipped link: {child.name}')
+                        plan.notice(f'Skipped link: {child.name}')
                     elif stat.S_ISDIR(info.st_mode) and recursive:
-                        pending.append(child)
+                        # A vault's own folders hold revisions and archives whose names are
+                        # ID-shaped, so scanning them would import every old draft as a note.
+                        if not child.name.startswith('.jotline-'):
+                            pending.append(child)
                     elif stat.S_ISREG(info.st_mode) and child.suffix.lower() in IMPORT_SUFFIXES:
                         paths.append(child)
         except OSError as error:
@@ -178,7 +209,8 @@ def preview_import(vault: Vault, path: Path, workspace='default', default_collec
         raise ValueError('Invalid import options')
     plan = ImportPlan(duplicates=duplicates)
     existing = vault.notes()
-    plan.warnings.extend(vault.warnings)
+    for message in vault.warnings:
+        plan.notice(message)
     fingerprints = {_fingerprint(note) for note in existing}
     ids = {note.id for note in existing}
     total_bytes = 0
@@ -213,8 +245,10 @@ def preview_import(vault: Vault, path: Path, workspace='default', default_collec
                 try:
                     if is_drafts:
                         note = _draft(vault, entry, workspace)
-                    elif re.match(r'\A\ufeff?---\r?\njotline: 1\r?\n', entry):
+                    elif _note_file(source) and re.match(r'\A\ufeff?---\r?\njotline: 1\r?\n', entry):
                         note = _jotline_note(vault, entry, workspace, default_collection)
+                        # The header is gone from the body, so say where the collection came from.
+                        label += ' (Jotline note)'
                     else:
                         note = vault.new(entry.removeprefix('\ufeff'), workspace=workspace)
                         note.collection = default_collection

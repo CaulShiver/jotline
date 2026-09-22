@@ -77,7 +77,12 @@ def load_omarchy_theme() -> Theme | None:
                 error=color('color1', accent), variables=variables,
                 dark=mode == 'dark' if mode else Color.parse(background).brightness < .5,
             )
-        except (OSError, ValueError):
+        except (OSError, ValueError, RecursionError):
+            # Omarchy themes are installed from third-party git repos, and the
+            # sync object is built whether or not the theme is in use, so a
+            # malformed palette must degrade to the built-in theme rather than
+            # stop Jotline starting. Deeply nested TOML raises RecursionError,
+            # which is not a ValueError.
             continue
     return None
 

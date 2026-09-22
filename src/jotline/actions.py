@@ -15,6 +15,8 @@ class ActionCommitError(OSError):
         self.note = note
 
 
+APPEND_ENCRYPTED = ("An append step would copy this encrypted note's text into another note, "
+                    "which is stored unencrypted")
 MAX_STEPS = 16
 STEP_TYPES = ('uppercase', 'lowercase', 'strip', 'quote', 'template', 'append', 'archive', 'copy', 'export', 'restore')
 PREVIEW_CHARS = 20_000
@@ -78,6 +80,10 @@ def run_action(vault, note, steps, *, selection='', copy=None, export=None, on_s
                 step['value'], note.workspace, title=working.title,
                 body=working.body, selection=selection)
         elif kind == 'append':
+            if note.encrypted:
+                # The target is a different note and is not encrypted, so this
+                # would copy the decrypted body into a plaintext file.
+                raise ValueError(APPEND_ENCRYPTED)
             vault.append_note(step['value'], working.body, note.workspace)
         elif kind == 'archive':
             working.collection = 'archive'
@@ -115,15 +121,25 @@ BUILTIN_ACTIONS = {
 }
 
 
-def preview_action(vault, note, steps, *, selection=''):
+def preview_action(vault, note, steps, *, selection='', printed=None):
     """Evaluate text only; list intended effects without writing or using clipboard.
 
     Targets, permissions, conflicts and final saves are checked only on execution.
+
+    ``printed`` collects the untruncated text each export step would write to
+    stdout. A caller deciding whether running the action is safe has to look at
+    that rather than at the effect strings, which are cut at PREVIEW_CHARS for
+    display: a control character further into the note is simply not in them.
     """
     effects = []
 
     def output(label, body):
         effects.append(f'{label} ({len(body)} characters):\n{truncate_preview(body)}')
+
+    def exported(body):
+        if printed is not None:
+            printed.append(body)
+        output('Export', body)
 
     class PreviewVault:
         path = vault.path
@@ -136,5 +152,5 @@ def preview_action(vault, note, steps, *, selection=''):
 
     result = run_action(PreviewVault(), note, steps, selection=selection,
                         copy=lambda body: output('Copy to clipboard', body),
-                        export=lambda body: output('Export', body))
+                        export=exported)
     return result, effects

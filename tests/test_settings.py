@@ -1,3 +1,7 @@
+import json
+import os
+import subprocess
+import sys
 from datetime import date
 import pytest
 from textual.widgets import Input, Select, Switch, TextArea
@@ -92,3 +96,25 @@ def test_daily_template_does_not_replace_existing_note(tmp_path):
     note = vault.daily('custom {{date}}')
     vault.save(note)
     assert vault.daily('replacement').body == f'custom {date.today()}'
+
+
+def test_which_field_survives_a_collision_does_not_depend_on_the_hash_seed(tmp_path):
+    # _partial kept whichever fields validated together, iterating a set. String
+    # hashing is randomised per process, so the same file kept the user's hotkey
+    # map in some runs and discarded it in others -- and Settings.save then wrote
+    # the loser back as empty, losing it for good.
+    path = tmp_path / ".jotline-settings.json"
+    path.write_text(json.dumps({"theme": "nord", "hotkeys": {"preview": "ctrl+g"},
+                                "outline_hotkeys": {"indent": "ctrl+g"}}))
+    probe = ("import json, pathlib, sys; from jotline.settings import Settings;"
+             f"settings, warnings = Settings.load(pathlib.Path({str(path)!r}));"
+             "print(json.dumps([settings.hotkeys, settings.outline_hotkeys]))")
+    seen = set()
+    for seed in ("0", "1", "2", "3", "4", "5", "6", "7"):
+        result = subprocess.run([sys.executable, "-c", probe], capture_output=True, check=True,
+                                text=True, timeout=60, env={**os.environ, "PYTHONHASHSEED": seed})
+        seen.add(result.stdout.strip())
+    assert len(seen) == 1, seen
+    # The dependent field is the one rejected: outline_hotkeys validates
+    # against the main map, so the map itself is what the user keeps.
+    assert json.loads(seen.pop()) == [{"preview": "ctrl+g"}, {}]

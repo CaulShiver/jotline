@@ -10,6 +10,7 @@ from textual.widgets import Button, Input, Label, Static
 from .importing import preview_import, apply_import
 from .modal import Modal, TextPrompt
 from .recovery_ui import RecoveryScreen
+from .terminal import terminal_text
 
 
 class ImportPreviewScreen(Modal[bool]):
@@ -33,9 +34,13 @@ class ImportPreviewScreen(Modal[bool]):
             with VerticalScroll(id='import-items'):
                 for item in self.plan.items:
                     decision = 'Skip duplicate' if item.duplicate and self.plan.duplicates == 'skip' else 'Import'
-                    yield Static(Text(f'{decision}: {item.source} → {item.note.collection} / {item.note.title}'))
+                    # The filename and the title both come from the file being
+                    # imported, which is exactly the untrusted case this dialog
+                    # exists to review.
+                    yield Static(Text(f'{decision}: {terminal_text(item.source)} → '
+                                      f'{item.note.collection} / {terminal_text(item.note.title)}'))
                 for warning in self.plan.warnings:
-                    yield Static(Text('Warning: ' + warning))
+                    yield Static(Text('Warning: ' + terminal_text(warning)))
             yield Button(f'Import {self.plan.ready} notes', id='import-apply', variant='primary',
                          disabled=not self.plan.ready)
             yield Button('Cancel', id='import-cancel')

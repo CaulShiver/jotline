@@ -167,6 +167,23 @@ def test_folder_import_warning_is_plain_and_encoding_applies(tmp_path):
 
 
 @posix_only
+def test_apply_exit_status_reports_failures_not_skipped_links(tmp_path):
+    folder = tmp_path / "notes"
+    folder.mkdir()
+    (folder / "one.md").write_text("One")
+    (folder / "link.md").symlink_to(tmp_path / "elsewhere.md")
+    vault_path = tmp_path / "vault"
+    applied = run_cli(vault_path, "import", str(folder), "--apply")
+    assert "warning: Skipped link: link.md" in error(applied)
+    assert applied.returncode == 0, error(applied)
+    assert b"Imported 1" in applied.stdout
+    (folder / "bad.txt").write_bytes(b"caf\xe9")
+    failed = run_cli(vault_path, "import", str(folder), "--apply")
+    assert failed.returncode == 1
+    assert "bad.txt: not valid UTF-8" in error(failed)
+
+
+@posix_only
 def test_command_line_bytes_are_decoded_as_asked(tmp_path):
     result = run_cli(tmp_path, "capture", b"caf\xe9")
     assert result.returncode == 1
@@ -378,6 +395,22 @@ def test_shell_commands_do_not_import_the_terminal_ui(tmp_path):
     because an in-process import would already be satisfied by another test.
     """
     probe = ("import sys, jotline.cli;"
+             "print('textual' in sys.modules, 'markdown_it' in sys.modules)")
+    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, check=True, timeout=60)
+    assert result.stdout.split() == [b"False", b"False"]
+
+
+def test_running_a_shell_command_over_a_vault_with_settings_does_not_import_the_ui(tmp_path):
+    """Importing jotline.cli was never the whole story.
+
+    Settings.validate() imported outliner_ui to check outline shortcut names,
+    so the terminal UI came in the moment a settings file was read -- which is
+    every run for every user who has ever saved a preference. The import-time
+    check above passed the whole time it was costing capture 0.2s.
+    """
+    (tmp_path / ".jotline-settings.json").write_text('{"theme": "nord"}')
+    probe = ("import sys, pathlib; from jotline.settings import Settings;"
+             f"Settings.load(pathlib.Path({str(tmp_path / '.jotline-settings.json')!r}));"
              "print('textual' in sys.modules, 'markdown_it' in sys.modules)")
     result = subprocess.run([sys.executable, "-c", probe], capture_output=True, check=True, timeout=60)
     assert result.stdout.split() == [b"False", b"False"]

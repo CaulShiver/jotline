@@ -1,9 +1,11 @@
 """Synthetic regressions for outliner data preservation and hidden selections."""
 import pytest
 
+from textual.widgets import TextArea
+
 from jotline.app import Jotline
 from jotline.modal import Palette
-from jotline.outliner import Outline
+from jotline.outliner import Block, Outline, dedent_line
 from jotline.store import Vault
 
 
@@ -143,3 +145,119 @@ async def test_delayed_layout_tolerates_editor_removed_during_teardown(tmp_path)
         assert screen.is_mounted
         screen.position_editor()
         assert app.editor().text == note.body
+
+
+async def test_a_refused_structural_edit_does_not_leave_the_tree_ahead_of_the_note(tmp_path, monkeypatch):
+    # The size guard refuses the write but the operation stayed in the live
+    # tree, so block_rows described a note that did not exist. Every later
+    # block edit was then written at a row belonging to a different block.
+    original = '- AAAA\n- BBBB\n- CCCC'
+    app, note = outline_app(tmp_path, original)
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.action_outliner()
+        await pilot.pause()
+        screen = app.screen
+        monkeypatch.setattr('jotline.outliner_ui.EDIT_LIMIT_BYTES', len(original.encode()))
+        screen.action_duplicate()
+        await pilot.pause()
+        assert screen.outline.text == original  # The tree matches the refused note.
+
+        monkeypatch.undo()
+        screen.choose(screen.outline.roots[1])  # Move to the BBBB block.
+        screen.action_edit_block()
+        editor = screen.block_editor()
+        editor.select_all()
+        editor.replace('X', *sorted((editor.selection.start, editor.selection.end)))
+        await pilot.pause(0.3)
+        assert app.editor().text == '- AAAA\n- X\n- CCCC'
+        assert 'CCCC' in app.editor().text
+
+
+async def test_an_external_change_commits_the_open_block_before_re_deriving(tmp_path):
+    # Re-deriving the outline reloads the block editor from the note, so a path
+    # that re-derives without committing first throws away what was typed.
+    app, note = outline_app(tmp_path, '- First\n- Second')
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.action_outliner()
+        await pilot.pause()
+        screen = app.screen
+        screen.action_edit_block()
+        editor = screen.block_editor()
+        with editor.prevent(TextArea.Changed):
+            editor.insert_checked('IMPORTANT')
+        app.editor().replace('\n- Third', app.editor().document.end, app.editor().document.end)
+        screen.update_save_status()
+        await pilot.pause()
+        assert 'IMPORTANT' in app.editor().text or 'IMPORTANT' in editor.text
+
+
+async def test_a_block_operation_does_not_rewrite_a_tab_as_spaces(tmp_path):
+    # Indentation was rebuilt as spaces on every block operation, including
+    # ones that reindent nothing. A tab inside a fenced code block is content,
+    # so a Makefile recipe line in a note quietly stopped working.
+    note = '- Build steps\n  ```make\n  all:\n  \techo hi\n  ```\n- Ship it'
+    app, opened = outline_app(tmp_path, note)
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.action_outliner()
+        await pilot.pause()
+        app.screen.action_task()
+        await pilot.pause(0.3)
+        assert app.editor().text == '- [ ] Build steps\n  ```make\n  all:\n  \techo hi\n  ```\n- Ship it'
+
+
+def test_dedenting_only_touches_the_columns_it_removes():
+    assert dedent_line('  \techo hi', 2) == '\techo hi'
+    assert dedent_line('  \techo hi', 0) == '  \techo hi'
+    assert dedent_line('    echo hi', 2) == '  echo hi'
+    assert dedent_line('\techo hi', 2) == '  echo hi'  # A straddling tab leaves spaces.
+    assert dedent_line('  echo hi', 4) == '  echo hi'  # Less indentation than asked for.
+
+
+MAKEFILE = '- Notes\n- Build steps\n  ```make\n  all:\n  \techo hi\n  ```'
+NESTED_MAKEFILE = '- Notes\n  - Build steps\n    ```make\n    all:\n    \techo hi\n    ```'
+
+
+def test_indent_then_outdent_restores_a_makefile_recipe_line():
+    # Reindenting rebuilt every leading whitespace run as spaces, so the one
+    # operation that really changes a block's indentation still turned the
+    # recipe's tab into spaces. Only the item's own indentation is rewritten;
+    # whitespace past its content column is content and stays verbatim.
+    outline = Outline(MAKEFILE)
+    outline.indent(outline.roots[1])
+    assert outline.text == NESTED_MAKEFILE
+    outline.outdent(outline.roots[0].children[0])
+    assert outline.text == MAKEFILE
+
+
+def test_outdenting_keeps_a_tab_inside_a_fenced_code_block():
+    outline = Outline(NESTED_MAKEFILE)
+    outline.outdent(outline.roots[0].children[0])
+    assert outline.text == MAKEFILE
+
+
+def test_shifting_rewrites_only_the_indentation_columns():
+    # A tab straddling the content column is indentation up to that column and
+    # content past it, so what the block's content measures does not change.
+    block = Block(['- x', '\t\techo hi'])
+    content = block.content
+    block.shift(2)
+    assert block.lines == ['  - x', '      \techo hi']
+    assert block.content == content
+    block.shift(-2)
+    assert block.lines == ['- x', '    \techo hi']
+    assert block.content == content
+
+
+async def test_indent_and_outdent_keep_a_tab_in_the_note(tmp_path):
+    app, opened = outline_app(tmp_path, MAKEFILE)
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.action_outliner()
+        await pilot.pause()
+        screen = app.screen
+        screen.selection = {screen.outline.roots[1].uid}
+        screen.action_indent()
+        await pilot.pause(0.3)
+        assert app.editor().text == NESTED_MAKEFILE
+        screen.action_outdent()
+        await pilot.pause(0.3)
+        assert app.editor().text == MAKEFILE

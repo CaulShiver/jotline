@@ -26,6 +26,7 @@ from .cli_doctor import doctor_report, format_doctor
 from .commands import Command
 from .connect_ui import Connections, ConnectionsBar
 from .encryption_ui import Encryption
+from .environment import child_environment
 from .external_editor import ENCRYPTED, NO_EDITOR, UNSAVED, configured_editor
 from .import_ui import RecoveryImport
 from .links import wiki_link_at, wiki_target_from_href
@@ -44,7 +45,8 @@ from .settings import HOTKEY_ACTIONS, Settings, VIEW_COLLECTIONS
 from .store import (COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, daily_date_from_id,
                     is_daily_id, parse_calendar_date, tagged_body, validate_workspace)
 from .sync import sync_guide
-from .templates import GUIDE, REVIEW, Templates
+from .templates import GUIDE, REVIEW, TEMPLATE_ENCRYPTED, Templates
+from .terminal import terminal_text
 from .workflows import Workflows
 
 class Row(NamedTuple):
@@ -193,7 +195,8 @@ class Jotline(App):
                 notes.tooltip = "Notes in the current collection"
                 yield notes
             with Vertical(id="writing"):
-                yield Static(self.current.title + " / " + self.current.collection, id="note-heading")
+                yield Static(terminal_text(self.current.title) + " / " + self.current.collection,
+                             id="note-heading")
                 with HorizontalScroll(id="markdown-toolbar"):
                     for style, label, hint in (
                         ("bold", "Bold", "Toggle **bold** on selected text"),
@@ -365,7 +368,7 @@ class Jotline(App):
         list says why a note is in it rather than only that it is. Without a
         query the row stays two lines, which is what fits an 80x24 terminal.
         """
-        text = (("★ " if note.starred else "") + ("🔒 " if note.encrypted else "") + note.title
+        text = (("★ " if note.starred else "") + ("🔒 " if note.encrypted else "") + terminal_text(note.title)
                 + "\n  " + (note.updated[:10] or "imported") + " · " + note.collection)
         if found is None or not found.line:
             return Row(note.id, text, ())
@@ -665,7 +668,8 @@ class Jotline(App):
             details += "  ·  " + " ".join("#" + tag for tag in tags) if tags else ""
 
         self.query_one("#status", Static).update(details)
-        self.query_one("#note-heading", Static).update(Text(self.current.title + " / " + self.current.collection))
+        self.query_one("#note-heading", Static).update(
+            Text(terminal_text(self.current.title) + " / " + self.current.collection))
 
     def save_current(self, *, explicit: bool = False) -> bool:
         # An inline Changed message may still be queued when a navigation or
@@ -779,7 +783,7 @@ class Jotline(App):
         """
         try:
             with self.suspend():
-                subprocess.run([*command, str(path)], check=False)
+                subprocess.run([*command, str(path)], check=False, env=child_environment())
         except SuspendNotSupported:
             return ("This terminal cannot hand itself to another program, so "
                     f"{command[0]} was not started.")
@@ -1027,6 +1031,12 @@ class Jotline(App):
 
     def save_template(self, name: str | None) -> None:
         if not name:
+            return
+        if self.current.encrypted:
+            # Templates are never encrypted, and the daily backup archives
+            # .jotline-templates as well, so this would put the decrypted note
+            # on disk in the clear and then into a retained ZIP.
+            self.notify(TEMPLATE_ENCRYPTED, severity="warning", timeout=12)
             return
         try:
             Templates(self.vault.path).save(name, self.editor().text)

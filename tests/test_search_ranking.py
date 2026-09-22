@@ -132,3 +132,45 @@ async def test_a_tag_search_does_not_add_a_quoted_line(tmp_path):
         await pilot.pause()
         row = str(app.query_one('#notes').get_option_at_index(0).prompt)
         assert row.count('\n') == 1
+
+
+def test_a_case_folding_note_does_not_stall_the_search():
+    # ß folds to ss, so the folded body is longer than the body. Walking the
+    # folded body with body offsets once left the skip position unable to
+    # advance, and the search spun until the app was killed.
+    body = ('Weißbier, Fußball, Maßnahmen, Großeltern, Fußgänger, '
+            'Weißwein, Nußkuchen, Schlußwort, Hauptstraße')
+    assert len(body.casefold()) > len(body)
+    assert excerpt(body, ['strasse'], body) == ('', ())
+
+
+def test_the_quoted_line_is_the_line_that_matched():
+    # The quote came from wherever the folded offset happened to land, which
+    # on a body that grows when folded was a different line entirely.
+    body = ('# Reiseplan\n\nAdresse: Hauptstraße 12, Großstraße 7\n'
+            'tiling\nKontonummer DE89 3704 0044 0532 0130 00\n')
+    line, _ = excerpt(body, ['tiling'], 'Reiseplan')
+    assert line == 'tiling'
+
+
+def test_marks_fall_on_the_words_they_name():
+    line, offsets = excerpt('Weißes tiling hier', ['tiling'], 'Titel')
+    assert [line[start:stop] for start, stop in offsets] == ['tiling']
+
+
+def test_a_folded_match_marks_the_characters_it_came_from():
+    line, offsets = excerpt('Hauptstrasse und Hauptstraße', ['strasse'], 'Titel')
+    assert [line[start:stop] for start, stop in offsets] == ['strasse', 'straße']
+
+
+def test_skipping_repeated_title_headings_stays_linear():
+    # Every heading line used to restart a full-body scan for each word, which
+    # took ten seconds over this note; walking the lines once takes a fifth of
+    # a second. The bound is loose enough for a loaded runner and still far
+    # under what the quadratic scan cost.
+    import time
+
+    body = '# Weekly\n' * 64_000
+    start = time.perf_counter()
+    excerpt(body, ['weekly', 'b3f1c2d4'], 'Weekly')
+    assert time.perf_counter() - start < 3

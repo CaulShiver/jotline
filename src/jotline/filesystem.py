@@ -135,6 +135,33 @@ def link_unsupported(error: OSError) -> bool:
     return error.errno in LINK_UNSUPPORTED
 
 
+# Filesystems that implement rename but not rename2 refuse the RENAME_NOREPLACE
+# flag outright. That set overlaps heavily with the one above: sshfs and other
+# FUSE mounts, vboxsf and hgfs shared folders, several 9p and network setups.
+EXCLUSIVE_RENAME_UNSUPPORTED = {errno.EINVAL, errno.ENOSYS, errno.ENOTSUP, errno.EOPNOTSUPP}
+
+
+def exclusive_rename_unsupported(error: OSError) -> bool:
+    return error.errno in EXCLUSIVE_RENAME_UNSUPPORTED
+
+
+def restore_displaced(directory: int, source: str, target: str) -> None:
+    """Move a displaced original back under its note name.
+
+    Prefer the exclusive rename, which cannot overwrite a file another writer
+    created in the meantime. Where the filesystem refuses the flag, a plain
+    rename is the better trade: the alternative is the note deterministically
+    vanishing on every save, and the target name was observed free a moment
+    ago while this process held the vault lock.
+    """
+    try:
+        rename_noreplace(source, target, src_dir_fd=directory, dst_dir_fd=directory)
+    except OSError as error:
+        if not exclusive_rename_unsupported(error):
+            raise
+        fs.rename(source, target, src_dir_fd=directory, dst_dir_fd=directory)
+
+
 def publish_new(directory: int, source: str, target: str) -> None:
     """Publish a complete file under a name that must not already exist.
 

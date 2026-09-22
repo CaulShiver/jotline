@@ -17,6 +17,7 @@ import tempfile
 import time
 from uuid import uuid4
 
+from .environment import child_environment
 from .links import rewrite_wiki_links, wiki_href
 from .filesystem import link_unsupported, rename_noreplace
 from .tasks import TASK, fenced_pairs
@@ -189,7 +190,8 @@ def _run(command: list[str], output: Path, timeout: float = TIMEOUT_SECONDS) -> 
     wants_pdf = output.suffix == ".pdf"
     with tempfile.TemporaryFile() as errors:
         try:
-            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=errors)
+            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=errors,
+                                       env=child_environment())
         except OSError as error:
             return error.strerror or str(error)
         deadline = time.monotonic() + timeout
@@ -310,7 +312,11 @@ def write_export(target: Path, data: bytes, *, force: bool = False) -> Path:
         raise ExportError(exists)
     temporary = target.with_name(f".{target.name}.jotline-{uuid4().hex}")
     try:
-        with open(temporary, "xb") as stream:
+        # Notes are 0600 and the key file is 0600; an export of an encrypted
+        # note carries the same text in the clear, so it is created private
+        # too rather than taking whatever the umask happens to allow.
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with open(descriptor, "wb") as stream:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())

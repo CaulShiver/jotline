@@ -31,9 +31,29 @@ def _plain_flat_list(lines: list[str]) -> bool:
 
 
 def dedent_line(line: str, width: int) -> str:
-    content = line.lstrip(' \t')
-    leading = len(line[:len(line) - len(content)].expandtabs(4))
-    return ' ' * (leading - width) + content if leading >= width else line
+    """Take width display columns off the front, keeping the rest of the line verbatim.
+
+    Rebuilding the whole indentation as spaces rewrites a tab the user put
+    there, and a tab is not always indentation: inside a fenced code block it
+    is content, and a Makefile recipe line stops working the moment it becomes
+    four spaces. Only the columns actually being removed are touched, so a
+    block operation that does not reindent anything changes nothing. A tab
+    that straddles the boundary leaves its remainder behind as spaces, which
+    is the only thing it can mean.
+    """
+    if width <= 0:
+        return line
+    column = 0
+    for index, character in enumerate(line):
+        if character == ' ':
+            column += 1
+        elif character == '\t':
+            column += 4 - column % 4
+        else:
+            break
+        if column >= width:
+            return ' ' * (column - width) + line[index + 1:]
+    return line
 
 
 def literal_text(text: str) -> str:
@@ -172,12 +192,21 @@ class Block:
             pending.extend(reversed(entries))
 
     def shift(self, amount: int) -> None:
+        if not amount:
+            # Nothing is being reindented, so nothing about the existing
+            # whitespace should change either.
+            return
         for block in self.walk():
+            # Only the columns up to the item's content column are indentation.
+            # Whitespace past it is content and stays verbatim: inside a fenced
+            # code block a tab there is a Makefile recipe, not a nesting level.
+            width = len(block.prefix.expandtabs(4))
             shifted = []
             for line in block.lines:
                 content = line.lstrip(' \t')
-                width = len(line[:len(line) - len(content)].expandtabs(4))
-                shifted.append(' ' * max(0, width + amount) + content if line else '')
+                indentation = min(width, len(line[:len(line) - len(content)].expandtabs(4)))
+                shifted.append(' ' * max(0, indentation + amount) + dedent_line(line, indentation)
+                               if line else '')
             block.lines = shifted
 
 

@@ -6,10 +6,16 @@ import codecs
 import os
 from pathlib import Path
 import sys
-import unicodedata
 
 from .limits import MAX_NOTE_BYTES
 from .store import Vault, decode_problem
+# Re-exported: the shell commands have imported these from here since 0.9.1.
+from .terminal import (  # noqa: F401
+    DISRUPTIVE_FORMAT,
+    has_terminal_controls,
+    is_terminal_control,
+    terminal_text,
+)
 
 
 def default_vault() -> Path:
@@ -23,25 +29,6 @@ def default_vault() -> Path:
     if sys.platform == "darwin" and not xdg_home and not xdg.exists():
         return Path.home() / "Library/Application Support/jotline/notes"
     return xdg
-
-
-DISRUPTIVE_FORMAT = frozenset("\u2028\u2029\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
-
-
-def is_terminal_control(character: str) -> bool:
-    """Whether a character can alter a terminal; tab and line breaks are ordinary note text."""
-    return (unicodedata.category(character) in ("Cc", "Cs", "Cn") and character not in "\t\n\r") \
-        or character in DISRUPTIVE_FORMAT
-
-
-def terminal_text(value: object) -> str:
-    """Render a one-line diagnostic without letting note or filename controls affect a terminal.
-
-    Tabs and line breaks are escaped as well, so a name cannot forge a second line of output.
-    """
-    return "".join(character.encode("unicode_escape").decode("ascii")
-                   if is_terminal_control(character) or character in "\n\r\t" else character
-                   for character in str(value))
 
 
 def warning(value: object) -> None:
@@ -66,16 +53,12 @@ def read_capture_input(encoding: str = "utf-8", errors: str = "strict") -> str:
     return raw
 
 
-def has_terminal_controls(body: str) -> bool:
-    return any(is_terminal_control(character) for character in body)
-
-
 def encoding_name(value: str) -> str:
     try:
         codecs.lookup(value)
         b"a".decode(value, "replace")
     except LookupError:
-        raise argparse.ArgumentTypeError(f"unknown text encoding: {value}") from None
+        raise argparse.ArgumentTypeError(f"unknown text encoding: {terminal_text(value)}") from None
     return value
 
 

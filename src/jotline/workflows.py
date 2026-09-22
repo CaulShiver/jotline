@@ -146,6 +146,15 @@ class Workflows:
             self.notify('Result exceeds the note size limit', severity='error')
             return
         note = self.vault.new(selected, workspace=self.workspace)
+        if self.current.encrypted:
+            # The selection is decrypted text out of an encrypted note. A new
+            # note does not inherit anything, so without this the secret is
+            # written to disk in the clear, snapshotted into that note's
+            # history and archived in the next daily backup.
+            if self.vault.cipher is None:
+                self.notify('Unlock encrypted notes before extracting from one', severity='error')
+                return
+            note.encrypted = True
         link = wiki_link(note)
         text = editor.text
         start, end = sorted((editor.selection.start, editor.selection.end))

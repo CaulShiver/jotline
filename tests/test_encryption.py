@@ -1,4 +1,5 @@
 """Opt-in note encryption: storage, history, backups, the shell and the app."""
+import base64
 import json
 import os
 from pathlib import Path
@@ -13,10 +14,11 @@ pytest.importorskip("cryptography")
 
 from textual.widgets import Input
 
+from jotline.actions import run_action
 from jotline.app import Jotline, TextPrompt
-from jotline.crypto import EncryptionError, KeyFile
+from jotline.crypto import SCRYPT_N, EncryptionError, KeyFile
 from jotline.importing import preview_import
-from jotline.store import Vault
+from jotline.store import Vault, wiki_link
 
 PASSPHRASE = "correct horse"
 FAST = 2 ** 10  # A light work factor keeps tests quick; real setups use the default.
@@ -112,11 +114,30 @@ def test_wrong_passphrases_tampering_and_swapped_files_are_refused(tmp_path):
     assert any("could not be decrypted" in warning for warning in fresh.warnings)
 
 
+def test_an_undecryptable_note_stays_listed_and_is_reported(tmp_path):
+    vault = encrypted_vault(tmp_path)
+    one = encrypted_note(vault, "one")
+    two = encrypted_note(vault, "two")
+    # A sync conflict settled the wrong way: two's file holds text sealed under one's ID.
+    (tmp_path / f"{two.id}.md").write_text((tmp_path / f"{one.id}.md").read_text())
+    fresh = Vault(tmp_path)
+    fresh.unlock(PASSPHRASE)
+    listed = {note.id: note for note in fresh.notes()}
+    assert listed[one.id].body == "one"
+    assert listed[two.id].locked and listed[two.id].title == "Encrypted note (locked)"
+    assert [warning for warning in fresh.warnings if "could not be decrypted" in warning] == [
+        f"{two.id}.md: Encrypted note could not be decrypted; the file is damaged or was encrypted "
+        "with another vault's key"]
+    # It is not cached, so the next scan reports it again rather than forgetting it.
+    assert {note.id for note in fresh.notes()} == {one.id, two.id}
+    assert sum(two.id in warning for warning in fresh.warnings) == 1
+
+
 def test_passphrase_changes_rewrap_the_key_without_touching_notes(tmp_path):
     vault = encrypted_vault(tmp_path)
     note = encrypted_note(vault, "secret")
     before = (tmp_path / f"{note.id}.md").read_bytes()
-    vault.change_passphrase(PASSPHRASE, "battery staple")
+    vault.change_passphrase(PASSPHRASE, "battery staple", n=FAST)
     assert (tmp_path / f"{note.id}.md").read_bytes() == before
     fresh = Vault(tmp_path)
     with pytest.raises(EncryptionError, match="Wrong passphrase"):
@@ -129,6 +150,15 @@ def test_passphrase_changes_rewrap_the_key_without_touching_notes(tmp_path):
         vault.setup_encryption("another passphrase", n=FAST)
 
 
+def test_passphrase_changes_rewrap_at_the_current_work_factor(tmp_path):
+    vault = encrypted_vault(tmp_path)
+    path = tmp_path / ".jotline-key.json"
+    assert json.loads(path.read_text())["n"] == FAST
+    vault.change_passphrase(PASSPHRASE, "battery staple")
+    assert json.loads(path.read_text())["n"] == SCRYPT_N
+    Vault(tmp_path).unlock("battery staple")
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
 def test_key_file_is_private(tmp_path):
     encrypted_vault(tmp_path)
@@ -136,7 +166,7 @@ def test_key_file_is_private(tmp_path):
 
 
 @pytest.mark.parametrize("change", [{"n": 2 ** 30}, {"n": 1000}, {"r": 0}, {"salt": "!!"}, {"wrapped": ""},
-                                    {"cipher": "none"}, {"jotline_key": 2}])
+                                    {"cipher": "none"}, {"jotline_key": 2}, {"checksum": "not this wrapping"}])
 def test_damaged_or_hostile_key_files_are_refused(tmp_path, change):
     encrypted_vault(tmp_path)
     path = tmp_path / ".jotline-key.json"
@@ -145,6 +175,34 @@ def test_damaged_or_hostile_key_files_are_refused(tmp_path, change):
     path.write_text(json.dumps(data))
     with pytest.raises(EncryptionError):
         Vault(tmp_path).unlock(PASSPHRASE)
+
+
+def test_a_damaged_key_file_is_told_from_a_wrong_passphrase(tmp_path):
+    encrypted_vault(tmp_path)
+    path = tmp_path / ".jotline-key.json"
+    data = json.loads(path.read_text())
+    wrapped = bytearray(base64.b64decode(data["wrapped"]))
+    wrapped[0] ^= 1  # One flipped bit, as a bad sector or a botched sync merge leaves behind
+    data["wrapped"] = base64.b64encode(bytes(wrapped)).decode()
+    path.write_text(json.dumps(data))
+    with pytest.raises(EncryptionError, match="damaged"):
+        Vault(tmp_path).unlock(PASSPHRASE)
+
+
+def test_a_key_file_without_a_checksum_still_unwraps(tmp_path):
+    # Written by 0.9.8: the same fields, minus the ID. It must keep working as it is.
+    vault = encrypted_vault(tmp_path)
+    note = encrypted_note(vault, "secret")
+    path = tmp_path / ".jotline-key.json"
+    data = json.loads(path.read_text())
+    del data["checksum"]
+    path.write_text(json.dumps(data))
+    fresh = Vault(tmp_path)
+    fresh.unlock(PASSPHRASE)
+    assert fresh.read(note.id).body == "secret"
+    assert "checksum" not in json.loads(path.read_text())
+    fresh.change_passphrase(PASSPHRASE, "battery staple", n=FAST)
+    assert json.loads(path.read_text())["checksum"]
 
 
 def test_missing_library_explains_how_to_install_it(tmp_path, monkeypatch):
@@ -235,3 +293,73 @@ async def test_app_encrypts_locks_and_unlocks(tmp_path):
         await pilot.press("enter")
         await pilot.pause()
         assert app.current.id == note.id and app.current.body == "Sam secret"
+
+
+def plaintext_in_vault(path: Path, secret: str) -> list[str]:
+    """Every file under the vault, archives included, still holding the secret."""
+    found = []
+    for item in sorted(path.rglob("*")):
+        if not item.is_file():
+            continue
+        raw = item.read_bytes()
+        if secret.encode() in raw:
+            found.append(str(item.relative_to(path)))
+        if item.suffix == ".zip":
+            with zipfile.ZipFile(item) as archive:
+                found += [f"{item.name}::{member}" for member in archive.namelist()
+                          if secret.encode() in archive.read(member)]
+    return found
+
+
+async def test_extracting_a_selection_keeps_it_encrypted(tmp_path):
+    # A new note inherits nothing, so the selection used to be written to disk
+    # in the clear, snapshotted into history and archived in the next backup.
+    vault = encrypted_vault(tmp_path)
+    note = encrypted_note(vault, "Sam therapy\nSECRETLINE dosage 200mg\n")
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.vault.unlock(PASSPHRASE)
+        app.load_id(note.id)
+        await pilot.pause()
+        editor = app.editor()
+        editor.move_cursor((1, 0))
+        editor.move_cursor((1, 10), select=True)
+        assert editor.selected_text == "SECRETLINE"
+        app.action_extract_note()
+        await pilot.pause()
+        assert plaintext_in_vault(tmp_path, "SECRETLINE") == []
+
+
+async def test_an_encrypted_note_cannot_be_saved_as_a_template(tmp_path):
+    # Templates are stored unencrypted and the daily backup archives them.
+    vault = encrypted_vault(tmp_path)
+    note = encrypted_note(vault, "Sam therapy\nSECRETLINE dosage 200mg\n")
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.vault.unlock(PASSPHRASE)
+        app.load_id(note.id)
+        await pilot.pause()
+        app.save_template("my-template")
+        await pilot.pause()
+        assert plaintext_in_vault(tmp_path, "SECRETLINE") == []
+
+
+def test_an_action_refuses_to_append_an_encrypted_note_to_another(tmp_path):
+    vault = encrypted_vault(tmp_path)
+    vault.unlock(PASSPHRASE)
+    note = encrypted_note(vault, "Sam therapy\nSECRETLINE dosage 200mg\n")
+    target = vault.new("Log\n")
+    vault.save(target)
+    with pytest.raises(ValueError, match="unencrypted"):
+        run_action(vault, vault.read(note.id), [{"type": "append", "value": target.id}])
+    assert plaintext_in_vault(tmp_path, "SECRETLINE") == []
+
+
+def test_a_link_to_an_encrypted_note_carries_no_label(tmp_path):
+    # The label is the first line of the decrypted body, and the note being
+    # linked from is usually not encrypted.
+    vault = encrypted_vault(tmp_path)
+    vault.unlock(PASSPHRASE)
+    note = encrypted_note(vault, "SECRETLINE Sam HIV status\n")
+    assert wiki_link(vault.read(note.id)) == f"[[{note.id}]]"
+    assert wiki_link(vault.new("Ordinary note")).endswith("|Ordinary note]]")
