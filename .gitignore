@@ -14,3 +14,5 @@ audit/
 .jotline.lock
 .jotline-action-history.json
 .jotline-outline.json
+
+.claude/
