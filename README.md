@@ -4,7 +4,11 @@
 
 ![Jotline terminal workspace](docs/screenshot.svg)
 
-Jotline opens to a blank page. Start typing; your writing saves automatically to local Markdown files. Press `Ctrl+P` when you want to do something with it.
+Jotline opens to a blank page. Start typing; your writing saves automatically to
+local Markdown files, with no account and no cloud. Press `Ctrl+P` when you want
+to do something with it. The same notes are a shell command away, so a thought
+can go in from a hotkey or a script and come out as a task list, a search result
+or a PDF.
 
 ## Install
 
@@ -40,641 +44,122 @@ uv run jotline
 uv run pytest
 ```
 
+## Your first notes in five minutes
+
+1. **Launch.** Run `jotline`. On an empty vault the quick start walkthrough opens
+   once; Esc closes it.
+2. **Type.** The page is already a note. It saves as you write; there is no
+   title, folder or tag to fill in.
+3. **Start another.** `Ctrl+N` begins a new thought.
+4. **Find it again.** `Ctrl+F`, type a word or a `#tag`, then Enter opens the
+   top result with the cursor ready to write. Down walks the list; Esc clears
+   the search.
+5. **Link.** Type `[[` and pick a note. `Ctrl+G` follows the link under the
+   cursor, and `Alt+K` shows what links here.
+6. **Log the day.** `Ctrl+D` opens today's daily log. Add tasks as
+   `- [ ] Call Sam`; `Ctrl+L` ticks the one on the current line.
+7. **Look up a key.** `F1` shows every key in effect, including your own
+   changes. `Ctrl+R` reopens recent notes; `Ctrl+Q` saves and quits.
+
+Everything else is in `Ctrl+P`: type a few letters of what you want, such as
+`export`, `history` or `template`. Settings are on `Ctrl+,` (or **Ctrl+P →
+Settings** if your terminal does not send it).
+
 ## The everyday loop
 
-1. **Capture.** `Ctrl+N` starts a thought. No required title, folder, or tags.
-2. **Log.** `Ctrl+D` opens today's page. Mix observations with Markdown tasks: `- [ ] Follow up`. Previous/next daily log and **Open daily log by date** in the palette flip days; missing days use your daily template.
-3. **Connect.** Keep durable ideas in their own notes. Select a passage and run **Extract selection to new note** to leave a `[[link]]` behind. Alt+K (or Show connections) lists who links here and where this note points. Follow a `[[link]]` or create the missing note.
-4. **Review.** **Process next inbox note** opens the oldest capture (daily logs stay out of that queue). File it with Move to collection; the next capture opens. **Start weekly review** is a checklist when you want one.
+1. **Capture** with `Ctrl+N` or `jotline capture` from anywhere.
+2. **Log** the day with `Ctrl+D`.
+3. **Connect** durable ideas with `[[links]]` and **Extract selection to new note**.
+4. **Review** with **Process next inbox note** and **Start weekly review**.
 
-These are optional practices, not a compulsory system. An inbox and search are enough to start.
+These are optional practices, not a compulsory system; an inbox and search are
+enough to start. See [writing and review](docs/writing.md).
 
-The sidebar offers **Collections**, **Views**, **Filters**, **Actions**, **Import**,
-and **Quick start**. The optional walkthrough opens without creating a note or
-replacing your writing. On narrow terminals, Ctrl+F reveals the sidebar; Escape
-returns to writing. Empty lists explain how to capture, star, or move a note,
-and stay short on 80×24 terminals. Ctrl+P opens everyday commands first; type
-to reach format, move, export, and encryption. See [navigation and saved
-views](docs/navigation.md).
+## Where your notes live
 
-The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingstarted/), [GTD's capture and reflection](https://gettingthingsdone.com/what-is-gtd/), [Bullet Journal's daily rapid logging](https://bulletjournal.com/pages/how-to-bullet-journal), [Zettelkasten's connected ideas](https://zettelkasten.de/overview/), and [PARA's organization by use](https://fortelabs.com/blog/para/). Jotline is independent of these products and authors.
-
-## Keyboard
-
-| Shortcut | Action |
-| --- | --- |
-| `Ctrl+,` | Open Settings (always available) |
-| `F1` | Keyboard cheat sheet: the keys in effect now, including the outliner's |
-| `Ctrl+N` | New thought |
-| `Ctrl+T` | Browse workspace tags |
-| `Ctrl+W` | Switch or create workspace |
-| `Ctrl+P` | Searchable command palette |
-| `Ctrl+O` | Open a note by title |
-| `Ctrl+D` | Today's daily log |
-| `Ctrl+F` | Search across notes (results are ranked and quote the matched line) |
-| `Ctrl+B` | Toggle quiet focus mode |
-| `Alt+K` | Show incoming and outgoing connections |
-| `Ctrl+R` | Recent notes (Enter returns to the note you just left) |
-| `Ctrl+G` | Follow the link under the cursor |
-| `Ctrl+L` | Toggle the task on this line |
-| `Ctrl+S` | Save immediately |
-| `Ctrl+Q` | Save and quit |
-| `Tab` / `Shift+Tab` | Move between controls |
-| `Escape` | Close palette / return to writing |
-
-The palette opens on everyday capture, find, and recover commands. Type to
-reach format, move, export, encryption, daily-log navigation, extract, and
-inbox processing. Arrows choose; Enter runs; Esc cancels. Copy uses the system
-clipboard on macOS (`pbcopy`) and on Linux when `wl-copy`, `xclip`, or `xsel`
-is available; otherwise it sends an OSC 52 request. Type **Clipboard, IME, and
-screen-reader notes** for the limits.
-Previous daily, next daily, open-by-date, extract, and process-inbox start
-without shortcuts; assign them in **Ctrl+, → Keyboard shortcuts**.
-
-## Markdown editing
-
-The editor colours Markdown as you type. Enter continues lists. A toolbar above
-the editor formats the selection; it hides in focus mode. Type **format** in
-Ctrl+P for the rest, including heading levels, tables, and preview. Details:
-[Markdown editing](docs/markdown.md). Omarchy desktop follow:
-[Omarchy](docs/omarchy.md).
-
-## Your own editor
-
-Ctrl+P → **Edit this note in $EDITOR** hands the note's file to the editor
-named in `$JOTLINE_EDITOR`, `$VISUAL` or `$EDITOR`, gives it the terminal until
-it exits, then reads the file back. The vault is plain Markdown, so nothing is
-converted on the way out or the way in. An encrypted note stays in Jotline: the
-file on disk holds sealed text. Assign a key for it in **Ctrl+, → Keyboard
-shortcuts**.
-
-## Tasks
-
-Write `- [ ] Call the plumber due:2026-10-03` anywhere. Ctrl+P → **Open tasks
-across notes** lists every open task, dated ones first; **Open tasks due today
-or overdue** narrows it to what is owed now; **Tick off a task** checks one off
-without leaving the list. The same three answers come from the shell as
-`jotline tasks`, `jotline tasks --due today` and `jotline done NOTE:LINE`.
-Obsidian's 📅 due marker is understood alongside `due:`.
-
-## Move or delete with the mouse
-
-Right-click a sidebar note, or focus it and press Shift+F10, to move or trash
-it. [Note list menu](docs/note-menu.md) has the full sequence.
-
-## Make it yours
-
-Open **Ctrl+P → Settings**. Change preferences with Tab, arrows, and Space; choose
-**Save** (or Ctrl+S) to apply them. Escape cancels. **Use defaults** fills the form
-with the original settings; nothing changes until you save.
-
-- **Themes:** twenty-two built-in palettes, plus optional Omarchy desktop follow
-  on Linux. See [Omarchy](docs/omarchy.md).
-- **Editor:** line numbers, wrapping, current-line highlighting, Markdown
-  highlighting, and list continuation on Enter.
-- **Outliner:** open **Outliner** in the toolbar or Ctrl+P to fold branches,
-  focus a subtree, and edit inline. Select, group, duplicate, search, or move
-  whole branches; folds and cursor positions persist for unencrypted notes. [Outliner controls](docs/markdown.md#outliner).
-- **Layout:** sidebar width, writing hints, and starting in focus mode.
-- **Workflow:** open a blank thought or today's log, choose the collection for new
-  thoughts, and sort notes by last edit, creation date, or title (stars stay first).
-- **Autosave:** choose an interval from 0.2 to 5 seconds.
-- **Daily template:** write your own Markdown structure. `{{date}}` inserts the
-  current date. Existing daily logs are never replaced when the template changes.
-
-Settings live in `.jotline-settings.json` inside each vault and survive restarts.
-Shell capture uses the same default collection and daily template. Daily logs stay
-in the inbox unless you move them. Font family and size come from your terminal.
-
-![Jotline settings](docs/settings.svg)
-
-## Search and links
-
-Search matches all entered words across note bodies. `#work` matches an exact tag; `planning #work` combines a word and a tag. Search includes archived notes and excludes trash unless the trash collection is selected. Tags are case-insensitive and can be nested, such as `#project/launch`.
-
-Use **Ctrl+P → Find within current note** to search the current document without
-changing the vault search. Enter or F3 advances to the next match, Shift+F3 goes
-back, and Escape returns to writing. Navigation moves past the selected match
-whether you selected its text forwards or backwards. Clearing the search leaves
-the editor selection in place. **Refresh vault** updates the list and backlinks after
-shell captures or external changes while retaining the current editor buffer.
-
-![Find within a note](docs/find.svg)
-
-Inserted links use `[[stable-id|Readable title]]`. Renaming a heading does not break these links. Manually entered `[[Exact title]]` links also work, but ambiguous titles can match several notes. **Alt+K** (or **Show connections**) lists incoming and outgoing notes with the line that contains each link. **Follow a link** opens the `[[link]]` under the cursor; a missing target can create a note and rewrite the typed title to a stable ID. Click a link in preview, or Ctrl+click one in the editor. `[[links]]` inside fenced code or code spans are examples, not connections. `jotline backlinks NOTE` prints the same graph for scripts.
-
-## Use it from your shell
-
-```sh
-jotline capture "A thought before I forget"
-printf 'Meeting notes\n\nNext step: draft the outline\n' | jotline capture
-jotline capture --daily "- [ ] Send the outline"
-jotline capture --daily --date yesterday "A thought from last night"
-jotline daily
-jotline daily --date 2026-09-14
-jotline desktop install
-jotline desktop recipe hyprland
-jotline list '#work'
-jotline stats
-jotline stats --json
-jotline doctor
-jotline doctor --json
-jotline backups
-jotline recoveries
-jotline sync
-jotline import ~/Downloads/meeting.md
-jotline export NOTE_ID > note.md
-jotline export last > note.md
-jotline export last --output plan.docx
-jotline tasks
-jotline backlinks last
-jotline path
-jotline --vault ~/Notes/Jotline
-```
-
-Wherever a command takes a note, you can type less than the full 32-character
-ID: a unique prefix of at least four characters (`jotline append 3f9a 'Next step'`),
-the note's exact title in any letter case (`jotline export 'Weekly review'`), or
-`last` for the most recently updated note in the workspace. A reference that
-matches several notes is refused and lists their IDs, and titles never match
-notes in the trash or in another workspace. A note whose full ID is literally
-`last` still wins.
-
-Captures, append/prepend and imports read UTF-8. For text in another encoding,
-pass `--encoding NAME` (for example `latin-1` or `cp1252`), or `--replace-invalid`
-to keep going and substitute the undecodable bytes.
-
-`list`, `tags`, `workspaces`, `actions`, `tasks`, `stats`, `backlinks`, `doctor`,
-`backups` and `recoveries` accept `--json` for
-scripts. Warnings still go to stderr, so stdout stays valid JSON. `jotline stats`
-prints workspace counts (notes, inbox captures, open tasks, tags) without note bodies.
-
-### Tasks across notes
-
-Every Markdown checkbox line (`- [ ] Call Sam`) in any note is a task. Give it a
-due date with `due:2026-09-20`, or the `📅 2026-09-20` form some other apps use.
-
-```sh
-jotline tasks                      # open tasks in this workspace, dated ones first
-jotline tasks '#coaching' --due today
-jotline tasks --done --json
-jotline done 3f9a8c21:4            # check off the task on line 4 of that note
-jotline done 3f9a8c21:4 --undo
-```
-
-Each line shows `NOTE:LINE`, the checkbox, the due date (or `-`), the task and
-the note's title. Line numbers move when a note is edited, so list tasks again
-before `done`; it refuses a line that is no longer a task. Tasks in the trash and
-inside fenced code blocks are ignored. In the app, **Ctrl+P → Open tasks across
-notes** lists open tasks and jumps to the one you pick.
-
-### Export to HTML, Word or PDF
-
-```sh
-jotline export last --output plan.html
-jotline export 'Weekly plan' --output ~/Documents/plan.docx
-jotline export 3f9a --format pdf --output plan.pdf --force
-```
-
-The format comes from `--format` or the output file's extension. Without
-`--output`, `export` writes Markdown (or `--format html`) to stdout as before, and
-it never replaces an existing file without `--force`. Jotline builds the HTML
-itself. Word files use pandoc or LibreOffice, and PDFs use Chromium, Google
-Chrome, Microsoft Edge, LibreOffice or pandoc with a PDF engine, whichever is
-installed. Checkboxes print as ☐/☒ and `[[links]]` as their titles. Raw HTML in a
-note is shown as text and images become links, so an export never reads other
-files or contacts a server. In the app, use **Ctrl+P → Export note as…**.
-
-### Quick capture from a hotkey
-
-`jotline capture` with no text opens a small editor: Ctrl+S saves and Esc
-cancels. On Linux, install a capture launcher and bind one command:
-
-```sh
-jotline desktop install
-jotline desktop launch
-```
-
-`jotline desktop recipe omarchy`, `hyprland`, `gnome`, `kde`, or `pipe` prints a
-filled-in snippet for that desktop. Pipe-in stays the integration when a
-launcher cannot open a terminal. See [docs/quick-capture.md](docs/quick-capture.md).
-
-### Encrypted notes
-
-Note files are readable only by your user account. For sensitive notes, such as
-client or athlete records, you can also encrypt a note's text on disk:
-
-```sh
-uv tool install 'jotline[encryption]'  # adds the cryptography library
-jotline encryption setup               # choose a passphrase
-jotline encrypt 'Athlete intake'
-jotline export 'Athlete intake'        # asks for the passphrase
-jotline --unlock tasks                 # include tasks from encrypted notes
-jotline encryption passphrase          # change the passphrase
-jotline decrypt 'Athlete intake'       # store it as plain text again
-```
-
-In the app, **Ctrl+P → Encrypt this note** sets encryption up the first time, and
-**Lock encrypted notes** / **Unlock encrypted notes** hide and show them. A locked
-note is listed as "Encrypted note (locked)"; it cannot be searched, edited or
-exported until you unlock, but it can still be moved to another collection.
-Encrypted notes stay unlocked until you lock them or quit.
-
-- **There is no recovery.** Without the passphrase, encrypted notes cannot be
-  opened. Keep it in a password manager.
-- The note text, including its title and tags, is sealed with AES-256-GCM. The
-  key lives in `.jotline-key.json`, wrapped with your passphrase through scrypt;
-  backups include that file, and changing the passphrase rewraps only it. The
-  collection, workspace, star and dates stay readable in the file header.
-- Encrypting a note deletes its unencrypted saved versions from note history.
-  Backup ZIPs made before then (including today's automatic one) still contain
-  the old text; delete those you no longer need from `.jotline-backups`.
-- Scripts can set `JOTLINE_PASSPHRASE`, but anything that can read your
-  environment can read it too. Otherwise commands ask on the terminal, and never
-  read the passphrase from piped input.
-- Older Jotline versions show encrypted notes as unreadable text; do not edit
-  them there.
-
-### Shell completion
-
-Completion covers commands, options, note IDs, tags, workspaces and action names,
-and follows any `--vault` or `--workspace` already on the line.
-
-```sh
-# bash: add to ~/.bashrc
-eval "$(jotline completion bash)"
-# zsh: add to ~/.zshrc after compinit
-eval "$(jotline completion zsh)"
-# fish: add to ~/.config/fish/config.fish
-jotline completion fish | source
-```
-
-Set `JOTLINE_VAULT` to use a different vault by default, or pass
-`jotline --vault "path/to/notes"`. Run `jotline path` to see the active location.
+Notes are plain `.md` files in one folder, the vault:
 
 | Platform | Default vault |
 | --- | --- |
-| Linux | `$XDG_DATA_HOME/jotline/notes`, normally `~/.local/share/jotline/notes` |
+| Linux | `~/.local/share/jotline/notes` (under `$XDG_DATA_HOME` when set) |
 | macOS | `~/Library/Application Support/jotline/notes` |
 
-On macOS, an explicitly set `XDG_DATA_HOME` or an existing vault at the old
-`~/.local/share/jotline/notes` location continues to be used.
-Set an override with `export JOTLINE_VAULT="$HOME/Notes"`.
+`jotline path` prints the active location. Set `JOTLINE_VAULT` to use another
+folder by default, or pass `--vault PATH` to any command. Settings, history and
+backups sit beside your notes in hidden `.jotline-*` files. See
+[your vault](docs/vault.md) for what is stored where, filesystem requirements
+and encryption.
 
-Use a local filesystem with hard-link support (APFS or ext4). When hard links
-are unavailable, Jotline tries an atomic exclusive rename. If neither method
-is supported, it refuses publication and reports where any displaced original
-was retained instead of replacing another writer's file. File contents
-are flushed before publication. Unix permission warnings apply on Linux and
-macOS.
-
-Shortcuts use **Control** on macOS too. If a terminal intercepts a shortcut,
-use Ctrl+, to customize it in Settings.
-
-`jotline doctor` checks the runtime, vault path, settings, lock, templates, history,
-backups, limits, recovery copies, displaced conflict files, and readable note
-counts. It prints diagnostics rather than note bodies, reports unsafe or broken
-local state, and exits nonzero when it finds a problem. Use `jotline doctor --json`
-for machine-readable output. `jotline backups` lists local ZIP archives and
-verifies they open; `jotline recoveries` lists inbox copies saved after an
-external change. Search stays an in-memory scan until a measured vault misses
-the bar in [vault scale](docs/vault-scale.md). `jotline import FILE` copies a regular UTF-8 file into a new note in your
-default collection; the original file is left untouched. Imports refuse symlinked
-files and symlinked source directories.
-
-Use **Import** in the sidebar to preview a file, folder, or Drafts `.draftsExport`
-library, then confirm the import. Folder imports include subfolders in the app.
-Drafts imports preserve dates, inbox/archive/trash state and flags, and map tags
-into the note text. Matching bodies or Drafts IDs are skipped by default.
-Warnings and partial failures are reported; existing notes are never overwritten.
+## From the shell
 
 ```sh
-jotline import ~/Downloads/notes --recursive          # preview
-jotline import ~/Downloads/notes --recursive --apply  # import
-jotline import ~/Downloads/library.draftsExport      # preview
-jotline import ~/Downloads/library.draftsExport --apply
+jotline capture "A thought before I forget"     # Saved to inbox: A thought before I forget (3f9a8c21)
+echo "half an idea" | jotline capture           # piped: prints only the note ID
+jotline capture --daily "- [ ] Send the outline"
+jotline list '#work'                            # or: jotline search '#work'
+jotline open milk                               # exact title or ID, else the best title match
+jotline tasks --due today
+jotline done 3f9a8c21:4
+jotline export last --output plan.pdf
 ```
 
-CLI imports also support `--preview` for a single text file and
-`--duplicates copy` to create separate copies. See [import and recovery
-details](docs/import-recovery.md) for limits and metadata mapping.
+`capture` with no text opens a small editor (Ctrl+S saves, Esc cancels); bind it
+to a hotkey with `jotline desktop install` on Linux ([quick capture](docs/quick-capture.md)).
+At a terminal it confirms in words; piped or redirected, it prints the bare ID.
+Wherever a command takes a note you can give a 4+ character ID prefix, the exact
+title, or `last`. Global options such as `--vault` and `--workspace` work before
+or after the command. See [Jotline from the shell](docs/shell.md) for every
+command, `--json` output and environment variables.
 
-Redirected export preserves the note body, including line endings. Export and
-`run` to an interactive terminal refuse control characters (escape sequences,
-bidirectional overrides) unless you explicitly pass `--raw`; ordinary text such
-as CRLF endings, joined emoji and soft hyphens prints normally. Diagnostics
-escape terminal control characters.
+## If something goes wrong
 
-## Customize hotkeys
+- **A note changed or vanished:** **Ctrl+P → History of this note** restores an
+  earlier version as a new note. Trashed notes come back from the Trash
+  collection; there is no permanent delete.
+- **Whole vault:** a ZIP backup is made each day you edit, in `.jotline-backups/`
+  (`jotline backups` lists them; `jotline backup` makes one now).
+- **Something seems off:** `jotline doctor` checks the vault and says what to fix.
 
-Open **Ctrl+, → Keyboard shortcuts**. Change shortcuts for new notes,
-tags, workspaces, commands, opening notes, daily logs, search, save, focus, and quit.
-Optional fields also support Markdown preview and formatting, previous/next daily
-log, open daily by date, extract selection, and process inbox.
-Use `ctrl+letter`, `alt+letter`, or `f1`–`f12` (for example `alt+n` or `f4`).
-Duplicate assignments and reserved editing/navigation keys are rejected.
+Save conflicts, recovery copies and sync are covered in
+[importing and recovering](docs/import-recovery.md) and
+[your vault](docs/vault.md#history-and-backups).
 
-Choose **Save** (or Ctrl+S inside Settings) to apply immediately; the footer and
-command hints update too. **Reset hotkeys** restores shortcut defaults without
-changing your other preferences; save to apply or Escape to cancel. **Ctrl+,** always
-opens Settings, and **Escape** remains fixed for closing dialogs. Editor shortcuts
-and dialog navigation are unchanged. Your terminal may intercept some combinations;
-use another supported key if it does.
+## More
 
-Hotkeys persist locally in `.jotline-settings.json` inside the vault and apply to
-all its workspaces. The shortcut table above shows the defaults.
-
-## Tags and workspaces
-
-Press **Ctrl+T** to browse tags and note counts in the current workspace. Select a
-tag to filter notes, or use **Ctrl+P → Add tags to this note** to append tags such
-as `#work #ideas #project/topic`. Tags are case-insensitive and stay in the Markdown
-body: edit or remove them directly in the note. Search can combine words and tags.
-
-Press **Ctrl+W** to switch or create a workspace, such as `work`, `personal`, or
-`research`. **Ctrl+P → Move note to workspace** moves the current regular note.
-Switching saves pending edits first and stops if saving fails. Jotline remembers
-the workspace for your next launch and shell captures.
-
-Each workspace scopes its collections, tag browser, search, note pickers, and
-links. Daily logs are separate per workspace and stay in their original workspace;
-copy their text into a regular note if you want to move that content. Appearance
-and editor preferences remain shared for the vault.
-
-Existing notes belong to `default`. Workspaces are organization, not access control:
-**all Markdown files remain directly in your existing local notes folder**, with
-workspace membership recorded in their front matter. Moving a note preserves its
-filename and contents. A link to a moved note becomes visible again when both
-notes are in the same workspace. No account, database, or new dependency is needed.
-Workspace names use 1–48 lowercase letters, numbers, hyphens, or underscores,
-starting with a letter or number. Use this version or later when editing workspace
-notes; older versions do not preserve the new metadata field.
-
-```bash
-jotline workspaces
-jotline --workspace work                  # open the terminal app
-jotline --workspace work capture 'Meeting #team'
-jotline --workspace work capture --daily 'Today’s progress'
-jotline --workspace work tags
-jotline --workspace work list '#team'
-jotline --workspace work tag NOTE_ID ideas project/topic
-```
-
-Put `--workspace` before the subcommand. Without it, commands use the last
-workspace selected in the app. `path` reports the shared vault folder and `doctor`
-checks the entire vault.
-
-## Your data
-
-- Local `.md` files; no account, telemetry, hosted backend, or network requirement at runtime.
-- Small Jotline front matter with JSON-valued fields stores collection, timestamps, and starred state.
-- Atomic, fsynced saves. Normal exit saves pending edits. Abrupt termination may lose the last autosave interval (0.7 seconds by default; configurable).
-- Jotline coordinates its own writers and detects external edits before saving. It will block navigation/exit on a save failure so the buffer remains available. **Save recovery copy** preserves your buffer as a new inbox note. The copy keeps the original text and records which note it came from; **Open a recovery copy** and `jotline recoveries` list them later.
-- Trash is reversible. There is no permanent-delete command.
-- Keep a backup of your vault. Sync with [Git or Syncthing](docs/sync.md) using
-  the recovery dialog you already have; there is no Jotline cloud. Encryption
-  keys must not go to a public remote. Simultaneous edits through an external
-  editor or sync provider are not a collaborative editing protocol.
-- Only the source code is published to GitHub. Your notes are stored separately.
-
-On a save conflict, a comparison dialog offers **Save copy, then review external
-version**, **Save and open recovery copy**, or **Keep editing**. Both save options
-preserve your full local draft before changing what is open. If recovery fails,
-the unsaved editor text stays available. Use **Review external change and recover
-draft** in Commands to reopen the dialog. Large comparisons show excerpts while
-preserving the complete draft.
-
-Notes are limited to 10 MiB including metadata; settings to 256 KiB. Symbolic links
-and special files are skipped and reported. A busy vault lock returns an error after
-about one second so the app can recover instead of hanging. `jotline doctor` also
-warns when the vault directory is not writable, because capture and app saves need
-write permission even though reading existing notes may still work.
-
-External Markdown files can be placed directly in the vault with filenames containing letters, numbers, underscores, or hyphens. Existing non-Jotline front matter remains part of their body. Subdirectories and attachment management are not supported in this version. An in-memory cache avoids reparsing unchanged notes. Each scan still checks file
-metadata for changes. Cached content expires after one second and is reread on the
-next scan, even if an external edit preserves all tracked timestamps. Refresh vault
-clears the cache immediately. Very large vaults may
-still need further indexing work.
-
-## Local backups and note history
-
-Jotline automatically saves note revisions inside your vault's
-`.jotline-history/` folder. It retains the first saved version from each of the
-latest 30 minutes with edits, plus the two latest saves (up to 32 versions per note).
-Intermediate autosaves within a minute are consolidated. This begins with this
-release; it cannot recover edits made before history was enabled.
-
-Use `Ctrl+P` → **History of this note**, select a version, inspect its text, and
-choose **Restore as new note**. Restoration creates a separate inbox note and
-preserves your current writing. **Browse saved note history** also finds history
-for notes deleted outside Jotline, within the active workspace.
-
-A ZIP backup is created before the first changed note save each day. It contains
-the vault's current Markdown notes, settings and custom templates. Use `Ctrl+P` →
-**Back up vault now** or `jotline backup` for an immediate snapshot. The latest
-seven archives remain in `.jotline-backups/`, including today's automatic archive.
-Archives exclude history and other backups. Each archive has a manifest listing
-any unreadable or unsafe files that were skipped.
-
-For whole-vault recovery, extract a ZIP into a separate folder and launch
-`jotline --vault /path/to/recovered-folder`. All backups stay on this computer;
-copy an archive elsewhere if you want protection against disk loss.
-
-## Reusable templates
-
-`Ctrl+P` → **New note from template** offers meeting, project, and journal
-starters alongside your own templates. Templates create a new note in the active
-workspace and default collection, after saving your current writing.
-
-To make your own, write its structure in a note and choose **Save this note as a
-template**. Give it a unique lowercase name such as `weekly-planning`. Custom
-files live in `.jotline-templates/<name>.md` within your vault and are shared
-across workspaces. Existing names are never overwritten by this command.
-
-Use `{{date}}`, `{{time}}`, and `{{workspace}}` for the current local date, time,
-and workspace. **Copy template source to new note** preserves these placeholders
-so you can customize a starter and save it under a new name. You can also edit
-custom template files directly in your text editor. Built-in starters are bundled
-with the app; your saved templates stay local and are included in ZIP backups.
-
-## Markdown formatting
-
-Select text with Shift + arrow keys, then open `Ctrl+P` and choose **Format bold**,
-**Format italic**, or **Format inline code**. With no selection, a selected `text`
-placeholder is inserted. **Format heading**, **Format bullet list**, and
-**Format blockquote** apply to the current line or selected lines. Use the editor's
-normal Undo shortcut (`Ctrl+Z`) to reverse a formatting change.
-
-Open `Ctrl+,` → **Keyboard shortcuts** to assign keys for preview, bold, italic,
-inline code, headings, bullet lists and quotes. These optional shortcuts start
-blank, preserving your existing key choices. Clear a field to unassign it;
-**Reset hotkeys** clears these additions and restores the original shortcuts.
-
-Choose **Preview rendered Markdown** from `Ctrl+P` to see headings, emphasis,
-lists, quotes, tables, and fenced code blocks inside the terminal. Preview includes
-unsaved writing. Scroll with the arrow/Page Up/Page Down keys or mouse; press
-`Esc` to return to the same editor selection. Preview is a read-only snapshot;
-reopen it after editing. Notes stay plain Markdown on disk.
-
-Preview supports notes up to 256 KiB, 600 nonblank lines, and 400 table separator
-characters across the note to keep rendering responsive. Larger notes
-remain editable and saveable. Images, raw HTML, and interactive task checkboxes
-are not rendered as browser content. Preview links do not open files or browsers.
-Click a `[[note link]]` in preview to open it; use **Follow a link** from the
-editor, or **Alt+K** to see every connection.
-
-## More writing and review tools
-
-The command palette now includes:
-
-- **Find within current note:** enter replacement text and choose Replace or
-  Replace all. Match case is optional. Replacements are literal; Undo reverses
-  one replacement operation. F3/Shift+F3 still navigate matches. If replacement
-  would exceed the note size limit, the text stays unchanged and the dialog
-  shows **Not replaced**. A rejected single replacement keeps the selected match
-  so you can shorten the replacement and retry.
-- **Jump to heading**, **Previous note**, and **Recent notes:** move around
-  Markdown headings and the notes visited this session. Returning to a note
-  restores its cursor position; recent notes stay scoped to the workspace.
-- **Previous daily log**, **Next daily log**, and **Open daily log by date:**
-  move by calendar day. Dates are `YYYY-MM-DD`, `today`, or `yesterday`. A day
-  without a log is created from your daily template.
-- **Extract selection to new note:** saves the selected text as an inbox note
-  and leaves a `[[id|title]]` link. Undo reverses the replacement in the source.
-- **Process next inbox note:** opens the oldest inbox capture (not a daily log).
-  After **Move note to** a collection, the next capture opens. The status line
-  shows how many remain.
-- **Insert template at cursor** and **Insert note text at cursor:** replace the
-  current selection, or insert at the cursor. Type `[[` for note-link suggestions
-  or `;;` for template snippets; arrows and Enter choose, Escape cancels.
-- **Arrange lines / Arrange paragraphs:** arrows select an item, Alt+Up/Down moves
-  it, Ctrl+D duplicates it, Ctrl+S applies, and Escape cancels. Apply is one Undo
-  operation. Arrangement supports up to 256 KiB and 5,000 items.
-- **Select notes for bulk operations:** Space selects notes from the current
-  search, Ctrl+S opens operations. Archive, trash, star, tag, or merge. Merge
-  creates a new inbox note and keeps originals. Other operations report partial
-  failures; successfully processed notes remain changed.
-
-Search supports `"exact phrases"`, `-excluded`, `-#tag`, `tag:work`, and
-`title:"meeting notes"`. Combine these with `created-after:2026-09-01`,
-`created-before:2026-09-30`, `updated-after:today`, or `updated-before:today`.
-Dates must use `YYYY-MM-DD` or `today`; compact dates such as `20260912` are
-rejected with a format hint. Date boundaries are inclusive and use the calendar
-date stored in note metadata; `today` is the current local date. Terms are ANDed.
-Regex and OR queries are not supported.
-
-Choose **Save current search as a view** to keep its query, collection, sort,
-workspace and theme. **Open saved view** lists views in the active workspace;
-**Clear view and search** restores the vault theme and sort. Views can overlap
-without moving notes between workspaces. **Delete saved view** removes a saved
-configuration. Views persist in vault settings and are included in backups.
-
-**Views → Edit, rename or duplicate views** opens a form for existing views.
-**Filters** adjusts the query, collection, sort and theme without saving a view.
-The list heading names the active view and marks it modified when filters differ.
-Use **Update active saved view from current filters** to save those changes.
-
-Templates additionally accept `{{title}}`, `{{body}}`, `{{selection}}`,
-`{{date:%Y-%m-%d}}` (strftime formatting), and `{{template:other-name}}`.
-Title/body/selection refer to the current note when inserting a template or
-running an action; they are empty when creating a new note from a template.
-Inserted context is literal, and unknown placeholders stay unchanged. Includes
-are limited to eight levels and 64 expansions, with a 10 MiB output limit.
-
-## Local actions and shell automation
-
-Open **Actions → Start from a recipe** for copy-clean-text, copy-markdown-quote,
-create-from-template, or append-and-archive. The builder lets you name the action,
-choose operations, edit values, reorder steps and select append targets by note
-title. **Preview** shows intended effects and output without changing notes or
-using the clipboard. Save the recipe, then choose **Run a saved action** to run it.
-Copy/create starter recipes preserve your source text.
-
-**Actions → Edit or share an action** supports editing, renaming, duplication and
-export to a portable JSON file. **Import recipes** adds recipes without running
-them. **Action history** shows up to 100 runs and the outcome of each step, without
-storing note bodies or template values. Logs are limited to 256 KiB in
-`.jotline-action-history.json`. Earlier side effects can remain after a failed
-action; inspect its history before retrying.
-
-See the [action builder and sharing guide](docs/actions.md) and
-[community recipes](examples/actions/README.md) (`starter-recipes.json` for
-copy/export, `inbox-process.json` for filing). You can also define actions
-directly as JSON:
-
-Write a JSON step list in a note and choose **Save action recipe from this note**,
-then give it a unique name. **Run local action** lists saved recipes; **Delete
-local action** removes one. Recipes are shared across the vault, run in the active
-workspace, and are stored in settings and included in backups. For example:
-
-```json
-[
-  {"type": "template", "value": "{{body}}\n"},
-  {"type": "append", "value": "TARGET_NOTE_ID"},
-  {"type": "archive"}
-]
-```
-
-Replace `TARGET_NOTE_ID` with a project note's actual ID. The recipe appends the
-current text followed by a newline, then archives the source after success.
-
-Available step types are `uppercase`, `lowercase`, `strip`, `template` (with a
-`value` containing template text), `append` (with a target note ID in `value`),
-`archive`, `copy`, `export`, `quote`, and `restore`. `quote` prefixes each line for
-a Markdown blockquote. `restore` resets the working text to
-the source text without undoing earlier effects or collection changes; copy/create
-recipes use it to preserve the source. There can be up to 16 steps per recipe. Copy uses
-the terminal clipboard and is available in the app. Export creates a new inbox
-note in the app, or writes to stdout in the CLI. To create a plain Markdown file,
-redirect CLI output. Text transforms and archive status are saved to the source
-only after all steps succeed. If a later step fails, earlier append/export/copy
-side effects remain applied; review before retrying to avoid duplicate output.
-Actions cannot append a note to itself or access a different workspace.
-
-```sh
-jotline append NOTE_ID 'Next step'
-printf 'Introduction' | jotline prepend NOTE_ID
-jotline open NOTE_ID
-jotline list 'tag:work -blocked' --json
-jotline actions
-jotline run ACTION_NAME NOTE_ID > output.md
-jotline run ACTION_NAME NOTE_ID --raw
-```
-
-Append/prepend put the text on its own line: when it would otherwise run into
-the note, they add one line break in the note's newline style. Pass
-`--no-newline` to join the text exactly as supplied.
-`list --json` returns metadata and tags, not note bodies. `open` takes precedence
-over the startup-page preference. Use `--workspace NAME` before a subcommand to
-choose a different workspace. All updates use normal locking, history and conflict
-detection. Recipes execute only these built-in steps; there is no shell evaluation.
+| Guide | What it covers |
+| --- | --- |
+| [Keyboard](docs/keyboard.md) | Every default key, the search box, rebinding, terminal caveats (Ctrl+,, Option-as-Meta, tmux) |
+| [Writing and review](docs/writing.md) | The everyday loop, links, tasks, find and replace, templates, `$EDITOR` |
+| [Markdown editing](docs/markdown.md) | Formatting, lists, preview, and the outliner |
+| [Find your way around](docs/navigation.md) | Sidebar, search syntax, saved views, tags and workspaces |
+| [Settings](docs/settings.md) | Themes, editor, layout, autosave, daily template |
+| [Jotline from the shell](docs/shell.md) | Every command, global options, scripts, completion, environment variables |
+| [Quick capture](docs/quick-capture.md) | The capture editor, desktop hotkeys, `JOTLINE_TERMINAL` |
+| [Your vault](docs/vault.md) | Location, files, durability, history, backups, encryption |
+| [Importing and recovering](docs/import-recovery.md) | Files, folders, Drafts exports, save conflicts |
+| [Sync](docs/sync.md) | Git or Syncthing with your own remote |
+| [Local actions](docs/actions.md) | Recipes, the builder, sharing, `jotline run` |
+| [Note list menu](docs/note-menu.md) | Moving and trashing with the mouse |
+| [Omarchy](docs/omarchy.md) | Following the desktop theme |
+| [Install](docs/install.md) and [platforms](docs/platforms.md) | Checksums, updates, rollback, uninstall |
 
 ## Status
 
-Version 0.9.9 is an early release. It offers a one-liner install on Linux and
-macOS, Markdown source editing, an inline outliner, rendered preview, configurable local
-actions, and guided import/recovery workflows. See
-[CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim emulation,
-cloud sync, plugins and dictation remain future work.
-Automated cross-platform checks and a POSIX terminal smoke test complement the
-[native terminal and accessibility checklist](docs/terminal-testing.md).
-Clipboard copy uses the OS clipboard when `pbcopy` / `wl-copy` / `xclip` /
-`xsel` is available, and otherwise an OSC 52 request. IME composition and
-screen readers need filled [native reports](docs/terminal-reports/) for 1.0;
-headless tests only prove control names and Unicode round-trip.
-See [Release verification](docs/release-verification.md) for the local test results
-and the limits of that coverage.
+Version 0.9.9 is an early release: Markdown source editing, an inline outliner,
+rendered preview, configurable local actions, and guided import and recovery.
+See [CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim
+emulation, cloud sync, plugins and dictation remain future work. IME composition
+and screen readers need filled [native reports](docs/terminal-reports/) for 1.0;
+see the [terminal and accessibility checklist](docs/terminal-testing.md) and
+[release verification](docs/release-verification.md) for what is tested.
 
 ## Contributing
-
-See the [multi-model review](docs/redteam-review.md) for findings, fixes, and test coverage.
-The [September 12 hardening and usability review](docs/hardening-2026-09-12/hardening.md)
-documents the replacement feedback, selection navigation, and date-validation
-fixes. This focused pass passed 254 tests with 3 platform-specific skips on Linux,
-plus a fresh installed-wheel CLI and terminal workflow smoke check.
 
 Bug reports and focused pull requests are welcome. The package version is sourced
 from `src/jotline/__init__.py`; release builds and `jotline --version` use that same
 value. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and release checks,
 [ROADMAP.md](ROADMAP.md) for starter contributions, and [SECURITY.md](SECURITY.md)
-for private vulnerability reporting. Licensed under [MIT](LICENSE).
+for private vulnerability reporting. Past reviews:
+[multi-model review](docs/redteam-review.md) and
+[September 12 hardening pass](docs/hardening-2026-09-12/hardening.md).
+Licensed under [MIT](LICENSE).

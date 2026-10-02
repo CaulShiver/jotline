@@ -84,6 +84,12 @@
 - **A broken converter keeps the HTML advice.** When LibreOffice is installed
   but cannot convert, Word and PDF export show its error and suggest exporting
   HTML instead, as they do when no converter is installed.
+- **The README is a short front door.** It keeps install, a five-minute first
+  session, where notes live, the everyday shell commands and recovery; the rest
+  moved to new guides in `docs/` for keys (`keyboard.md`), the shell
+  (`shell.md`, now including `JOTLINE_TERMINAL`), the vault (`vault.md`),
+  writing (`writing.md`) and settings (`settings.md`), with search syntax,
+  tags and workspaces added to `navigation.md`.
 
 ## 0.9.9 — 2026-10-02
 

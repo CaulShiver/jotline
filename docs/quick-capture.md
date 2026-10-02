@@ -3,11 +3,15 @@
 Run `jotline capture` in a terminal without any text and it opens a small
 editor instead of the full app:
 
-- **Ctrl+S** saves the text as a new note in your default collection and prints its ID.
+- **Ctrl+S** saves the text as a new note in your default collection and
+  confirms it: `Saved to inbox: <title> (<short id>)`.
 - **Esc** cancels. If you have typed something, press Esc twice so a stray key
   cannot throw it away. **Ctrl+Q** saves rather than discarding.
-- `jotline capture --daily` appends to today's log instead, `jotline capture --daily --date yesterday` appends to another day, and
-  `jotline --workspace work capture` captures into another workspace.
+- `jotline capture --daily` appends to today's log instead (`Added to daily
+  log <date>`), and `jotline capture --daily --date yesterday` appends to
+  another day.
+- `jotline --workspace work capture` captures into an existing workspace. To
+  start a new one from the shell, add `--new-workspace`.
 
 Closing the window any other way discards the text.
 
@@ -20,7 +24,11 @@ jotline desktop install
 jotline desktop launch
 ```
 
-`jotline desktop launch` opens capture in a terminal. GNOME and KDE can bind that
+`jotline desktop launch` opens capture in a terminal; `jotline desktop launch
+--daily` appends to today's log instead. Add `--vault` or `--workspace` and the
+launcher passes them on. A launcher bound to a workspace also passes
+`--new-workspace`, so its first capture can create that workspace instead of
+failing in a window that closes before you can read why. GNOME and KDE can bind that
 command (or the **Jotline Capture** app after install) as a custom shortcut.
 Hyprland and Omarchy need a window rule as well; print a filled-in snippet:
 
@@ -36,6 +44,20 @@ jotline desktop recipe pipe
 uninstall` removes the desktop entry Jotline wrote. Recipes substitute the
 `jotline` path for this install. Write one to a file with
 `jotline desktop recipe hyprland --output ~/.config/hypr/jotline.conf`.
+
+## Choosing the terminal
+
+`jotline desktop launch` looks for a terminal in this order, putting the ones
+that suit your desktop (from `XDG_CURRENT_DESKTOP`) first: kitty, alacritty,
+foot, ghostty, wezterm, ptyxis, kgx, gnome-terminal, konsole, xfce4-terminal and
+xdg-terminal-exec. Hyprland and Omarchy prefer kitty, foot, alacritty, ghostty
+and wezterm; GNOME prefers ptyxis, kgx and gnome-terminal; KDE prefers konsole.
+
+Set `JOTLINE_TERMINAL` to pick one yourself, by name or full path, for example
+`JOTLINE_TERMINAL=foot jotline desktop launch`. It must be one of the terminals
+above; anything else is refused with the list. When no terminal is found and the
+command already runs in one, capture opens right there; otherwise the error
+suggests setting `JOTLINE_TERMINAL`, printing a recipe, or piping text.
 
 There is no dictation, share sheet, or cloud. Pipe-in stays the integration for
 launchers that cannot open a terminal.
