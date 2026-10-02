@@ -252,3 +252,12 @@ def test_an_action_guard_sees_control_characters_past_the_preview_cut(tmp_path):
     assert result.returncode == 1
     assert b"terminal controls" in result.stderr
     assert Vault(tmp_path).read(target.id).body == before
+
+
+def test_argparse_errors_do_not_echo_terminal_controls(tmp_path):
+    # argparse formats "unrecognized arguments" from raw argv, so an OSC title
+    # sequence in an extra argument reached the terminal unescaped.
+    result = run_cli(tmp_path, "list", "query", "\x1b]0;pwned\x07")
+    assert result.returncode == 2
+    assert b"\x1b" not in result.stderr and b"\x07" not in result.stderr
+    assert b"unrecognized arguments" in result.stderr

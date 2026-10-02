@@ -204,8 +204,15 @@ def add_encoding_options(command: argparse.ArgumentParser) -> None:
                          help="Replace bytes that cannot be decoded instead of stopping")
 
 
+class Parser(argparse.ArgumentParser):
+    # argparse builds messages such as "unrecognized arguments" from raw argv.
+    # Subparsers inherit this class, so every usage error goes through here.
+    def error(self, message: str):
+        super().error(terminal_text(message))
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="jotline", description="Jotline — a terminal home for your thoughts")
+    parser = Parser(prog="jotline", description="Jotline — a terminal home for your thoughts")
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--vault", type=vault_path, default=default_vault(), help="Markdown vault directory")
     parser.add_argument("--workspace", help="Workspace name (defaults to the last workspace used in the app)")
@@ -395,18 +402,28 @@ def run_backup(run: Invocation) -> None:
 
 def run_backups(run: Invocation) -> None:
     archives = history.list_archives(run.vault)
+    # A quarantined daily archive was already replaced, so it is listed for the
+    # record but does not fail the command the way an invalid live archive does.
+    quarantined = history.list_quarantined(run.vault)
     if run.args.json:
         print(json.dumps([
-            dict(name=archive.name, size=archive.size, valid=archive.valid, reason=archive.reason)
+            dict(name=archive.name, size=archive.size, valid=archive.valid, reason=archive.reason,
+                 quarantined=False)
             for archive in archives
+        ] + [
+            dict(name=name, size=None, valid=False, reason="set aside after failing validation",
+                 quarantined=True)
+            for name in quarantined
         ], ensure_ascii=True))
-    elif not archives:
+    elif not archives and not quarantined:
         print("No local ZIP backups yet. Run jotline backup.")
     else:
         for archive in archives:
             status = "ok" if archive.valid else "invalid"
             detail = archive.name if archive.valid else f"{archive.name} ({archive.reason})"
             print(f"{status}\t{terminal_text(detail)}")
+        for name in quarantined:
+            print(f"quarantined\t{terminal_text(name)}")
     if any(not archive.valid for archive in archives):
         raise SystemExit(1)
     report_warnings(run.vault)

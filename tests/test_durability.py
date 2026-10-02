@@ -296,3 +296,22 @@ def test_a_note_still_saves_when_its_history_cannot_be_written(tmp_path):
     report = doctor_report(vault, "")
     assert any("history is not being kept" in item for item in report["warnings"])
     assert (tmp_path / ".jotline-history").read_text() == "a sync tool put a file here"
+
+
+def test_backups_lists_quarantined_archives_without_failing(tmp_path):
+    # Doctor reported quarantined daily archives; `jotline backups` hid them, so the
+    # command meant for inspecting backups was the one place they never showed up.
+    vault = Vault(tmp_path)
+    folder = tmp_path / ".jotline-backups"
+    folder.mkdir()
+    (folder / f"daily-{date.today().isoformat()}.zip").write_bytes(b"not a zip")
+    note = vault.new("data")
+    vault.save(note)
+    quarantined = next(folder.glob(".invalid-*.zip")).name
+    listed = run_cli(tmp_path, "backups")
+    assert listed.returncode == 0, listed.stderr.decode()
+    assert f"quarantined\t{quarantined}".encode() in listed.stdout
+    payload = json.loads(run_cli(tmp_path, "backups", "--json").stdout)
+    entry = next(item for item in payload if item["name"] == quarantined)
+    assert entry["quarantined"] is True and entry["valid"] is False
+    assert all(item["quarantined"] is False for item in payload if item["name"] != quarantined)
