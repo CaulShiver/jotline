@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.9 — 2026-10-02
 
 - **`jotline backups` lists quarantined daily archives.** Doctor reported them;
   the command for inspecting backups did not. They print as `quarantined` and
