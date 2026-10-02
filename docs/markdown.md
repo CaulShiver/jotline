@@ -6,13 +6,26 @@ rules and tables. Code inside a fence is shown as code, not formatted. Notes sta
 plain `.md` files.
 
 Enter continues a bullet (`- `), numbered (`1. ` becomes `2. `), task (`- [ ] `)
-or quote (`> `) line. Press Enter on an empty item to end the list.
+or quote (`> `) line. Enter on an empty nested item (`  - `, `    - [ ] `,
+`  1. `) moves it up to its parent's indentation, with tabs or spaces as the list
+uses them; Enter on an empty top-level item ends the list.
+
+Type `[[` to pick a note to link, or `;;` to pick a template snippet. Neither
+opens inside a fenced code block or an inline code span, so `for(;;)` stays
+quiet.
 
 **Tab** inserts indentation at the cursor. On a list item or selected lines it
 indents the whole line or selection by two spaces; **Shift+Tab** removes one
 level. Enter keeps the current indentation, including in plain text and code
 blocks. Use **Ctrl+Tab** / **Ctrl+Shift+Tab** to move focus out of the editor,
-or **Ctrl+F** to search notes. Hover descriptions stay hidden.
+or **Ctrl+F** to search notes (many terminals send Ctrl+Tab as plain Tab; see
+[keyboard](keyboard.md#terminal-caveats)). Hover descriptions stay hidden.
+
+**Ctrl+Z** undoes edits, formatting and replacements. Each of the last eight
+notes you left keeps its undo history, so going back to one and pressing Ctrl+Z
+picks up where you were. The history is dropped when the note's text changed in
+between (another program, `$EDITOR`, a task ticked from the palette, a sync), and
+is never kept for encrypted or trashed notes.
 
 Select text with the mouse or Shift + arrow keys, then click **Bold**, **Italic**,
 **H**, **List**, **Task**, **Link**, or **Code** above the editor. **More** opens
@@ -21,8 +34,9 @@ narrow windows and hides in focus mode. Selections keep Markdown's theme colours
 over a tinted background; the cursor also uses the active theme's accent.
 
 You can also open **Format** in the sidebar for the Markdown menu, or type
-**format** in Ctrl+P. Each command toggles, so running it again removes the
-formatting:
+**format** in Ctrl+P. With no selection, inline formats insert a selected `text`
+placeholder; line formats apply to the current or selected lines. Each command
+toggles, so running it again removes the formatting:
 
 | Command | Result |
 | --- | --- |
@@ -38,16 +52,21 @@ formatting:
 Preview pauses above 256 KiB, 600 nonblank lines, or 400 table separator
 characters across the note; editing and saving remain available.
 
-**Preview rendered Markdown** opens a full-screen preview. **Toggle side-by-side
+**Preview rendered Markdown** opens a full-screen preview of headings,
+emphasis, lists, quotes, tables and fenced code, including unsaved writing.
+Scroll with the arrow keys, Page Up/Page Down or the mouse; `Esc` returns to the
+same editor selection. It is a read-only snapshot, so reopen it after editing. **Toggle side-by-side
 Markdown preview** keeps a live preview beside the editor that follows your
 typing and cursor; it needs a terminal wider than 80 columns, and below that the
 full preview opens instead. Both previews show checkboxes as ☐/☒ and note links
-as note titles, and neither opens links or loads images. **Jump to heading**
-lists the note's headings for quick navigation.
+as note titles, and neither opens files, browsers or images; raw HTML is not
+rendered. Click a `[[note link]]` in preview to open that note. **Jump to
+heading** lists the note's headings for quick navigation.
 
 Every formatting command, both previews and the heading outline can have its own
-key in **Ctrl+, → Keyboard shortcuts**; they start unassigned. **Ctrl+, → Editor**
-turns Markdown highlighting or list continuation off.
+key in **Ctrl+, → Keyboard shortcuts**; they start unassigned, so your existing
+keys are kept. Clear a field to unassign it; **Reset hotkeys** clears them again.
+**Ctrl+, → Editor** turns Markdown highlighting or list continuation off.
 
 There is no second Vim editor. Optional motions are out of scope.
 
@@ -55,9 +74,10 @@ There is no second Vim editor. Optional motions are out of scope.
 
 Choose **Outliner** above the editor, or **Ctrl+P → Outliner**. Blocks wrap in
 one outline surface. Use arrows or click to navigate, then **Enter** or **F2**
-to edit directly on the selected row. **Ctrl+Tab** switches between editing
-text and navigating branches. **F7** selects the block's text without selecting
-its children. **Commands** exposes every outline operation by name.
+to edit directly on the selected row. **Ctrl+Tab** or **F6** switches between
+editing text and navigating branches; F6 works in terminals that send Ctrl+Tab
+as plain Tab. **Commands** (Ctrl+P in the outliner) lists every outline
+operation by name with its keys.
 
 | Control | Result |
 | --- | --- |
@@ -69,7 +89,7 @@ its children. **Commands** exposes every outline operation by name.
 | Backspace at the start / Merge block | Join with the previous sibling when safe; preserve descendants |
 | Up / Down while editing | Move within wrapped text, then to the neighboring visible block at the boundary |
 | Tab / Shift+Tab | Indent / outdent the selected branches |
-| Alt+Shift+↑ / ↓ | Move selected branches among their siblings |
+| Alt+Shift+↑ / ↓, Ctrl+↑ / ↓, Ctrl+Shift+↑ / ↓ | Move selected branches among their siblings (the Ctrl forms need no Alt, for macOS without Option-as-Meta) |
 | Ctrl+Space / Fold / disclosure arrow | Collapse or expand the branch |
 | Left / Right while navigating | Collapse or go to parent; expand or go to first child |
 | Home / End while navigating | First / last visible block |
@@ -81,8 +101,10 @@ its children. **Commands** exposes every outline operation by name.
 | Shift+↑ / ↓ while navigating | Extend branch selection |
 | Ctrl+click / Select or deselect branch | Toggle branch selection |
 | Ctrl+Shift+Backspace / Delete selected branches | Delete selected branches and descendants |
-| Ctrl+Z / Ctrl+Y | Undo / redo text edits and structural changes |
+| Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z | Undo / redo text edits and structural changes |
 | Ctrl+S | Save immediately; autosave also runs while outlining |
+| Ctrl+Tab / F6 | Switch between the tree and the block being edited |
+| F1 | Keyboard cheat sheet, including outliner keys |
 | Esc | Leave text editing, then return to Markdown |
 
 If a terminal sends Shift+Enter as ordinary Enter, use **Commands → Insert
@@ -108,7 +130,8 @@ updates the outline to match the saved source. A full-height block inspector
 is available in Commands for long passages.
 
 **Navigation and saving.** Note commands, daily logs, formatting, note-link
-completion (`[[`), and snippets (`;;`) are available while outlining. Search
+completion (`[[`), and snippets (`;;`) are available while outlining, and
+`[[` and `;;` stay quiet inside code there too. Search
 reveals the result's ancestors; **Restore folds after search** restores the
 previous folding state. **Previous / Next outline location** return through
 branch-focus history. Folds, focused branch, caret, and scroll position are
