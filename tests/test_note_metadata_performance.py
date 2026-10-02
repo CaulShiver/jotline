@@ -38,7 +38,7 @@ def test_heading_keeps_existing_line_and_whitespace_semantics(body):
             break
     note = Note('note', body)
     assert note.heading == expected
-    assert note.title == expected[:100]
+    assert note.title == expected.lstrip('# ')[:100]
     note.sealed = 'sealed'
     assert note.heading == 'Encrypted note (locked)'
 
@@ -49,7 +49,7 @@ def test_metadata_updates_immediately_after_body_edit():
     note.body = '\n# After\n#home'
     assert note.title == 'After' and note.tags == {'home'}
     note.body = '- Untagged outline item'
-    assert note.title == '- Untagged outline item' and note.tags == set()
+    assert note.title == 'Untagged outline item' and note.tags == set()
 
 
 def test_tag_budget_counts_matches_and_retains_warning(monkeypatch):

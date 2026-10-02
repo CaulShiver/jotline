@@ -127,7 +127,7 @@ def rank(note: NoteQuery, terms: list[Term]) -> Match | None:
         located = body.find(word)
         if located != -1:
             score += BODY_WEIGHT + POSITION_WEIGHT * (1.0 - located / (len(body) or 1))
-    return Match(score, *excerpt(note.body, words, note.title))
+    return Match(score, *excerpt(note.body, words, getattr(note, 'heading', note.title)))
 
 
 def fold_origins(text: str) -> tuple[str, list[int]]:

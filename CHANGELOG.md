@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Titles no longer show Markdown markers.** A note that starts `- [ ] buy milk`,
+  `> quote` or `**Bold**` is listed, picked and linked as "buy milk", "quote" and
+  "Bold". The note file is unchanged, and links or `jotline open` using the old
+  marked-up title still find it.
+
 ## 0.9.9 — 2026-10-02
 
 - **`jotline backups` lists quarantined daily archives.** Doctor reported them;

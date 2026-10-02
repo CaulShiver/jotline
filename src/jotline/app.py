@@ -907,7 +907,7 @@ class Jotline(App):
     @staticmethod
     def note_excerpt(note: Note) -> str:
         lines = [line.strip().lstrip("# ") for line in note.body.splitlines() if line.strip()]
-        excerpt = next((line for line in lines if line != note.title), "")
+        excerpt = next((line for line in lines if line not in (note.heading, note.title)), "")
         return re.sub(r"\s+", " ", excerpt)[:44]
 
     def note_choices(self, notes: list[Note]) -> list[tuple[str, str]]:
