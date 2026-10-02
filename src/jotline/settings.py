@@ -14,6 +14,7 @@ from .filesystem import (
 )
 from .history import stamp
 from .limits import MAX_SETTINGS_BYTES
+from .messages import key_name
 from .search import compile_query
 from .store import COLLECTIONS, validate_workspace
 
@@ -82,6 +83,22 @@ YIELDING_HOTKEYS = frozenset({"recent", "follow_link", "toggle_task", "keys"})
 HOTKEY_PATTERN = r"(?:ctrl|alt)\+[a-z]|f(?:[1-9]|1[0-2])"
 # Preserve editing controls and terminal aliases for Tab, Enter and Backspace.
 RESERVED_HOTKEYS = {"ctrl+" + letter for letter in "acehijkmuvxyz"}
+
+
+class ShortcutError(ValueError):
+    """A shortcut problem, naming the form field that holds the offending key."""
+
+    def __init__(self, message: str, field: str):
+        super().__init__(message)
+        self.field = field
+
+
+def validate_view_name(name: str) -> str:
+    try:
+        return validate_workspace(name)
+    except ValueError:
+        raise ValueError("View names need 1–48 lowercase letters, numbers, hyphens or underscores, "
+                         "starting with a letter or number") from None
 
 
 @dataclass(frozen=True)
@@ -212,7 +229,7 @@ class Settings:
         if not isinstance(self.saved_views, dict) or len(self.saved_views) > 128:
             raise ValueError("At most 128 saved views are allowed")
         for name, view in self.saved_views.items():
-            validate_workspace(name)
+            validate_view_name(name)
             view = SavedView.from_raw(view)
             validate_workspace(view.workspace)
             if not isinstance(view.query, str) or len(view.query) > 2000:
@@ -229,25 +246,32 @@ class Settings:
             raise ValueError("Each hotkey must be text")
         if not isinstance(self.outline_hotkeys, dict) or set(self.outline_hotkeys) - ACTIONS.keys():
             raise ValueError("Outline shortcuts must name known outline commands")
-        outline_used = set()
-        for key in self.outline_hotkeys.values():
+        outline_used = {}
+        main_keys = {key: HOTKEY_ACTIONS[action][1].removesuffix(" (optional)")
+                     for action, key in self.effective_hotkeys.items() if key}
+        for action, key in self.outline_hotkeys.items():
+            label, field = f"{ACTIONS[action]} (outliner)", "outline-hotkey-" + action
             if not isinstance(key, str) or not re.fullmatch(HOTKEY_PATTERN, key):
-                raise ValueError("Outline shortcuts use ctrl+letter, alt+letter, or f1–f12")
-            if key in RESERVED_HOTKEYS or key in outline_used or key in self.effective_hotkeys.values():
-                raise ValueError("Outline shortcut is reserved or assigned more than once")
-            outline_used.add(key)
+                raise ShortcutError(f"{label}: use ctrl+letter, alt+letter, or f1–f12", field)
+            if key in RESERVED_HOTKEYS:
+                raise ShortcutError(f"{label}: {key_name(key)} is reserved for editing or terminal navigation", field)
+            if other := outline_used.get(key) or main_keys.get(key):
+                raise ShortcutError(f"{key_name(key)} is assigned to both {other} and {label}", field)
+            outline_used[key] = label
         used = {}
         for action, key in self.effective_hotkeys.items():
-            label = HOTKEY_ACTIONS[action][1]
+            label = HOTKEY_ACTIONS[action][1].removesuffix(" (optional)")
             # New Markdown actions start unassigned to preserve existing maps.
             if not key and (not HOTKEY_ACTIONS[action][0] or action in YIELDING_HOTKEYS):
                 continue
+            field = "hotkey-" + action
             if not re.fullmatch(HOTKEY_PATTERN, key):
-                raise ValueError(f"{label}: use ctrl+letter, alt+letter, or f1–f12; Ctrl+, and Esc stay fixed")
+                raise ShortcutError(f"{label}: use ctrl+letter, alt+letter, or f1–f12; Ctrl+, and Esc stay fixed",
+                                    field)
             if key in RESERVED_HOTKEYS:
-                raise ValueError(f"{key} is reserved for editing or terminal navigation")
+                raise ShortcutError(f"{label}: {key_name(key)} is reserved for editing or terminal navigation", field)
             if key in used:
-                raise ValueError(f"{key} is assigned to both {used[key]} and {label}")
+                raise ShortcutError(f"{key_name(key)} is assigned to both {used[key]} and {label}", field)
             used[key] = label
 
         validate_workspace(self.active_workspace)

@@ -54,8 +54,8 @@ async def test_edit_hotkeys_apply_immediately_and_persist(tmp_path):
         await pilot.pause()
         assert app.current.id == original
         assert app.query_one('#editor', TextArea).text == 'Keep this note'
-        assert 'f4 commands' in str(app.query_one('#hint', Static).render())
-        assert 'f4' in str(app.query_one('#connections', Static).render())
+        assert 'F4 commands' in str(app.query_one('#hint', Static).render())
+        assert 'F4' in str(app.query_one('#connections', Static).render())
         await pilot.press('ctrl+n')
         assert app.current.id == original
         await pilot.press('f2')
@@ -63,7 +63,7 @@ async def test_edit_hotkeys_apply_immediately_and_persist(tmp_path):
         assert vault.read(original).body == 'Keep this note'
         await pilot.press('f4')
         assert isinstance(app.screen, Palette)
-        assert any('f2' in label for key, label in app.screen.choices if key == 'new')
+        assert any('F2' in label for key, label in app.screen.choices if key == 'new')
         current = app.current.id
         await pilot.press('f2', 'ctrl+comma')
         assert isinstance(app.screen, Palette)
@@ -183,6 +183,6 @@ async def test_new_everyday_hotkeys_dispatch(tmp_path):
         await pilot.press('f6')
         assert isinstance(app.screen, FindInNote)
         await pilot.press('escape', 'ctrl+p')
-        assert any('ctrl+r' in label for key, label in app.screen.choices if key == 'recent')
-        assert any('f5' in label for key, label in app.screen.choices if key == 'previous')
-        assert any('ctrl+g' in label for key, label in app.screen.choices if key == 'follow')
+        assert any('Ctrl+R' in label for key, label in app.screen.choices if key == 'recent')
+        assert any('F5' in label for key, label in app.screen.choices if key == 'previous')
+        assert any('Ctrl+G' in label for key, label in app.screen.choices if key == 'follow')

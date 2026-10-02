@@ -10,7 +10,7 @@ async def test_empty_inbox_and_trash_explain_the_next_step(tmp_path):
         await pilot.pause()
         empty = str(app.query_one("#empty-notes", Static).render())
         assert "Inbox is empty" in empty
-        assert "ctrl+n starts another" in empty
+        assert "Ctrl+N starts another" in empty
         app.command("view:trash")
         await pilot.pause()
         empty = str(app.query_one("#empty-notes", Static).render())

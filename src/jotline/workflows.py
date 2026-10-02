@@ -10,8 +10,9 @@ from textual.widgets import Input, Label, OptionList, SelectionList, Static
 
 from .accessibility import named
 from .limits import EDIT_LIMIT_BYTES
+from .messages import NOTE_LIMIT, TOO_LARGE, failed, reason
 from .modal import Modal, Palette, TextPrompt
-from .store import tagged_body, wiki_link
+from .store import OTHER_WORKSPACE, tagged_body, wiki_link
 from .templates import Templates
 
 MAX_ARRANGE_ITEMS = 5000
@@ -128,7 +129,7 @@ class Workflows:
         """Replace the selection, or insert at the cursor, as one undo step within the size limit."""
         editor = self.editing_surface()
         if not editor.insert_checked(body, limit=EDIT_LIMIT_BYTES):
-            self.notify('Result exceeds the note size limit', severity='error')
+            self.notify(TOO_LARGE, severity='error')
             return False
         if editor is not self.editor():
             self.screen.flush()
@@ -143,7 +144,7 @@ class Workflows:
             self.notify('Select the text to extract first')
             return
         if len(selected.encode('utf-8')) > EDIT_LIMIT_BYTES:
-            self.notify('Result exceeds the note size limit', severity='error')
+            self.notify(TOO_LARGE, severity='error')
             return
         note = self.vault.new(selected, workspace=self.workspace)
         if self.current.encrypted:
@@ -162,12 +163,12 @@ class Workflows:
         result_bytes = (len(text[:begin].encode('utf-8')) + len(link.encode('utf-8'))
                         + len(text[finish:].encode('utf-8')))
         if result_bytes > EDIT_LIMIT_BYTES:
-            self.notify('Result exceeds the note size limit', severity='error')
+            self.notify(TOO_LARGE, severity='error')
             return
         try:
             self.vault.save(note)
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed('The selection was not extracted', error, 'Your note is unchanged.'), severity='error')
             return
         if not self.insert_editor_text(link):
             return
@@ -188,14 +189,19 @@ class Workflows:
             return False
         editor = self.editing_surface()
         if not editor.replace_checked(body, limit=EDIT_LIMIT_BYTES):
-            self.notify('Result exceeds the note size limit', severity='error')
+            self.notify(TOO_LARGE, severity='error')
             return False
         self.capture_current_buffer()
         return True
 
     def read_in_workspace(self, note_id):
         """Read a note the user picked; it must still belong to this workspace."""
-        return self.vault.read(note_id, workspace=self.workspace)
+        try:
+            return self.vault.read(note_id, workspace=self.workspace)
+        except ValueError as error:
+            if str(error) != OTHER_WORKSPACE:
+                raise
+            raise ValueError('that note has moved to another workspace; switch to it there') from None
 
     def recent_notes(self):
         notes = {n.id: n for n in self.vault.search(workspace=self.workspace)}
@@ -243,7 +249,8 @@ class Workflows:
             else:
                 choices = [(name, name) for name in Templates(self.vault.path).names()]
         except (ValueError, OSError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed('Could not list notes to link' if trigger == '[[' else 'Could not list snippets', error),
+                        severity='error')
             return
 
         def complete(key):
@@ -261,7 +268,8 @@ class Workflows:
                 self.insert_editor_text(body)
                 editor.move_cursor(editor.cursor_location)
             except (ValueError, OSError) as error:
-                self.notify(str(error), severity='error')
+                what = 'Could not insert that link' if trigger == '[[' else f'Could not insert the snippet “{key}”'
+                self.notify(failed(what, error), severity='error')
             editor.focus()
         self.push_screen(Palette(choices, 'Complete note link' if trigger == '[[' else 'Insert snippet'), complete)
 
@@ -270,7 +278,8 @@ class Workflows:
             names = Templates(self.vault.path).names()
             self.push_screen(Palette([(n, n) for n in names], 'Insert template at cursor'), self.insert_template_named)
         except (ValueError, OSError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed('Could not list templates', error, 'Check the .jotline-templates folder in your vault.'),
+                        severity='error')
 
     def insert_template_named(self, name):
         if name:
@@ -282,7 +291,7 @@ class Workflows:
                 self.insert_editor_text(body)
                 editor.focus()
             except (ValueError, OSError) as error:
-                self.notify(str(error), severity='error')
+                self.notify(failed(f'Could not insert the template “{name}”', error), severity='error')
 
     def insert_note(self):
         self.push_screen(Palette(self.note_choices(self.vault.search(workspace=self.workspace)), 'Insert note text'),
@@ -294,7 +303,7 @@ class Workflows:
                 self.insert_editor_text(self.read_in_workspace(key).body)
                 self.editing_surface().focus()
             except (ValueError, OSError) as error:
-                self.notify(str(error), severity='error')
+                self.notify(failed("Could not insert that note's text", error), severity='error')
 
     def arrange(self, paragraphs):
         body = self.editing_surface().text
@@ -311,7 +320,7 @@ class Workflows:
             notes = self.vault.search(self.query_one('#search', Input).value, self.collection, self.workspace)
             self.push_screen(SelectNotes(self.note_choices(notes)), self.bulk_operation)
         except (ValueError, OSError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed('Could not list notes for bulk operations', error), severity='error')
 
     def bulk_operation(self, ids):
         if not ids:
@@ -332,12 +341,13 @@ class Workflows:
         if not self.save_current():
             return
         success, failures, merge = 0, [], []
+        titles = {note.id: note.title for note in self.vault.search(workspace=self.workspace)}
         for key in dict.fromkeys(ids):
             try:
                 note = self.read_in_workspace(key)
                 if operation == 'merge':
                     if sum(len(body.encode('utf-8')) + 7 for body in merge) + len(note.body.encode('utf-8')) > EDIT_LIMIT_BYTES:
-                        raise ValueError('Merged note exceeds the note size limit')
+                        raise ValueError(f'the merged note would be over the {NOTE_LIMIT} size limit')
                     merge.append(note.body)
                 else:
                     if operation == 'tag':
@@ -351,19 +361,19 @@ class Workflows:
                     self.vault.save(note)
                 success += 1
             except (ValueError, OSError) as error:
-                failures.append(f'{key}: {error}')
+                failures.append(f'{titles.get(key, key)}: {reason(error)}')
         if operation == 'merge' and not failures:
             try:
                 note = self.vault.new('\n\n---\n\n'.join(merge), workspace=self.workspace)
                 self.vault.save(note)
                 self.load(note)
             except (ValueError, OSError) as error:
-                failures.append(str(error))
+                failures.append('Merged note not saved: ' + reason(error))
         elif self.current.id in ids:
             try:
                 self.load(self.vault.read(self.current.id))
             except (ValueError, OSError) as error:
-                failures.append(str(error))
+                failures.append('Could not reload the open note: ' + reason(error))
         self.refresh_notes()
-        self.notify(f'{success} processed; {len(failures)} failed' + ('. ' + '; '.join(failures[:3]) if failures else ''),
+        self.notify(f'{success} processed; {len(failures)} failed' + (f". {'; '.join(failures[:3])}." if failures else ''),
                     severity='warning' if failures else 'information', timeout=10)

@@ -24,6 +24,7 @@ from textual.widgets import TextArea
 from textual.widgets.text_area import Edit, TextAreaTheme
 
 from .limits import EDIT_LIMIT_BYTES, MAX_NOTE_BYTES
+from .messages import megabytes
 from .store import LINK as WIKI, TAG
 from .tasks import FENCE, TASK, closes_fence, code_spans, fenced_rows, opens_fence, set_done
 
@@ -203,11 +204,6 @@ def headings(lines: list[str]) -> list[tuple[int, int, str]]:
             previous = ("" if list_item(line) or RULE.match(line) or line.startswith(("    ", "\t"))
                         or line.lstrip().startswith((">", "|")) else line)
     return found
-
-
-def megabytes(size: int) -> str:
-    amount = size / (1024 * 1024)
-    return f"{amount:.1f} MB".replace(".0 MB", " MB") if amount >= 0.1 else "under 0.1 MB"
 
 
 def code_at(lines: Sequence[str], row: int, column: int, fenced: set[int] | None = None) -> bool:

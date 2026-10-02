@@ -44,6 +44,7 @@ from .limits import (
     MAX_SETTINGS_BYTES,
 )
 from .links import LINK, NoteConnections, connect_note, wiki_link_targets  # noqa: F401
+from .messages import NOTE_LIMIT
 from .search import compile_query
 from .tasks import gather
 
@@ -347,7 +348,7 @@ class Vault:
                         raise ValueError("Metadata is nested too deeply") from None
             body = body[boundary.end():]
         if meta.get("collection", "inbox") not in COLLECTIONS:
-            raise ValueError("Unknown collection")
+            raise ValueError(f"The note's header names an unknown collection {meta['collection']!r}")
         if any(not isinstance(meta.get(k, ""), str) for k in ("created", "updated")):
             raise ValueError("Invalid timestamps")
         if not isinstance(meta.get("starred", False), bool):
@@ -478,7 +479,7 @@ class Vault:
     def _check_saveable(self, note: Note) -> None:
         validate_workspace(note.workspace)
         if note.collection not in COLLECTIONS:
-            raise ValueError("Unknown collection")
+            raise ValueError(f"Unknown collection {note.collection!r}; use one of {', '.join(COLLECTIONS)}")
         if not isinstance(note.body, str) or not isinstance(note.starred, bool):
             raise ValueError("Invalid note body or starred value")
         if not all(isinstance(value, str) for value in (note.created, note.updated)):
@@ -514,7 +515,7 @@ class Vault:
         stored = note.sealed if note.locked else self.cipher.seal(note.id, note.body) if note.encrypted else note.body
         raw = "---\njotline: 1\n" + "\n".join(f"{k}: {json.dumps(v)}" for k, v in meta.items()) + "\n---\n" + stored
         if len(raw.encode("utf-8")) > MAX_NOTE_BYTES:
-            raise ValueError(f"Note exceeds the {MAX_NOTE_BYTES}-byte file limit")
+            raise ValueError(f"The note is over the {NOTE_LIMIT} file limit; shorten it to save")
         return stamp, meta, raw, newly_encrypted
 
     def _write_temp(self, directory: int, raw: str) -> str:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .crypto import EncryptionError, check_passphrase
+from .messages import failed
 from .modal import TextPrompt
 
 LOST_PASSPHRASE = "There is no way to open encrypted notes without the passphrase."
@@ -37,7 +38,8 @@ class Encryption:
             try:
                 self.vault.unlock(passphrase)
             except (OSError, ValueError) as error:
-                self.notify(str(error), severity="error", timeout=10)
+                self.notify(failed("Encrypted notes are still locked", error,
+                                   "Try again with Unlock encrypted notes."), severity="error", timeout=10)
                 return
             self.refresh_notes()
             if then:
@@ -60,7 +62,7 @@ class Encryption:
         try:
             check_passphrase(passphrase)
         except EncryptionError as error:
-            self.notify(str(error), severity="error")
+            self.notify(failed("Encryption was not set up", error), severity="error")
             return
         self.ask_secret("Repeat the passphrase", lambda repeat: self.set_up_encryption(passphrase, repeat))
 
@@ -71,7 +73,8 @@ class Encryption:
         try:
             self.vault.setup_encryption(passphrase)
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error", timeout=10)
+            self.notify(failed("Encryption was not set up", error, "The note is still stored as plain text."),
+                        severity="error", timeout=10)
             return
         self.notify("Encryption is set up. Keep the passphrase somewhere safe. " + LOST_PASSPHRASE, timeout=15)
         self.set_current_encryption(True)
@@ -98,7 +101,8 @@ class Encryption:
         try:
             note, changed = self.vault.set_encrypted(self.current.id, self.workspace, encrypted)
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error", timeout=10)
+            self.notify(failed("The note was not encrypted" if encrypted else "Encryption was not removed", error,
+                               "The note on disk is unchanged."), severity="error", timeout=10)
             return
         self.load(note)
         if not changed:
@@ -135,6 +139,7 @@ class Encryption:
         try:
             self.vault.change_passphrase(old, new)
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error", timeout=10)
+            self.notify(failed("The passphrase was not changed", error, "The old passphrase still works."),
+                        severity="error", timeout=10)
             return
         self.notify("Passphrase changed.")

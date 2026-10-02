@@ -81,6 +81,28 @@
   created notes exits 0 even when some sources were skipped with a warning.
 - **A wrong `JOTLINE_PASSPHRASE` only fails commands that need it.** Others
   print a warning and carry on with encrypted notes locked.
+- **Error messages say what failed and what to do next.** About forty in-app
+  messages that showed a bare error now name the note, view, template or action
+  involved, keep the useful part of the error (such as "Permission denied" and
+  the file), and add a next step where there is one. A failed save, for
+  example, reads "This note is not saved: … Your text is still on screen".
+- **Size limits are given in megabytes.** Every "too large" message now says the
+  limit is 10 MB, including inserts, replacements, actions and templates.
+- **Clearer wording in a few places.** Naming a saved view gives the rule for
+  view names rather than workspace names. A finished action names the note, the
+  number of steps and whether the text changed, and exported output is named by
+  title. The outliner explains why it will not merge a code block or a finished
+  task, and a block reference says whether its note is missing or matches more
+  than one. Find and replace counts "1 match" and "3 matches".
+- **Shortcut problems point at the field.** Settings names the command and key
+  in conflict, such as "Ctrl+N is assigned to both New thought and Fold or
+  expand branch (outliner)", and moves the cursor to that field. Outliner
+  shortcut fields show their default key.
+- **Keys are written one way.** The command palette, hint line, connections bar
+  and cheat sheet all show keys as Ctrl+N, Alt+K and F1.
+- **Delete moves the highlighted note to Trash.** In the note list, Delete does
+  what the note menu's Move to Trash does; restore it from Show trash. It does
+  nothing to the text in the editor.
 - **A broken converter keeps the HTML advice.** When LibreOffice is installed
   but cannot convert, Word and PDF export show its error and suggest exporting
   HTML instead, as they do when no converter is installed.

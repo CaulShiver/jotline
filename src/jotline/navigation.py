@@ -8,8 +8,8 @@ from textual.widgets import Button, Input, Label, Select, Static, TextArea
 from rich.text import Text
 
 from .modal import Modal, Palette
-from .settings import HOTKEY_ACTIONS, SORT_ORDERS, THEMES, VIEW_COLLECTIONS
-from .store import validate_workspace
+from .messages import failed, key_name
+from .settings import HOTKEY_ACTIONS, SORT_ORDERS, THEMES, VIEW_COLLECTIONS, validate_view_name
 
 
 class ViewEditor(Modal[tuple[str, dict] | None]):
@@ -69,7 +69,7 @@ class ViewEditor(Modal[tuple[str, dict] | None]):
                     sort=self.query_one('#view-sort', Select).value,
                     theme=self.query_one('#view-theme', Select).value)
         try:
-            validate_workspace(name)
+            validate_view_name(name)
             if not self.filters and name != self.original and name in self.settings.saved_views:
                 raise ValueError('That name is already used; choose a different name.')
             views = dict(self.settings.saved_views)
@@ -123,15 +123,6 @@ SEARCH_KEYS = (('Enter', 'Open the top result'), ('Down', 'Move into the note li
 OUTLINE_LABELS = {'back': 'Leave the block, then back to Markdown', 'commands': 'Outliner commands',
                   'edit_block': 'Edit the block', 'switch_pane': 'Switch between tree and block',
                   'extend(-1)': 'Extend selection up', 'extend(1)': 'Extend selection down'}
-NAMES = {'ctrl': 'Ctrl', 'alt': 'Alt', 'shift': 'Shift', 'comma': ',', 'escape': 'Esc', 'enter': 'Enter',
-         'tab': 'Tab', 'space': 'Space', 'backspace': 'Backspace', 'up': 'Up', 'down': 'Down',
-         'left': 'Left', 'right': 'Right'}
-
-
-def key_name(key: str) -> str:
-    return '+'.join(NAMES.get(part, part.upper()) for part in key.split('+'))
-
-
 def key_sheet(hotkeys: dict[str, str], outline: dict[str, list[str]]) -> Text:
     """The cheat sheet: every key in effect now, rebinds included."""
     text = Text()
@@ -242,13 +233,13 @@ class Views:
         if not name:
             return
         try:
-            validate_workspace(name)
+            validate_view_name(name)
             if name in self.settings.saved_views:
                 raise ValueError('View already exists; delete it first or choose another name')
             self.replace_settings(saved_views={**self.settings.saved_views, name: self.current_view()})
             self.notify('View saved')
         except (ValueError, OSError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed(f'View “{name}” was not saved', error), severity='error')
 
     def save_view_prompt(self):
         self.push_screen(ViewEditor('', self.current_view(), self.settings), self.store_edited_view)
@@ -266,7 +257,7 @@ class Views:
             views[name] = view
             self.replace_settings(saved_views=views)
         except (ValueError, OSError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed(f'View “{name}” was not saved', error), severity='error')
             return
         self.apply_view(name)
         self.notify('View saved')
