@@ -113,8 +113,8 @@ class Workflows:
 
     def workflow_commands(self, Command):
         return [
-            Command('recent', 'Recent notes', self.show_recent, group='everyday'),
-            Command('previous', 'Previous note', self.previous_note, group='everyday'),
+            Command('recent', 'Recent notes', self.show_recent, 'recent', group='everyday'),
+            Command('previous', 'Previous note', self.previous_note, 'previous_note', group='everyday'),
             Command('extract', 'Extract selection to new note', self.action_extract_note, 'extract_note',
                     group='everyday'),
             Command('insert-template', 'Insert template at cursor', self.insert_template),
@@ -202,6 +202,9 @@ class Workflows:
         return [notes[key] for key in self.recent_note_ids if key in notes and key != self.current.id]
 
     def show_recent(self):
+        if not self.recent_notes():
+            self.notify('No recent notes in this workspace yet')
+            return
         self.push_screen(Palette(self.note_choices(self.recent_notes()), 'Recent notes'),
                          lambda key: self.load_id(key) if key else None)
 
@@ -211,6 +214,12 @@ class Workflows:
             self.load_id(notes[0].id)
         else:
             self.notify('No previous note in this workspace')
+
+    def action_recent(self):
+        self.show_recent()
+
+    def action_previous_note(self):
+        self.previous_note()
 
     def offer_completion(self):
         """Offer keyboard suggestions only after an editor trigger at the cursor.

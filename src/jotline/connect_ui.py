@@ -32,7 +32,7 @@ class Connections:
         return [
             Command("link", "Insert note link", lambda: self.select_related_note("link"),
                     group="everyday"),
-            Command("follow", "Follow a link in this note", self.action_follow, group="everyday"),
+            Command("follow", "Follow a link in this note", self.action_follow, "follow_link", group="everyday"),
             Command("backlinks", "Show connections", self.action_backlinks, "backlinks",
                     group="everyday"),
         ]

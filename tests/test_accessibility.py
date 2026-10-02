@@ -59,7 +59,7 @@ async def test_palette_find_recovery_and_capture_are_named(tmp_path):
 async def test_settings_and_views_are_named(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test(size=(100, 36)) as pilot:
-        await pilot.press("f1")
+        await pilot.press("ctrl+comma")
         await pilot.pause()
         assert isinstance(app.screen, Preferences)
         assert unlabeled_controls(app.screen) == [], [widget.id for widget in unlabeled_controls(app.screen)]

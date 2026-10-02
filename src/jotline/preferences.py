@@ -6,7 +6,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Input, Label, Select, Static, Switch, TextArea
 
 from .modal import Modal
-from .settings import BOOLEAN_SETTINGS, DEFAULT_COLLECTIONS, HOTKEY_ACTIONS, Settings, THEMES
+from .settings import BOOLEAN_SETTINGS, DEFAULT_COLLECTIONS, HOTKEY_ACTIONS, YIELDING_HOTKEYS, Settings, THEMES
 
 
 class Preferences(Modal[Settings | None]):
@@ -73,13 +73,13 @@ class Preferences(Modal[Settings | None]):
                 yield Input(str(s.autosave_seconds), type='number', id='pref-autosave_seconds',
                             tooltip='Autosave interval in seconds')
                 yield Label('Keyboard shortcuts', classes='pref-section')
-                yield Static('Use ctrl+letter, alt+letter, or f2–f12. Editing keys are reserved. '
-                             'Leave optional Markdown shortcuts blank to keep them unassigned. '
+                yield Static('Use ctrl+letter, alt+letter, or f1–f12. Editing keys are reserved. '
+                             'Leave optional shortcuts blank to keep them unassigned. '
                              'Ctrl+, always opens Settings; Esc closes dialogs. Ctrl+S saves this dialog. Changes apply when saved.')
                 hotkeys = s.effective_hotkeys
                 for action, (default, label) in HOTKEY_ACTIONS.items():
                     yield Label(label, classes='pref-label')
-                    yield Input(hotkeys[action], placeholder='Unassigned' if not default else '',
+                    yield Input(hotkeys[action], placeholder='Unassigned' if not default or action in YIELDING_HOTKEYS else '',
                                 id='hotkey-' + action, tooltip=label)
                 yield Label('Outliner shortcuts', classes='pref-section')
                 yield Static('Optional overrides for outline commands. All commands are also in the outliner menu.')

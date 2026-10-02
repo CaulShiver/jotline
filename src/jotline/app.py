@@ -41,7 +41,7 @@ from .recovery_ui import HealthScreen
 from .review_ui import Review
 from .screens import FindInNote, MarkdownPreview, RevisionPreview
 from .search import Match, parse_query, rank, sought
-from .settings import HOTKEY_ACTIONS, Settings, VIEW_COLLECTIONS
+from .settings import HOTKEY_ACTIONS, YIELDING_HOTKEYS, Settings, VIEW_COLLECTIONS
 from .store import (COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, daily_date_from_id,
                     is_daily_id, parse_calendar_date, tagged_body, validate_workspace)
 from .sync import sync_guide
@@ -69,6 +69,12 @@ STATUS_SUMMARY_SECONDS = 0.25
 # How long the note list waits for a pause in typing before it rebuilds. Rebuilding
 # measures the height of every row, so a burst of keys pays for one pass, not one per key.
 SEARCH_DEBOUNCE_SECONDS = 0.2
+
+
+class SearchBox(Input):
+    """Enter opens the top result; Down moves into the list; Esc clears the query first."""
+    BINDINGS = [Binding("down", "app.search_down", show=False),
+                Binding("escape", "app.search_escape", show=False)]
 
 
 def _bind_capabilities(target, *sources):
@@ -120,9 +126,10 @@ class Jotline(App):
     """
     BINDINGS = [Binding(key or "jotline_" + action + "_unassigned",
                         "format_markdown(" + repr(action[7:]) + ")" if action.startswith("format_") else action,
-                        label, priority=True, show=bool(key), id="jotline." + action)
+                        label, priority=True, show=bool(key) and action not in {"recent", "follow_link", "toggle_task"},
+                        id="jotline." + action)
                 for action, (key, label) in HOTKEY_ACTIONS.items()] + [
-        Binding("ctrl+comma,f1", "settings", "Settings", priority=True),
+        Binding("ctrl+comma", "settings", "Settings", priority=True),
         Binding("escape", "editor_focus", "Write", show=False),
     ]
 
@@ -188,8 +195,8 @@ class Jotline(App):
                 with Horizontal(classes="navigation-row"):
                     yield Button("Import", id="nav-import")
                 yield Static("INBOX", id="collection", markup=False)
-                yield Input(placeholder="Search words or #tags", id="search",
-                            tooltip="Search this workspace by words or #tags")
+                yield SearchBox(placeholder="Search words or #tags", id="search",
+                                tooltip="Search this workspace by words or #tags · Enter opens the top result")
                 yield Static("", id="empty-notes", markup=False)
                 notes = NoteList(id="notes")
                 notes.tooltip = "Notes in the current collection"
@@ -284,7 +291,9 @@ class Jotline(App):
                 self._shown_storage_warnings.add(warning)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        if isinstance(self.screen, OutlinerScreen) and action in {'commands', 'open_note', 'daily', 'daily_previous', 'daily_next', 'new', 'quit', 'settings', 'format_markdown', 'save'}:
+        if action in YIELDING_HOTKEYS and not self.settings.effective_hotkeys.get(action):
+            return False
+        if isinstance(self.screen, OutlinerScreen) and action in {'commands', 'open_note', 'daily', 'daily_previous', 'daily_next', 'new', 'quit', 'settings', 'format_markdown', 'save', 'keys'}:
             return True
         if isinstance(self.screen, ModalScreen) and action not in {'focus_next', 'focus_previous'}:
             return False
@@ -533,6 +542,42 @@ class Jotline(App):
             # Code that sets the box and refreshes itself gets its Changed event afterwards.
             return
         self._search_timer = self.set_timer(SEARCH_DEBOUNCE_SECONDS, self.refresh_notes)
+
+    def settle_search(self) -> None:
+        """List what the box says now, so a key pressed mid-debounce acts on the current results."""
+        if self._search_timer is not None or self.query_one("#search", Input).value != self._listed_query:
+            self.refresh_notes()
+
+    @on(Input.Submitted, "#search")
+    def search_submitted(self) -> None:
+        self.settle_search()
+        listing = self.query_one("#notes", OptionList)
+        if not listing.option_count or not (note_id := listing.get_option_at_index(0).id):
+            return
+        self.load_id(note_id)
+        if self.current.id == note_id:
+            self.action_editor_focus()
+
+    def action_search_down(self) -> None:
+        self.settle_search()
+        listing = self.query_one("#notes", OptionList)
+        if listing.option_count:
+            listing.focus()
+            listing.highlighted = 0
+
+    def action_search_escape(self) -> None:
+        search = self.query_one("#search", Input)
+        if not search.value:
+            self.action_editor_focus()
+            return
+        search.value = ""
+        self.refresh_notes()
+
+    @on(events.DescendantFocus, "#notes")
+    def notes_focused(self) -> None:
+        listing = self.query_one("#notes", OptionList)
+        if listing.highlighted is None and listing.option_count:
+            listing.highlighted = 0
 
     @on(OptionList.OptionSelected, "#notes")
     def note_selected(self, event: OptionList.OptionSelected) -> None:
@@ -1197,11 +1242,11 @@ class Jotline(App):
             Command("daily-date", "Open daily log by date", self.action_daily_date, "daily_date"),
             Command("open", "Open a note", self.action_open_note, "open_note", group="everyday"),
             Command("focus", "Toggle focus mode", self.action_focus_mode, "focus_mode", group="everyday"),
-            Command("find", "Find within current note", lambda: self.push_screen(FindInNote()),
+            Command("find", "Find within current note", self.action_find_in_note, "find_in_note",
                     group="everyday"),
             Command("refresh", "Refresh vault from disk", self.refresh_vault, group="everyday"),
             Command("star", "Toggle star on this note", self.toggle_star, group="everyday"),
-            Command("task", "Toggle task on current line", self.toggle_task, group="everyday"),
+            Command("task", "Toggle task on current line", self.toggle_task, "toggle_task", group="everyday"),
             Command("copy", "Copy note to the clipboard", self.copy_current_note,
                     group="everyday"),
             Command("accessibility", "Clipboard, IME, and screen-reader notes", self.show_accessibility_notes),
@@ -1312,6 +1357,15 @@ class Jotline(App):
     def toggle_task(self) -> None:
         self.editor().toggle_task_line()
         self.capture_current_buffer()
+
+    def action_toggle_task(self) -> None:
+        self.toggle_task()
+
+    def action_find_in_note(self) -> None:
+        self.push_screen(FindInNote())
+
+    def action_follow_link(self) -> None:
+        self.action_follow()
 
     def show_sync_guide(self) -> None:
         self.push_screen(Walkthrough(self.shortcut_text(sync_guide(self.vault.path))))

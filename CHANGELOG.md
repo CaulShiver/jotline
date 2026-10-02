@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- **Enter in the search box opens the top result.** The cursor lands in the
+  editor, ready to write. Down moves into the list with the first row
+  highlighted, Esc clears the query (a second Esc returns to writing), and
+  tabbing into an unhighlighted list highlights its first row. Enter pressed
+  while you are still typing acts on what you typed, not the previous results.
+- **Everyday moves have keys.** Ctrl+R opens recent notes with the note you
+  just left already selected, so Ctrl+R then Enter goes back. Ctrl+G follows
+  the link under the cursor and Ctrl+L toggles the task on the current line.
+  Back to previous note and Find in this note can be given keys in Settings. If
+  you already use one of the new keys for something else, yours wins and the
+  new command starts unassigned.
+- **F1 shows a keyboard cheat sheet.** It lists the keys in effect now,
+  including your own changes, for writing, finding, notes, the editor and the
+  outliner, and says which readline keys Jotline takes over. It is also in the
+  palette as Keyboard shortcuts, and works from the outliner. Settings moves to
+  Ctrl+, only; if your terminal swallows Ctrl+, use Ctrl+P → Settings.
+- **Outliner keys that work without Alt.** Ctrl+Up and Ctrl+Down (or
+  Ctrl+Shift+Up/Down) move branches, and F6 switches between the tree and the
+  block, for terminals that send Ctrl+Tab as plain Tab. The outliner's command
+  palette now shows each command's keys.
+
 ## 0.9.9 — 2026-10-02
 
 - **`jotline backups` lists quarantined daily archives.** Doctor reported them;
