@@ -125,7 +125,7 @@ async def test_guide_opens_read_only_and_review_saves_only_once_typed(tmp_path):
             await pilot.pause()
             assert isinstance(app.screen, Walkthrough)
             assert "A little room to think" in app.screen.body
-            assert "Press alt+n and write" in app.screen.body
+            assert "Press Alt+N and write" in app.screen.body
             await pilot.press("escape")
         app.command("review")
         await pilot.pause()

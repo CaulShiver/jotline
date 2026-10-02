@@ -11,12 +11,18 @@ from .modal import Modal
 
 
 class NoteList(OptionList):
-    BINDINGS = [Binding('shift+f10', 'note_menu', 'Note actions', show=False)]
+    BINDINGS = [Binding('shift+f10', 'note_menu', 'Note actions', show=False),
+                Binding('delete', 'trash_note', 'Move to Trash', show=False)]
 
     class ContextRequested(Message):
         def __init__(self, note_id: str, x: int, y: int):
             super().__init__()
             self.note_id, self.x, self.y = note_id, x, y
+
+    class TrashRequested(Message):
+        def __init__(self, note_id: str):
+            super().__init__()
+            self.note_id = note_id
 
     def _on_click(self, event: events.Click) -> None:
         if event.button == 1:
@@ -37,6 +43,12 @@ class NoteList(OptionList):
             option = self.get_option_at_index(self.highlighted)
             if option.id and not option.disabled:
                 self.post_message(self.ContextRequested(option.id, self.region.x + 2, self.region.y))
+
+    def action_trash_note(self) -> None:
+        if self.highlighted is not None:
+            option = self.get_option_at_index(self.highlighted)
+            if option.id and not option.disabled:
+                self.post_message(self.TrashRequested(option.id))
 
 
 class NoteMenuOptions(OptionList):

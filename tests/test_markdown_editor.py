@@ -522,6 +522,6 @@ async def test_large_paste_warns_about_the_file_limit_without_blocking(tmp_path)
         await editor._on_paste(events.Paste(big))
         await pilot.pause()
         assert editor.text.endswith(big)
-        [message] = [item.message for item in app._notifications if 'MB file limit' in item.message]
+        [message] = [item.message for item in app._notifications if item.message.startswith('This note is now')]
         assert '10 MB file limit' in message and megabytes(len(editor.text.encode()) - EDIT_LIMIT_BYTES) in message
     assert megabytes(1536 * 1024) == '1.5 MB' and megabytes(10) == 'under 0.1 MB'

@@ -8,6 +8,7 @@ from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Button, Input, Label, Static
 
 from .importing import preview_import, apply_import
+from .messages import failed, reason
 from .modal import Modal, TextPrompt
 from .recovery_ui import RecoveryScreen
 from .terminal import terminal_text
@@ -76,7 +77,7 @@ class RecoveryImport:
                 recovered = self.vault.recovery(self.current)
             except (OSError, ValueError) as problem:
                 self.dirty = True
-                self.notify('Recovery copy could not be saved. Your draft remains on screen. ' + str(problem),
+                self.notify('Recovery copy could not be saved. Your draft remains on screen. ' + reason(problem) + '.',
                             severity='error', timeout=12)
                 return
             target = recovered
@@ -88,7 +89,7 @@ class RecoveryImport:
                         target = recovered
                         raise ValueError('External note moved to another workspace')
                 except (OSError, ValueError) as problem:
-                    message += ' External version unavailable; opened your recovery copy. ' + str(problem)
+                    message += ' External version unavailable; opened your recovery copy. ' + reason(problem) + '.'
             self.collection = target.collection
             self.query_one('#search', Input).value = ''
             self.load(target)
@@ -104,7 +105,8 @@ class RecoveryImport:
                 plan = preview_import(self.vault, Path(value), self.workspace, self.settings.default_collection,
                                       recursive=True)
             except (OSError, ValueError) as error:
-                self.notify(str(error), severity='error')
+                self.notify(failed(f'Nothing was imported from {value}', error,
+                                   'Check the path; a file, a folder or a .draftsExport works.'), severity='error')
                 return
             def confirmed(accepted):
                 if not accepted:
@@ -112,7 +114,7 @@ class RecoveryImport:
                 try:
                     result = apply_import(self.vault, plan)
                 except (OSError, ValueError) as error:
-                    self.notify('Import could not start: ' + str(error), severity='error')
+                    self.notify(failed('Import could not start', error), severity='error')
                     return
                 self.refresh_notes()
                 self.notify(result.summary() + ('. ' + ' | '.join(result.errors[:3]) if result.errors else ''),

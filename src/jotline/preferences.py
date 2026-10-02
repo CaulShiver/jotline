@@ -5,6 +5,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Input, Label, Select, Static, Switch, TextArea
 
+from .messages import key_name
 from .modal import Modal
 from .settings import BOOLEAN_SETTINGS, DEFAULT_COLLECTIONS, HOTKEY_ACTIONS, YIELDING_HOTKEYS, Settings, THEMES
 
@@ -83,11 +84,14 @@ class Preferences(Modal[Settings | None]):
                                 id='hotkey-' + action, tooltip=label)
                 yield Label('Outliner shortcuts', classes='pref-section')
                 yield Static('Optional overrides for outline commands. All commands are also in the outliner menu.')
-                from .outliner_ui import ACTIONS
+                from .outliner_ui import ACTIONS, outline_keys
+                defaults = outline_keys({})
                 for action, label in ACTIONS.items():
                     yield Label(label, classes='pref-label')
+                    default = ' / '.join(map(key_name, defaults.get(action, [])))
                     yield Input(s.outline_hotkeys.get(action, ''), id='outline-hotkey-' + action,
-                                placeholder='Use default / menu', tooltip=label)
+                                placeholder=f'Default: {default}' if default else 'No default key · in the menu',
+                                tooltip=label)
                 yield Button('Reset hotkeys', id='reset-hotkeys')
                 yield Label('Daily template', classes='pref-section')
                 yield Label('Daily template · {{date}} becomes today’s date; existing logs stay unchanged', classes='pref-label')
@@ -110,6 +114,8 @@ class Preferences(Modal[Settings | None]):
             self.query_one(target).focus(scroll_visible=True)
 
     def action_save(self):
+        for field in self.query('.-invalid'):
+            field.remove_class('-invalid')
         try:
             data = asdict(self.settings)
             for name in ('theme', 'sort_order', 'startup', 'default_collection'):
@@ -141,6 +147,10 @@ class Preferences(Modal[Settings | None]):
             settings.validate()
         except ValueError as error:
             self.query_one('#preferences-error', Static).update(str(error))
+            if field := getattr(error, 'field', None):
+                widget = self.query_one('#' + field, Input)
+                widget.add_class('-invalid')
+                widget.focus(scroll_visible=True)
             return
         self.dismiss(settings)
 

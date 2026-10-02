@@ -9,9 +9,12 @@ from textual.widgets import Markdown
 
 from .export import FORMAT_NAMES, ExportError, export_bytes, printable_markdown, suggested_name, write_export
 from .markdown_editor import MarkdownEditor, headings
+from .messages import failed
 from .modal import Palette, TextPrompt
 from .screens import MarkdownPreview
 from .tasks import gather, set_done
+
+INBOX_CLEAR = "Inbox is clear. A capture leaves the inbox when you move it to another collection."
 
 
 class Review:
@@ -34,7 +37,7 @@ class Review:
             return
         queue = self.vault.inbox_captures(self.workspace)
         if not queue:
-            self.notify("Inbox is clear. Captures you file leave the inbox.")
+            self.notify(INBOX_CLEAR)
             return
         target = queue[0]
         self.collection = "inbox"
@@ -47,7 +50,7 @@ class Review:
     def open_next_inbox_capture(self) -> None:
         queue = self.vault.inbox_captures(self.workspace)
         if not queue:
-            self.notify("Inbox is clear")
+            self.notify(INBOX_CLEAR)
             return
         self.collection = "inbox"
         self.load_id(queue[0].id)
@@ -137,7 +140,8 @@ class Review:
 
             note = self.vault.update_body(note_id, self.workspace, check)
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error", timeout=12)
+            self.notify(failed("The task was not ticked", error, "Open the note and tick it there."),
+                        severity="error", timeout=12)
             return
         if self.current.id == note_id:
             # load_id would see the same id and do nothing; the note in hand is
@@ -175,7 +179,7 @@ class Review:
             try:
                 written = write_export(target, export_bytes(title, body, fmt, titles))
             except (OSError, ExportError) as error:
-                self.call_from_thread(self.notify, f"Export failed: {error}", severity="error", timeout=12)
+                self.call_from_thread(self.notify, failed("Export failed", error), severity="error", timeout=12)
             else:
                 self.call_from_thread(self.notify, f"Exported to {written}", timeout=10)
 

@@ -212,8 +212,8 @@ async def test_non_alt_move_switch_pane_and_keys_in_outliner_palette(tmp_path):
         await pilot.press('escape', 'ctrl+p')
         assert isinstance(app.screen, Palette)
         labels = dict(app.screen.choices)
-        assert labels['move_up'] == 'Move selected branches up · alt+shift+up / ctrl+up / ctrl+shift+up'
-        assert labels['task'].endswith(' · ctrl+enter')
+        assert labels['move_up'] == 'Move selected branches up · Alt+Shift+Up / Ctrl+Up / Ctrl+Shift+Up'
+        assert labels['task'].endswith(' · Ctrl+Enter')
         assert labels['collapse_all'] == 'Fold all branches'
 
 

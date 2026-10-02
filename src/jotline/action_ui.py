@@ -14,6 +14,7 @@ from .action_history import ActionHistory, format_history, run_recorded_action a
 from .action_recipes import merge_recipes, read_recipes, write_recipes
 from .actions import ActionCommitError, BUILTIN_ACTIONS, MAX_STEPS, STEP_TYPES, preview_action, truncate_preview, validate_actions
 from .markdown_editor import MarkdownEditor
+from .messages import failed, plural, reason
 from .modal import Modal, Palette, TextPrompt
 from .settings import action_dicts
 
@@ -139,10 +140,13 @@ class ActionEditor(Modal[tuple | None]):
                     'step-remove': self.remove_step, 'step-up': lambda: self.move_step(-1),
                     'step-down': lambda: self.move_step(1), 'recipe-preview': self.preview,
                     'recipe-save': self.action_save, 'recipe-cancel': self.action_cancel}
+        failures = {'step-apply': 'Step not applied', 'step-target': 'No target chosen', 'step-add': 'Step not added',
+                    'step-remove': 'Step not removed', 'step-up': 'Step not moved', 'step-down': 'Step not moved',
+                    'recipe-preview': 'No preview'}
         try:
             handlers[event.button.id]()
         except (ValueError, OSError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed(failures.get(event.button.id, 'Not done'), error), severity='error')
 
     def selected_index(self):
         return self.query_one('#recipe-steps', OptionList).highlighted
@@ -204,12 +208,15 @@ class ActionEditor(Modal[tuple | None]):
                 raise ValueError('Action already exists; choose a different name')
             for step in self.steps:
                 if step['type'] == 'append':
-                    target = self.vault.read(step['value'])
+                    try:
+                        target = self.vault.read(step['value'])
+                    except FileNotFoundError:
+                        raise ValueError('The append target note no longer exists; choose another target') from None
                     if target.id == self.note.id or target.workspace != self.note.workspace or target.collection == 'trash':
                         raise ValueError('Choose another non-trash target note in this workspace')
             self.dismiss((name, deepcopy(self.steps)))
         except (ValueError, OSError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed('Action not saved', error), severity='error')
 
 
 class ActionWorkflows:
@@ -255,7 +262,8 @@ class ActionWorkflows:
             self.replace_settings(actions=values)
             self.notify('Action saved. Use Run local action to execute it.')
         except (ValueError, OSError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed(f'Action “{name}” was not saved', error, 'Fix it in the editor and save again.'),
+                        severity='error')
             self.open_action_editor(name, steps, original=original)
 
     def save_action_prompt(self):
@@ -274,7 +282,8 @@ class ActionWorkflows:
             self.replace_settings(actions=values)
             self.notify('Action saved; choose Run local action to use it')
         except (ValueError, OSError, RecursionError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed(f'Action “{name}” was not saved', error,
+                               'The note must be a JSON list of steps, like [{"type": "strip"}].'), severity='error')
 
     def choose_action(self, delete=False):
         if not self.settings.actions:
@@ -295,21 +304,29 @@ class ActionWorkflows:
             def export(body):
                 note = self.vault.new(body, workspace=self.workspace)
                 self.vault.save(note)
-                self.notify(f'Exported action output to new inbox note {note.id}')
+                self.notify(f'Saved the action output as a new inbox note, “{note.title}”')
             steps = action_dicts({name: self.settings.actions[name]})[name]
             note = run_action(self.vault, self.current, steps, name=name,
                               history_warning=lambda message: self.notify(message, severity='warning'),
                               selection=self.query_one('#editor', MarkdownEditor).selected_text,
                               copy=self.copy_note_text, export=export)
+            before = self.current
             self.accept_action_note(note)
             self.status('Saved')
-            self.notify('Action completed')
+            changes = ['text changed'] if note.body != before.body else []
+            if note.collection != before.collection:
+                changes.append(f'moved to {note.collection}')
+            self.notify(f'Ran “{name}” on “{note.title}”: {plural(len(steps), "step")} applied, '
+                        + (' and '.join(changes) or 'note text unchanged'))
         except ActionCommitError as error:
             self.accept_action_note(error.note)
             self.status('Saved · durability warning')
-            self.notify(str(error) + '. Review action history before retrying.', severity='warning', timeout=12)
+            self.notify(reason(error) + '. Check View action run history before running it again.',
+                        severity='warning', timeout=12)
         except (ValueError, OSError) as error:
-            self.notify(f'Action stopped: {error}. Earlier completed steps remain applied.', severity='error', timeout=12)
+            self.notify(failed(f'Action “{name}” stopped', error,
+                               'Steps that finished before it stay applied; see View action run history.'),
+                        severity='error', timeout=12)
 
     def accept_action_note(self, note):
         editor = self.query_one('#editor', MarkdownEditor)
@@ -352,7 +369,7 @@ class ActionWorkflows:
                 write_recipes(path, {name: action_dicts({name: self.settings.actions[name]})[name]})
                 self.notify('Recipe exported. Review template text and target IDs before sharing.')
             except (ValueError, OSError) as error:
-                self.notify(str(error), severity='error')
+                self.notify(failed(f'Recipe “{name}” was not exported', error), severity='error')
 
     def import_action_recipes(self):
         self.push_screen(TextPrompt('Import recipes (adds configuration; does not run actions)', '/path/to/recipe.json'),
@@ -363,12 +380,12 @@ class ActionWorkflows:
             try:
                 incoming = read_recipes(path)
                 self.replace_settings(actions=merge_recipes(action_dicts(self.settings.actions), incoming))
-                self.notify(f'Imported {len(incoming)} recipes. Review steps and target IDs before running.')
+                self.notify(f'Imported {plural(len(incoming), "recipe")}. Review steps and target IDs before running.')
             except (ValueError, OSError, RecursionError) as error:
-                self.notify(str(error), severity='error')
+                self.notify(failed(f'No recipes were imported from {path}', error), severity='error')
 
     def show_action_history(self):
         try:
             self.push_screen(ActionReport('Action history', format_history(ActionHistory(self.vault.path).read())))
         except (ValueError, OSError, RecursionError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed('Could not show action history', error), severity='error')
