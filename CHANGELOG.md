@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+Closes the last four items of the 2026-09-21 red team.
+
+- **A key file from another vault is named as such.** Each encrypted note now
+  records which key sealed it (`key_id` in its header, an HMAC of the note key
+  that reveals nothing about it), and so does the key file. Unlocking with a key
+  file that seals none of the vault's notes says so and points to a backup,
+  instead of reporting a wrong passphrase. Older key files gain the ID the next
+  time they unlock; older notes gain it the next time they are saved. 0.9.9 reads
+  both: it ignores the new fields, and the key file checksum is unchanged.
+- **Imports read a Jotline header only when asked.** `jotline import
+  --jotline-notes` keeps each note's collection, star and dates; without it the
+  header stays in the note as text, so a handed-over file cannot file, star or
+  backdate itself. The preview says how many files carry a header, and the app
+  asks. Encrypted notes are still skipped either way.
+- **Opening the history of a note whose history folder is a file or a link**
+  shows no saved versions and the same warning saving gives, instead of an
+  error.
+- **Desktop entries escape quoted arguments the way the spec reads them.** The
+  string escapes apply before the quoting rule, so a literal `$` in a quoted
+  path is written `\\$` and a backslash as four. A newline or tab in an argument is
+  written as `\n` or `\t`, and any other control character is refused rather than
+  breaking the file.
+
 ## 0.9.9 — 2026-10-02
 
 - **`jotline backups` lists quarantined daily archives.** Doctor reported them;

@@ -84,8 +84,10 @@ def test_desktop_entry_is_a_capture_launcher():
 def test_desktop_exec_quotes_spaces_and_reserved_characters():
     quoted = desktop.quote_desktop_arg("/home/user/My Notes/jotline")
     assert quoted == '"/home/user/My Notes/jotline"'
+    # The string escape rule applies before the quoting rule, so inside quotes a
+    # literal $ is written \\$ and a literal backslash as four of them.
     dollar = desktop.quote_desktop_arg("cmd$oops")
-    assert dollar == '"cmd\\$oops"'
+    assert dollar == '"cmd\\\\$oops"'
     body = desktop.render_desktop_entry(["/home/user/My Notes/jotline"])
     assert 'Exec="/home/user/My Notes/jotline" desktop launch' in body
 
@@ -377,3 +379,45 @@ def test_installed_mode_is_user_private(desktop_home):
     assert stat.S_ISREG(path.stat().st_mode)
     if os.name != "nt":
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+
+def read_desktop_arg(written):
+    """A reader written from the spec: string escapes first, then the quoting rule."""
+    string = {"s": " ", "n": "\n", "t": "\t", "r": "\r", "\\": "\\"}
+    unescaped, index = "", 0
+    while index < len(written):
+        if written[index] == "\\":
+            unescaped += string[written[index + 1]]
+            index += 2
+        else:
+            unescaped += written[index]
+            index += 1
+    if not unescaped.startswith('"'):
+        return unescaped.replace("%%", "%")
+    inner, value, index = unescaped[1:-1], "", 0
+    while index < len(inner):
+        if inner[index] == "\\":
+            assert inner[index + 1] in '"`$\\'
+            index += 1
+        value += inner[index]
+        index += 1
+    return value.replace("%%", "%")
+
+
+@pytest.mark.parametrize("value, written", [
+    ("a\\b", '"a\\\\\\\\b"'),
+    ('say "hi"', '"say \\\\"hi\\\\""'),
+    ("tick`", '"tick\\\\`"'),
+    ("cost $5 at 100%", '"cost \\\\$5 at 100%%"'),
+    ("two\nlines", '"two\\nlines"'),
+    ("tab\there", '"tab\\there"'),
+])
+def test_desktop_exec_applies_string_escapes_before_quoting(value, written):
+    assert desktop.quote_desktop_arg(value) == written
+    assert read_desktop_arg(written) == value
+
+
+def test_desktop_exec_refuses_a_control_character_it_cannot_write():
+    with pytest.raises(ValueError, match="desktop entry"):
+        desktop.quote_desktop_arg("bell\x07")

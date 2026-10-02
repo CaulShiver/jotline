@@ -352,7 +352,9 @@ jotline import ~/Downloads/library.draftsExport --apply
 ```
 
 CLI imports also support `--preview` for a single text file and
-`--duplicates copy` to create separate copies. See [import and recovery
+`--duplicates copy` to create separate copies. To move notes between Jotline
+vaults, add `--jotline-notes` so each note keeps its collection, star and dates;
+without it a Jotline header stays in the note as text. See [import and recovery
 details](docs/import-recovery.md) for limits and metadata mapping.
 
 Redirected export preserves the note body, including line endings. Export and
