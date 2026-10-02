@@ -53,6 +53,37 @@
 - **The connections bar's empty state points at the right command.** It now
   suggests typing `[[` or Insert note link from the command palette, not the
   connections key, which had nothing to show.
+- **Read commands work before the first capture.** `list`, `tasks`, `stats`,
+  `tags`, `workspaces`, `recoveries` and `backups` print an empty result and exit
+  0 on a new install instead of "Vault does not exist", and still create
+  nothing. `doctor` says where the vault will be created.
+- **`capture` confirms in words at a terminal.** It prints `Saved to inbox:
+  <title> (<short id>)`, or `Added to daily log <date>`. Piped or redirected, it
+  still prints the bare ID for scripts.
+- **`open` finds notes by part of the title.** When no exact title or ID matches,
+  `jotline open milk` opens the one clearly best match, or lists the top five
+  with short IDs. `jotline search` is another name for `jotline list`.
+- **Empty results say so.** At a terminal, `list`, `tasks`, `tags` and `actions`
+  explain on stderr why nothing printed, and `jotline run` with no actions set up
+  points at docs/actions.md. Scripts see the same empty output as before.
+- **Global options work after the command**, so `jotline list --vault X`
+  works. A value given after the command wins.
+- **A mistyped `--workspace` is refused instead of creating a workspace.** Read
+  commands report "No workspace named X"; captures, imports and other writes
+  need `--new-workspace` to start one. Workspaces created in the app, and
+  `default`, always count.
+- **Clearer shell errors.** A `--vault` that is a file says so instead of
+  "[Errno 17]". `--help` groups the commands by task and shows examples, and a
+  usage error prints only that command's usage. The settings warning names the
+  file it could not load.
+- **Import preview prints real columns, and warnings alone no longer fail an
+  import.** Fields are tab-separated and escaped one by one. An import that
+  created notes exits 0 even when some sources were skipped with a warning.
+- **A wrong `JOTLINE_PASSPHRASE` only fails commands that need it.** Others
+  print a warning and carry on with encrypted notes locked.
+- **A broken converter keeps the HTML advice.** When LibreOffice is installed
+  but cannot convert, Word and PDF export show its error and suggest exporting
+  HTML instead, as they do when no converter is installed.
 
 ## 0.9.9 — 2026-10-02
 

@@ -37,10 +37,11 @@ EXIT_GRACE_SECONDS = 20
 BROWSERS = ("chromium", "chromium-browser", "google-chrome-stable", "google-chrome", "chrome",
             "microsoft-edge-stable", "microsoft-edge", "msedge", "brave-browser", "brave")
 PDF_ENGINES = ("weasyprint", "wkhtmltopdf", "typst", "tectonic", "xelatex", "lualatex", "pdflatex")
+FALLBACK = {"docx": "export HTML and open it in Word", "pdf": "export HTML and print it from a browser"}
 MISSING_TOOLS = {
-    "docx": "Word export needs pandoc or LibreOffice; install one, or export HTML and open it in Word",
+    "docx": f"Word export needs pandoc or LibreOffice; install one, or {FALLBACK['docx']}",
     "pdf": ("PDF export needs Chromium, Google Chrome, Microsoft Edge, LibreOffice, or pandoc with a PDF "
-            "engine; install one, or export HTML and print it from a browser"),
+            f"engine; install one, or {FALLBACK['pdf']}"),
 }
 
 STYLE = """
@@ -297,7 +298,10 @@ def export_bytes(title: str, body: str, fmt: str, titles: dict[str, str] | None 
             failures.append(f"{tool}: {problem}")
         if not failures:
             raise ExportError(MISSING_TOOLS[fmt])
-        raise ExportError(f"{FORMAT_NAMES[fmt]} export failed ({'; '.join(failures)})")
+        # A converter that is installed but broken, such as LibreOffice without Writer, is no
+        # more use than a missing one, so the same way out applies.
+        raise ExportError(f"{FORMAT_NAMES[fmt]} export failed ({'; '.join(failures)}); "
+                          f"repair or install a converter, or {FALLBACK[fmt]}")
 
 
 def write_export(target: Path, data: bytes, *, force: bool = False) -> Path:

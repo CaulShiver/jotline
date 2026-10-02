@@ -326,11 +326,11 @@ class Settings:
                 settings, rejected = cls._partial(data)
                 if rejected:
                     settings._baseline = settings.values()
-                    return settings, (f'Could not load settings field(s) {", ".join(rejected)}; '
+                    return settings, (f'Could not load settings field(s) {", ".join(rejected)} from {path}; '
                                       f'using defaults for them. {error}')
             settings = cls()
             settings._baseline = None
-            return settings, f'Could not load settings; using defaults. {error}'
+            return settings, f'Could not load settings from {path}; using defaults. {error}'
 
     def save(self, path: Path):
         self.validate()

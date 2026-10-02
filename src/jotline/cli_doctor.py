@@ -305,6 +305,18 @@ def doctor_report(vault: Vault, settings_warning: str, *, cli_path: str | None =
     }
 
 
+def missing_vault_report(path: Path, *, cli_path: str | None = None) -> dict[str, object]:
+    """Doctor before the first capture: nothing is wrong, there is just no folder yet."""
+    return {
+        "jotline": {"version": __version__, "module": str(Path(cli_path or __file__).resolve())},
+        "python": {"version": sys.version.split()[0], "executable": sys.executable},
+        "platform": {"system": platform.system(), "release": platform.release(), "machine": platform.machine()},
+        "paths": {"vault": str(path), "default_vault": str(default_vault()), "cwd": str(Path.cwd())},
+        "vault": {"path": str(path), "exists": False},
+        "warnings": [],
+    }
+
+
 def format_doctor(report: dict[str, object]) -> str:
     """Plain-text health summary for the CLI and in-app Check vault health."""
     vault = report["vault"]
