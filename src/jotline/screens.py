@@ -130,8 +130,12 @@ class FindInNote(Modal[None]):
 
     def on_mount(self) -> None:
         editor = self.editor()
-        self.anchor = editor.char_offset(editor.cursor_location, editor.text)
-        self.query_one("#find-query", Input).focus()
+        start, end = sorted((editor.selection.start, editor.selection.end))
+        self.anchor = editor.char_offset(start, editor.text)
+        query = self.query_one("#find-query", Input)
+        if start[0] == end[0] and start != end:
+            query.value = editor.selected_text
+        query.focus()
 
     def show_match(self, *, reverse: bool = False, initial: bool = False) -> None:
         query = self.query_one("#find-query", Input).value

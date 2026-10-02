@@ -182,6 +182,29 @@ async def test_find_within_note_cycles_matches_and_returns_focus(tmp_path):
         assert editor.has_focus
 
 
+async def test_find_prefills_from_a_single_line_selection(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 30)) as pilot:
+        editor = app.query_one('#editor', TextArea)
+        editor.load_text('one beta\ntwo beta')
+        editor.move_cursor((1, 4))
+        editor.move_cursor((1, 8), select=True)
+        app.command('find')
+        await pilot.pause()
+        assert app.screen.query_one('#find-query', Input).value == 'beta'
+        assert editor.selection == ((1, 4), (1, 8))
+        assert 'Match 2 of 2' in str(app.screen.query_one('#find-status', Static).render())
+        await pilot.press(*'one')
+        await pilot.pause()
+        assert app.screen.query_one('#find-query', Input).value == 'one'
+        await pilot.press('escape')
+        editor.move_cursor((0, 4))
+        editor.move_cursor((1, 3), select=True)
+        app.command('find')
+        await pilot.pause()
+        assert app.screen.query_one('#find-query', Input).value == ''
+
+
 async def test_find_starts_at_cursor_on_later_line_with_unicode(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test(size=(100, 30)) as pilot:
