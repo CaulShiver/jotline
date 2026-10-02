@@ -74,6 +74,7 @@ Settings.
 | `;;` | Pick a template snippet (not inside code) |
 | `Ctrl+click` | Follow the link under the pointer |
 | `Shift+F10` | Open the menu for a focused sidebar note ([note list menu](note-menu.md)) |
+| `Delete` | Move the highlighted sidebar note to Trash (restore it from the Trash collection) |
 
 Undo history is kept for each of the last eight notes you left. It is dropped
 when the note's text changed in between (another program, `$EDITOR`, a task
