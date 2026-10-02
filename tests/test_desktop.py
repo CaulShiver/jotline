@@ -330,7 +330,7 @@ def test_capture_command_uses_injected_jotline(monkeypatch, tmp_path):
     args = Namespace(vault=str(vault), workspace="work", daily=True)
     assert desktop.capture_command(args) == [
         "/opt/jotline/bin/jotline", "--vault", str(vault.expanduser()),
-        "--workspace", "work", "capture", "--daily",
+        "--workspace", "work", "--new-workspace", "capture", "--daily",
     ]
     args = Namespace(vault=str(vault), workspace=None, daily=False)
     assert desktop.capture_command(args) == [
