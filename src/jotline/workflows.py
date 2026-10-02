@@ -232,7 +232,7 @@ class Workflows:
             return
         offset = editor.char_offset(editor.cursor_location, editor.text)
         trigger = editor.text[max(0, offset - 2):offset]
-        if trigger not in {'[[', ';;'}:
+        if trigger not in {'[[', ';;'} or editor.in_code(editor.location_at(offset - 2)):
             return
         original = editor.text
         try:

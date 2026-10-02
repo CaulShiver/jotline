@@ -1,12 +1,14 @@
 from dataclasses import replace
 
 import pytest
+from textual import events
 from textual.widgets import Markdown, TextArea
 
 from jotline.app import Jotline, MarkdownPreview, Palette
 from jotline.export import printable_markdown
+from jotline.limits import EDIT_LIMIT_BYTES
 from jotline.markdown_editor import (MarkdownEditor, continuation, format_table, headings, highlight_markdown,
-                                     table_bounds, toggle_lines)
+                                     megabytes, table_bounds, toggle_lines)
 from jotline.settings import Settings
 from jotline.store import Vault
 from jotline.tasks import task_lines
@@ -52,6 +54,11 @@ def test_code_span_contents_are_not_emphasis():
     ('1. ', ('', True)),
     ('- [ ] ', ('', True)),
     ('> ', ('', True)),
+    ('  - ', ('- ', True)),
+    ('    - [ ] ', ('  - [ ] ', True)),
+    ('  1. ', ('1. ', True)),
+    ('\t\t- ', ('\t- ', True)),
+    ('> \t* ', ('> * ', True)),
     ('plain text', None),
     ('-not a list', None),
     ('- - -', None),
@@ -59,6 +66,16 @@ def test_code_span_contents_are_not_emphasis():
 ])
 def test_continuation(line, expected):
     assert continuation(line, len(line)) == expected
+
+
+@pytest.mark.parametrize('above,line,expected', [
+    (['1. one'], '   - ', '- '),
+    (['- a', '    - b', '      text', ''], '        - ', '    - '),
+    (['\t- a'], '\t\t1. ', '\t1. '),
+    (['- far', 'Paragraph'], '    - ', '  - '),
+])
+def test_empty_nested_item_outdents_to_its_parent(above, line, expected):
+    assert continuation(line, len(line), above) == (expected, True)
 
 
 def test_toggle_lines_replaces_and_removes_markers():
@@ -131,6 +148,15 @@ async def test_enter_continues_and_ends_lists(tmp_path):
         editor.move_cursor(editor.document.end)
         await pilot.press('enter', 'x')
         assert editor.text == '1. one\n2. x'
+        editor.load_text('- a\n\t- b')
+        editor.move_cursor(editor.document.end)
+        await pilot.press('enter', 'enter')
+        assert editor.text == '- a\n\t- b\n- '
+        assert editor.cursor_location == (2, 2)
+        await pilot.press('enter')
+        assert editor.text == '- a\n\t- b\n'
+        await pilot.press('ctrl+z')
+        assert editor.text == '- a\n\t- b\n- '
         editor.load_text('```\n- code')
         editor.move_cursor(editor.document.end)
         await pilot.press('enter')
@@ -482,3 +508,20 @@ async def test_status_line_catches_up_with_the_note_after_a_burst_of_typing(tmp_
         app.refresh_status()
         await pilot.pause()
         assert app.note_summary() == (7, ['alpha', 'beta'])
+
+
+async def test_large_paste_warns_about_the_file_limit_without_blocking(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test() as pilot:
+        editor = app.editor()
+        await editor._on_paste(events.Paste(('y' * 99 + '\n') * 100))
+        await pilot.pause()
+        assert not app._notifications
+        line = 'é' * 499 + '\n'
+        big = line * (EDIT_LIMIT_BYTES // len(line.encode()) + 2048)
+        await editor._on_paste(events.Paste(big))
+        await pilot.pause()
+        assert editor.text.endswith(big)
+        [message] = [item.message for item in app._notifications if 'MB file limit' in item.message]
+        assert '10 MB file limit' in message and megabytes(len(editor.text.encode()) - EDIT_LIMIT_BYTES) in message
+    assert megabytes(1536 * 1024) == '1.5 MB' and megabytes(10) == 'under 0.1 MB'

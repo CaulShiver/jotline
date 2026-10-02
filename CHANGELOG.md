@@ -34,6 +34,25 @@
   Ctrl+Shift+Up/Down) move branches, and F6 switches between the tree and the
   block, for terminals that send Ctrl+Tab as plain Tab. The outliner's command
   palette now shows each command's keys.
+- **Undo survives switching notes.** Each of the last eight notes you left keeps
+  its undo history, so going back and pressing ctrl+z picks up where you were.
+  The history is dropped whenever the note's text changed in between, from
+  another program, `$EDITOR`, a task ticked from the palette or a sync, and it is
+  never kept for encrypted or trashed notes.
+- **`[[` and `;;` stay quiet inside code.** Typing `for(;;)` or a `[[` in a
+  fenced block or an inline code span no longer opens the snippet or link picker.
+- **Enter on an empty nested list item moves it up a level.** An empty `  - `,
+  `    - [ ] ` or `  1. ` steps out to its parent's indentation, tabs or spaces as
+  the list uses them, instead of wiping the line. A top-level empty item still
+  ends the list.
+- **A paste that makes a note too big says so at once.** The warning gives the
+  note's size in megabytes and how far it is over the 10 MB limit; the paste
+  itself still goes in so it can be trimmed.
+- **Find starts with the selected text.** Opening find with a word or phrase
+  selected on one line fills it in and jumps to that match.
+- **The connections bar's empty state points at the right command.** It now
+  suggests typing `[[` or Insert note link from the command palette, not the
+  connections key, which had nothing to show.
 
 ## 0.9.9 — 2026-10-02
 

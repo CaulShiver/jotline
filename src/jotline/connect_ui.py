@@ -89,9 +89,7 @@ class Connections:
         if self.current.locked:
             line = "Encrypted note (locked). Unlock to see its outgoing links."
         elif not incoming and not outgoing:
-            backlinks_key = self.settings.effective_hotkeys.get("backlinks") or "alt+k"
-            line = self.shortcut_text(
-                f"No links yet. Type [[ to connect this note, or {backlinks_key} / ctrl+p → Insert note link")
+            line = self.shortcut_text("No links yet. Type [[ to link another note, or ctrl+p → Insert note link")
         else:
             broken = [item for item in outgoing if item.status == "broken"]
             titles = [item.title for item in incoming[:3] if item.title]
