@@ -55,6 +55,9 @@ OTHER_WORKSPACE = "Note is in another workspace; pass --workspace NAME"
 # Start with the literal marker so the regex engine can skip directly to '#'.
 # The two-character lookbehind then rejects the same word/# prefixes as before.
 TAG = re.compile(r"#(?<![\w#]#)([\w][\w/-]*)", re.UNICODE)
+# Leading heading, quote, list and task markers, and emphasis wrapping a whole title.
+TITLE_MARKER = re.compile(r"(?:#+|>|[-*+](?=\s|$)|\d{1,9}[.)](?=\s)|\[[ xX]\](?=\s|$))\s*")
+TITLE_WRAP = re.compile(r"(\*\*|__|~~|[*_`])(?=\S)(.+?)(?<=\S)\1")
 
 
 def _derived_values(pattern: re.Pattern, body: str, label: str) -> tuple[set[str], str]:
@@ -64,6 +67,20 @@ def _derived_values(pattern: re.Pattern, body: str, label: str) -> tuple[set[str
             return values, f"Note has more than {MAX_DERIVED_ITEMS} {label}; results were truncated"
         values.add(match.group(1))
     return values, ""
+
+
+def plain_title(line: str) -> str:
+    """A title line as shown: Markdown block markers and whole-line emphasis removed."""
+    text = line.strip()
+    while True:
+        previous = text
+        while match := TITLE_MARKER.match(text):
+            text = text[match.end():]
+        if (wrapped := TITLE_WRAP.fullmatch(text)) and wrapped[1] not in wrapped[2]:
+            text = wrapped[2]
+        text = text.strip()
+        if text == previous:
+            return text
 
 
 def validate_workspace(name: str) -> str:
@@ -206,7 +223,13 @@ class Note:
 
     @property
     def title(self) -> str:
-        return self.heading[:100]
+        """The heading without Markdown markers; a line of only markers yields to the next one."""
+        if self.locked:
+            return self.heading
+        for line in self.body.split("\n"):
+            if line.strip() and (text := plain_title(line)):
+                return text[:100]
+        return "Untitled"
 
     @property
     def tags(self) -> set[str]:

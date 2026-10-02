@@ -126,10 +126,13 @@ class Jotline(App):
         Binding("escape", "editor_focus", "Write", show=False),
     ]
 
-    def __init__(self, vault: Vault, workspace: str | None = None, initial_note: Note | None = None):
+    def __init__(self, vault: Vault, workspace: str | None = None, initial_note: Note | None = None,
+                 *, first_run: bool = False):
         super().__init__()
         self.vault = vault
         self.initial_note = initial_note
+        # Only a plain `jotline` launch may introduce an empty vault.
+        self.first_run = first_run and initial_note is None
         self.settings_path = vault.path / '.jotline-settings.json'
         self.settings, self.settings_warning = Settings.load(self.settings_path)
         self.workspace = validate_workspace(self.settings.active_workspace if workspace is None else workspace)
@@ -227,6 +230,9 @@ class Jotline(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        if (self.first_run and not self.settings.walkthrough_shown and not self.settings_warning
+                and next(self.vault.path.glob("*.md"), None) is None):
+            self.call_after_refresh(self.first_run_walkthrough)
         self.apply_settings(startup=True)
         self.omarchy_sync.start()
         self.update_responsive_layout()
@@ -907,7 +913,7 @@ class Jotline(App):
     @staticmethod
     def note_excerpt(note: Note) -> str:
         lines = [line.strip().lstrip("# ") for line in note.body.splitlines() if line.strip()]
-        excerpt = next((line for line in lines if line != note.title), "")
+        excerpt = next((line for line in lines if line not in (note.heading, note.title)), "")
         return re.sub(r"\s+", " ", excerpt)[:44]
 
     def note_choices(self, notes: list[Note]) -> list[tuple[str, str]]:
@@ -1212,8 +1218,8 @@ class Jotline(App):
                     group="everyday"),
             Command("review", "Start weekly review", lambda: self.open_generated_note(REVIEW),
                     group="everyday"),
-            Command("help", "Open writing and workflow guide", lambda: self.open_generated_note(GUIDE),
-                    group="everyday"),
+            Command("help", "Open writing and workflow guide",
+                    lambda: self.push_screen(Walkthrough(self.shortcut_text(GUIDE))), group="everyday"),
         ]
         commands.extend(Command("format:" + style, "Format " + label,
                                 lambda style=style: self.action_format_markdown(style), "format_" + style)
@@ -1361,10 +1367,16 @@ class Jotline(App):
             self.follow_wiki_target(link.target)
 
     def open_generated_note(self, body: str) -> None:
+        """Open a filled-in draft that, like a new thought, is saved only once it is typed into."""
         if self.save_current():
             self.load(self.vault.new(self.shortcut_text(body), workspace=self.workspace))
-            self.dirty = True
-            self.save_current()
+
+    def first_run_walkthrough(self) -> None:
+        try:
+            self.replace_settings(walkthrough_shown=True)
+        except (OSError, ValueError):
+            pass
+        self.show_walkthrough()
 
 
 _bind_capabilities(Jotline, Encryption, Review, RecoveryImport, ActionWorkflows, Views, Workflows, Connections)
