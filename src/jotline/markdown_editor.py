@@ -9,7 +9,8 @@ the note.
 from __future__ import annotations
 
 from bisect import bisect_right
-from collections import defaultdict
+from dataclasses import replace as fresh
+from collections import OrderedDict, defaultdict
 from collections.abc import Sequence
 import re
 
@@ -527,6 +528,39 @@ def syntax_styles(theme) -> dict[str, Style]:
         "md.table": Style(color=muted),
         "md.tag": Style(color=secondary),
     }
+
+
+class UndoStash:
+    """Undo histories of recently left notes, each kept with the exact text it was recorded against.
+
+    Textual's ``load_text`` clears the history, so switching notes used to lose
+    it. A history is only valid for the document it was built on, so it comes
+    back only when the note's text is unchanged; anything else drops it.
+    """
+
+    def __init__(self, size: int = 8) -> None:
+        self.size = size
+        self.entries: OrderedDict[str, tuple[str, object]] = OrderedDict()
+
+    def keep(self, key: str, editor: MarkdownEditor) -> None:
+        """Detach the editor's history for ``key``, leaving it an empty one to load into."""
+        self.entries.pop(key, None)
+        history, editor.history = editor.history, fresh(editor.history)
+        if history.undo_stack or history.redo_stack:
+            self.entries[key] = (editor.text, history)
+            while len(self.entries) > self.size:
+                self.entries.popitem(last=False)
+
+    def restore(self, key: str, editor: MarkdownEditor) -> bool:
+        text, history = self.entries.pop(key, (None, None))
+        if history is None or text != editor.text:
+            return False
+        history.checkpoint()
+        editor.history = history
+        return True
+
+    def forget(self, key: str) -> None:
+        self.entries.pop(key, None)
 
 
 class MarkdownEditor(TextArea):

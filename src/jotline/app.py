@@ -30,7 +30,7 @@ from .environment import child_environment
 from .external_editor import ENCRYPTED, NO_EDITOR, UNSAVED, configured_editor
 from .import_ui import RecoveryImport
 from .links import wiki_link_at, wiki_target_from_href
-from .markdown_editor import JOTLINE_THEME, MarkdownEditor
+from .markdown_editor import JOTLINE_THEME, MarkdownEditor, UndoStash
 from .modal import Palette, TextPrompt
 from .navigation import Views, Walkthrough
 from .note_menu import NoteList, NoteMenu
@@ -154,6 +154,7 @@ class Jotline(App):
         self.inbox_capture_count = 0
         self.recent_note_ids = []
         self.note_positions = {}
+        self.undo_stash = UndoStash()
         self._editor_baseline = ""
         self.view_sort = None
         self.active_view = None
@@ -597,6 +598,8 @@ class Jotline(App):
         if is_current:
             gone = moved.workspace != self.workspace or moved.collection == 'trash'
             self.load(self.new_note() if gone else moved)
+        if moved.collection == 'trash':
+            self.undo_stash.forget(moved.id)
         self.refresh_notes()
         self.notify_backup_warning()
         self.notify(f'Moved to {workspace or collection}')
@@ -722,12 +725,18 @@ class Jotline(App):
             raise ValueError("Note moved to another workspace; save a recovery copy if needed")
         editor = self.editor()
         self.note_positions[self.current.id] = editor.cursor_location
+        if not (self.current.encrypted or self.current.locked):
+            self.undo_stash.keep(self.current.id, editor)
         if self.current.original is not None and self.current.id != note.id:
             self.recent_note_ids = [self.current.id] + [key for key in self.recent_note_ids if key != self.current.id]
             self.recent_note_ids = self.recent_note_ids[:50]
         self.current, self.dirty, self.last_error = note, False, ""
         editor.load_text(note.body)
         self._editor_baseline = editor.text
+        if note.encrypted or note.locked:
+            self.undo_stash.forget(note.id)
+        else:
+            self.undo_stash.restore(note.id, editor)
         editor.move_cursor(self.note_positions.get(note.id, (0, 0)))
         editor.focus()
         self.status("Saved" if note.original is not None else "Ready")

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Undo survives switching notes.** Each of the last eight notes you left keeps
+  its undo history, so going back and pressing ctrl+z picks up where you were.
+  The history is dropped whenever the note's text changed in between, from
+  another program, `$EDITOR`, a task ticked from the palette or a sync, and it is
+  never kept for encrypted or trashed notes.
 - **`[[` and `;;` stay quiet inside code.** Typing `for(;;)` or a `[[` in a
   fenced block or an inline code span no longer opens the snippet or link picker.
 - **Enter on an empty nested list item moves it up a level.** An empty `  - `,
