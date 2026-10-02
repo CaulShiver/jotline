@@ -215,3 +215,21 @@ async def test_non_alt_move_switch_pane_and_keys_in_outliner_palette(tmp_path):
         assert labels['move_up'] == 'Move selected branches up · alt+shift+up / ctrl+up / ctrl+shift+up'
         assert labels['task'].endswith(' · ctrl+enter')
         assert labels['collapse_all'] == 'Fold all branches'
+
+
+@pytest.mark.parametrize('body', ['- run `for(;;', '- code `x [['])
+async def test_block_completion_triggers_are_ignored_inside_code(tmp_path, body):
+    from jotline.modal import Palette
+    from jotline.templates import Templates
+    Templates(tmp_path).save('snippet', 'expanded')
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(110, 35)) as pilot:
+        screen = await open_outline(app, pilot, body)
+        screen.action_edit_block()
+        await pilot.pause()
+        editor = screen.block_editor()
+        editor.move_cursor(editor.document.end)
+        await pilot.pause()
+        screen.offer_completion()
+        await pilot.pause()
+        assert not isinstance(app.screen, Palette)

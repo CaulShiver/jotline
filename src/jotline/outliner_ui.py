@@ -841,7 +841,8 @@ class OutlinerScreen(Modal[None]):
         editor = self.block_editor()
         offset = editor.char_offset(editor.cursor_location)
         trigger = editor.text[max(0, offset - 2):offset]
-        if editor.has_focus and editor.selection.is_empty and trigger in {'[[', ';;'} and self.app.screen is self:
+        if (editor.has_focus and editor.selection.is_empty and trigger in {'[[', ';;'} and self.app.screen is self
+                and not editor.in_code(editor.cursor_location)):
             self.insert_completion(trigger, offset)
 
     def insert_completion(self, trigger, offset=None):
