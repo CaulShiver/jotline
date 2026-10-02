@@ -1,5 +1,20 @@
 # Release verification
 
+## 0.9.9
+
+- Package version `0.9.9`. Publication gates on Ubuntu and macOS × Python
+  3.11–3.13, as for 0.9.8.
+- Local locked suite on macOS 27 / Python 3.13: **1053 passed, 21 skipped**.
+  `ruff check`, `uv lock --check` and `git diff --check` passed.
+- `uv build --clear` produced the wheel and sdist; `release_metadata.py
+  --checksums` verified `v0.9.9` and wrote `SHA256SUMS`; `twine==7.0.0 check`
+  passed. `install.py --from-dir dist` installed the wheel into a clean venv,
+  `jotline --version` reported `0.9.9`, and the installed-wheel and POSIX PTY
+  smoke tests passed.
+- Key files gain a `checksum` field. 0.9.8 ignores it, and 0.9.9 reads key
+  files without one. Notes and settings are unchanged.
+- VoiceOver remains untested; issue #3 stays open.
+
 ## 0.9.8
 
 - Package version `0.9.8`. Publication still gates on Ubuntu and macOS ×
