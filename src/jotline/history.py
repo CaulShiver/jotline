@@ -400,6 +400,26 @@ def list_archives(vault) -> list[BackupArchive]:
     return archives
 
 
+def list_quarantined(vault) -> list[str]:
+    """Names of daily archives set aside after failing validation, newest first."""
+    root = vault.path / ".jotline-backups"
+    try:
+        entries = sorted(root.iterdir(), key=lambda path: path.name)[:MAX_BACKUP_ENTRIES]
+    except OSError:
+        return []
+    found = []
+    for path in entries:
+        if not QUARANTINE_NAME.fullmatch(path.name):
+            continue
+        try:
+            info = path.lstat()
+        except OSError:
+            continue
+        if stat.S_ISREG(info.st_mode):
+            found.append((info.st_mtime_ns, path.name))
+    return [name for _, name in sorted(found, reverse=True)]
+
+
 def newest_valid_archive(archives: list[BackupArchive]) -> BackupArchive | None:
     return next((archive for archive in archives if archive.valid), None)
 

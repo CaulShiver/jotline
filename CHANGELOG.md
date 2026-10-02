@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **`jotline backups` lists quarantined daily archives.** Doctor reported them;
+  the command for inspecting backups did not. They print as `quarantined` and
+  carry `"quarantined": true` in `--json`. They do not fail the command, since
+  each one was already replaced by a fresh archive.
+- **Usage errors escape terminal controls.** argparse built "unrecognized
+  arguments" from raw argv, so a stray escape sequence in an extra argument
+  reached the terminal. Every parser error now goes through the same escaping
+  as the rest of the CLI.
+
 - **A search no longer hangs the app on a note that grows when it is folded.**
   ß folds to ss, so the folded body is longer than the body, and the matched-line
   code walked the folded text with body offsets. On such a note the skip position
