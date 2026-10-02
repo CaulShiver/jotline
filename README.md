@@ -63,7 +63,8 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl+,` | Open Settings (always available; F1 still works) |
+| `Ctrl+,` | Open Settings (always available) |
+| `F1` | Keyboard cheat sheet: the keys in effect now, including the outliner's |
 | `Ctrl+N` | New thought |
 | `Ctrl+T` | Browse workspace tags |
 | `Ctrl+W` | Switch or create workspace |
@@ -73,6 +74,9 @@ The design draws on [Drafts' quick capture](https://docs.getdrafts.com/gettingst
 | `Ctrl+F` | Search across notes (results are ranked and quote the matched line) |
 | `Ctrl+B` | Toggle quiet focus mode |
 | `Alt+K` | Show incoming and outgoing connections |
+| `Ctrl+R` | Recent notes (Enter returns to the note you just left) |
+| `Ctrl+G` | Follow the link under the cursor |
+| `Ctrl+L` | Toggle the task on this line |
 | `Ctrl+S` | Save immediately |
 | `Ctrl+Q` | Save and quit |
 | `Tab` / `Shift+Tab` | Move between controls |
@@ -367,13 +371,13 @@ Open **Ctrl+, → Keyboard shortcuts**. Change shortcuts for new notes,
 tags, workspaces, commands, opening notes, daily logs, search, save, focus, and quit.
 Optional fields also support Markdown preview and formatting, previous/next daily
 log, open daily by date, extract selection, and process inbox.
-Use `ctrl+letter`, `alt+letter`, or `f2`–`f12` (for example `alt+n` or `f4`).
+Use `ctrl+letter`, `alt+letter`, or `f1`–`f12` (for example `alt+n` or `f4`).
 Duplicate assignments and reserved editing/navigation keys are rejected.
 
 Choose **Save** (or Ctrl+S inside Settings) to apply immediately; the footer and
 command hints update too. **Reset hotkeys** restores shortcut defaults without
 changing your other preferences; save to apply or Escape to cancel. **Ctrl+,** always
-opens Settings (F1 still works), and **Escape** remains fixed for closing dialogs. Editor shortcuts
+opens Settings, and **Escape** remains fixed for closing dialogs. Editor shortcuts
 and dialog navigation are unchanged. Your terminal may intercept some combinations;
 use another supported key if it does.
 

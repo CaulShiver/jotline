@@ -300,7 +300,7 @@ async def test_settings_defaults_keep_views_and_actions(tmp_path):
     settings.save(tmp_path / '.jotline-settings.json')
     app = Jotline(Vault(tmp_path))
     async with app.run_test() as pilot:
-        await pilot.press('f1')
+        await pilot.press('ctrl+comma')
         app.screen.query_one('#default-preferences', Button).press()
         await pilot.pause()
         await pilot.press('ctrl+s')

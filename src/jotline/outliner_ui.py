@@ -67,13 +67,27 @@ class BlockEditor(MarkdownEditor):
         self.insert_checked(text)
 
 
+def outline_keys(overrides: dict[str, str]) -> dict[str, list[str]]:
+    """Each outliner action's keys: the built-in bindings, then the user's overrides,
+    which take their key away from whatever had it, as OutlinerScreen.on_mount does."""
+    keys: dict[str, list[str]] = {}
+    for binding in OutlinerScreen.BINDINGS:
+        for key in binding.key.split(','):
+            if key not in overrides.values():
+                keys.setdefault(binding.action, []).append(key)
+    for name, key in overrides.items():
+        keys.setdefault(name, []).append(key)
+    return keys
+
+
 class OutlinerScreen(Modal[None]):
     BINDINGS: ClassVar[list[Binding]] = [
         Binding('escape', 'back', 'Back', priority=True),
         Binding('tab', 'indent', 'Indent', priority=True),
         Binding('shift+tab', 'outdent', 'Outdent', priority=True),
-        Binding('alt+shift+up', 'move_up', 'Move up', priority=True),
-        Binding('alt+shift+down', 'move_down', 'Move down', priority=True),
+        # Alt+arrows need Option-as-Meta on macOS; Ctrl+arrows are the fallback.
+        Binding('alt+shift+up,ctrl+up,ctrl+shift+up', 'move_up', 'Move up', priority=True),
+        Binding('alt+shift+down,ctrl+down,ctrl+shift+down', 'move_down', 'Move down', priority=True),
         Binding('ctrl+space', 'fold', 'Fold', priority=True),
         Binding('alt+right', 'zoom', 'Focus branch', priority=True),
         Binding('alt+left', 'zoom_out', 'Parent', priority=True),
@@ -85,7 +99,8 @@ class OutlinerScreen(Modal[None]):
         Binding('ctrl+p', 'commands', 'Commands', priority=True, id='jotline.commands'),
         Binding('ctrl+f', 'search', 'Find block', priority=True),
         Binding('f2', 'edit_block', 'Edit', priority=True),
-        Binding('ctrl+tab,ctrl+shift+tab', 'switch_pane', 'Navigate', priority=True, show=False),
+        # Most terminals send Ctrl+Tab as plain Tab, which indents; F6 always arrives.
+        Binding('ctrl+tab,ctrl+shift+tab,f6', 'switch_pane', 'Navigate', priority=True, show=False),
         Binding('shift+up', 'extend(-1)', 'Select previous', show=False),
         Binding('shift+down', 'extend(1)', 'Select next', show=False),
     ]
@@ -794,7 +809,9 @@ class OutlinerScreen(Modal[None]):
         self.action_edit_block()
 
     def action_commands(self):
-        choices = [(name, label) for name, label in ACTIONS.items()]
+        keys = outline_keys(self.app.settings.outline_hotkeys)
+        choices = [(name, label + (' · ' + ' / '.join(keys[name]) if name in keys else ''))
+                   for name, label in ACTIONS.items()]
         choices += [('app:' + key, label) for key, label in self.app.command_choices() if key != 'outliner']
         def run(key):
             if not key:

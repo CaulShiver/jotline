@@ -69,7 +69,17 @@ HOTKEY_ACTIONS = {
     "format_rule": ("", "Insert horizontal rule (optional)"),
     "format_indent": ("", "Indent lines (optional)"),
     "format_outdent": ("", "Outdent lines (optional)"),
+    "previous_note": ("", "Back to previous note (optional)"),
+    "recent": ("ctrl+r", "Recent notes"),
+    "follow_link": ("ctrl+g", "Follow link under cursor"),
+    "toggle_task": ("ctrl+l", "Toggle task on this line"),
+    "find_in_note": ("", "Find in this note (optional)"),
+    "keys": ("f1", "Keyboard shortcuts"),
 }
+# Defaults shipped after people had saved their own maps: one of these steps aside,
+# unassigned, when the user already gave its key to something else, and may be cleared.
+YIELDING_HOTKEYS = frozenset({"recent", "follow_link", "toggle_task", "keys"})
+HOTKEY_PATTERN = r"(?:ctrl|alt)\+[a-z]|f(?:[1-9]|1[0-2])"
 # Preserve editing controls and terminal aliases for Tab, Enter and Backspace.
 RESERVED_HOTKEYS = {"ctrl+" + letter for letter in "acehijkmuvxyz"}
 
@@ -175,7 +185,11 @@ class Settings:
 
     @property
     def effective_hotkeys(self) -> dict[str, str]:
-        return {action: self.hotkeys.get(action, default).strip().lower()
+        hotkeys = self.hotkeys if isinstance(self.hotkeys, dict) else {}
+        outline = self.outline_hotkeys if isinstance(self.outline_hotkeys, dict) else {}
+        taken = {key.strip().lower() for key in (*hotkeys.values(), *outline.values()) if isinstance(key, str)}
+        return {action: (hotkeys[action] if action in hotkeys else
+                         "" if action in YIELDING_HOTKEYS and default in taken else default).strip().lower()
                 for action, (default, _) in HOTKEY_ACTIONS.items()}
 
     def values(self) -> dict:
@@ -217,8 +231,8 @@ class Settings:
             raise ValueError("Outline shortcuts must name known outline commands")
         outline_used = set()
         for key in self.outline_hotkeys.values():
-            if not isinstance(key, str) or not re.fullmatch(r"(?:ctrl|alt)\+[a-z]|f(?:[2-9]|1[0-2])", key):
-                raise ValueError("Outline shortcuts use ctrl+letter, alt+letter, or f2–f12")
+            if not isinstance(key, str) or not re.fullmatch(HOTKEY_PATTERN, key):
+                raise ValueError("Outline shortcuts use ctrl+letter, alt+letter, or f1–f12")
             if key in RESERVED_HOTKEYS or key in outline_used or key in self.effective_hotkeys.values():
                 raise ValueError("Outline shortcut is reserved or assigned more than once")
             outline_used.add(key)
@@ -226,10 +240,10 @@ class Settings:
         for action, key in self.effective_hotkeys.items():
             label = HOTKEY_ACTIONS[action][1]
             # New Markdown actions start unassigned to preserve existing maps.
-            if not key and not HOTKEY_ACTIONS[action][0]:
+            if not key and (not HOTKEY_ACTIONS[action][0] or action in YIELDING_HOTKEYS):
                 continue
-            if not re.fullmatch(r"(?:ctrl|alt)\+[a-z]|f(?:[2-9]|1[0-2])", key):
-                raise ValueError(f"{label}: use ctrl+letter, alt+letter, or f2–f12; Ctrl+, and Esc stay fixed")
+            if not re.fullmatch(HOTKEY_PATTERN, key):
+                raise ValueError(f"{label}: use ctrl+letter, alt+letter, or f1–f12; Ctrl+, and Esc stay fixed")
             if key in RESERVED_HOTKEYS:
                 raise ValueError(f"{key} is reserved for editing or terminal navigation")
             if key in used:
