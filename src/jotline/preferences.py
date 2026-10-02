@@ -165,7 +165,8 @@ class Preferences(Modal[Settings | None]):
                 if name == 'hotkeys':
                     self.reset_hotkeys()
                     continue
-                if name in ('active_workspace', 'workspace_names', 'saved_views', 'actions', '_baseline', 'outline_hotkeys'):
+                if name in ('active_workspace', 'workspace_names', 'saved_views', 'actions', '_baseline', 'outline_hotkeys',
+                            'walkthrough_shown'):
                     continue
                 if name == 'daily_template':
                     self.query_one('#daily-template', TextArea).load_text(value)

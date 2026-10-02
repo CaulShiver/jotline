@@ -142,6 +142,7 @@ class Settings:
     startup: str = 'new'
     default_collection: str = 'inbox'
     daily_template: str = '# {{date}}\n\n'
+    walkthrough_shown: bool = False
 
     active_workspace: str = "default"
     workspace_names: list[str] = field(default_factory=lambda: ["default"])
@@ -240,7 +241,7 @@ class Settings:
             raise ValueError("At most 256 workspace names may be saved")
         for name in self.workspace_names:
             validate_workspace(name)
-        for name in BOOLEAN_SETTINGS:
+        for name in (*BOOLEAN_SETTINGS, 'walkthrough_shown'):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f'{name} must be true or false')
         if self.theme not in THEMES:

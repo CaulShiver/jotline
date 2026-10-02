@@ -6,6 +6,14 @@
   `> quote` or `**Bold**` is listed, picked and linked as "buy milk", "quote" and
   "Bold". The note file is unchanged, and links or `jotline open` using the old
   marked-up title still find it.
+- **The writing guide no longer creates a note.** "Open writing and workflow
+  guide" shows the guide in a read-only window, so opening it again adds nothing
+  to your inbox. "Start weekly review" still opens the review as a note, but it
+  is saved only once you type into it.
+- **A new vault opens with the quick start walkthrough.** The first plain
+  `jotline` launch on an empty vault shows the walkthrough once and records that
+  in settings, so it never opens by itself again. `jotline open` and
+  `jotline daily` go straight to the note.
 
 ## 0.9.9 — 2026-10-02
 

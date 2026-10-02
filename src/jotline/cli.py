@@ -682,7 +682,8 @@ def run_app(run: Invocation) -> None:
         initial_note = None
     from .app import Jotline  # Deferred: see the note on this module's imports.
 
-    Jotline(run.vault, workspace=run.workspace, initial_note=initial_note).run()
+    Jotline(run.vault, workspace=run.workspace, initial_note=initial_note,
+            first_run=run.args.command is None).run()
 
 
 COMMANDS = {
