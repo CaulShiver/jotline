@@ -15,6 +15,7 @@ from textual.widgets import Button, Footer, Static, TextArea
 
 from .limits import EDIT_LIMIT_BYTES
 from .markdown_editor import MarkdownEditor
+from .messages import NOTE_LIMIT, failed, key_name
 from .modal import Modal, Palette
 from .outline_actions import ACTIONS
 from .outline_session import OutlineSession, patch, revision
@@ -67,13 +68,27 @@ class BlockEditor(MarkdownEditor):
         self.insert_checked(text)
 
 
+def outline_keys(overrides: dict[str, str]) -> dict[str, list[str]]:
+    """Each outliner action's keys: the built-in bindings, then the user's overrides,
+    which take their key away from whatever had it, as OutlinerScreen.on_mount does."""
+    keys: dict[str, list[str]] = {}
+    for binding in OutlinerScreen.BINDINGS:
+        for key in binding.key.split(','):
+            if key not in overrides.values():
+                keys.setdefault(binding.action, []).append(key)
+    for name, key in overrides.items():
+        keys.setdefault(name, []).append(key)
+    return keys
+
+
 class OutlinerScreen(Modal[None]):
     BINDINGS: ClassVar[list[Binding]] = [
         Binding('escape', 'back', 'Back', priority=True),
         Binding('tab', 'indent', 'Indent', priority=True),
         Binding('shift+tab', 'outdent', 'Outdent', priority=True),
-        Binding('alt+shift+up', 'move_up', 'Move up', priority=True),
-        Binding('alt+shift+down', 'move_down', 'Move down', priority=True),
+        # Alt+arrows need Option-as-Meta on macOS; Ctrl+arrows are the fallback.
+        Binding('alt+shift+up,ctrl+up,ctrl+shift+up', 'move_up', 'Move up', priority=True),
+        Binding('alt+shift+down,ctrl+down,ctrl+shift+down', 'move_down', 'Move down', priority=True),
         Binding('ctrl+space', 'fold', 'Fold', priority=True),
         Binding('alt+right', 'zoom', 'Focus branch', priority=True),
         Binding('alt+left', 'zoom_out', 'Parent', priority=True),
@@ -85,7 +100,8 @@ class OutlinerScreen(Modal[None]):
         Binding('ctrl+p', 'commands', 'Commands', priority=True, id='jotline.commands'),
         Binding('ctrl+f', 'search', 'Find block', priority=True),
         Binding('f2', 'edit_block', 'Edit', priority=True),
-        Binding('ctrl+tab,ctrl+shift+tab', 'switch_pane', 'Navigate', priority=True, show=False),
+        # Most terminals send Ctrl+Tab as plain Tab, which indents; F6 always arrives.
+        Binding('ctrl+tab,ctrl+shift+tab,f6', 'switch_pane', 'Navigate', priority=True, show=False),
         Binding('shift+up', 'extend(-1)', 'Select previous', show=False),
         Binding('shift+down', 'extend(1)', 'Select next', show=False),
     ]
@@ -331,7 +347,8 @@ class OutlinerScreen(Modal[None]):
         old = self.outline.newline.join(old_lines)
         new = self.outline.newline.join(self.current.lines)
         if len(before.encode("utf-8")) - len(old.encode("utf-8")) + len(new.encode("utf-8")) > EDIT_LIMIT_BYTES:
-            self.notify("Note is too large; shorten this block before continuing.", severity="error")
+            self.notify(f"The note would be over the {NOTE_LIMIT} size limit; shorten this block before continuing.",
+                        severity="error")
             return False
         start, end, replacement = patch(old, new)
         row = self.block_rows[self.current]
@@ -353,7 +370,8 @@ class OutlinerScreen(Modal[None]):
             self._synced_source_text = before
             return True
         if len(after.encode('utf-8')) > EDIT_LIMIT_BYTES:
-            self.notify('Note is too large; shorten this block before continuing.', severity='error')
+            self.notify(f'The note would be over the {NOTE_LIMIT} size limit; shorten this block before continuing.',
+                        severity='error')
             return False
         start, end, replacement = patch(before, after)
         self.source.replace(replacement, self.source.location_at(start, before), self.source.location_at(end, before))
@@ -531,9 +549,11 @@ class OutlinerScreen(Modal[None]):
                 return
             previous = siblings[index - 1]
             # Fenced/code containers and conflicting task states remain separate.
-            if any('```' in b.content or '~~~' in b.content or b.content.startswith('[x]')
-                   for b in (previous, self.current)):
-                self.notify('This block needs an explicit text edit to merge safely.')
+            code = any('```' in b.content or '~~~' in b.content for b in (previous, self.current))
+            if code or any(b.content.startswith('[x]') for b in (previous, self.current)):
+                kind = 'a code block' if code else 'a finished task'
+                self.notify(f'Not merged: joining {kind} could change its meaning. Copy the text you want into '
+                            'the block above, then delete this one.')
                 return
             previous.set_content(previous.content.rstrip() + ' ' + self.current.content.lstrip())
             for child in list(self.current.children):
@@ -766,7 +786,8 @@ class OutlinerScreen(Modal[None]):
     def action_paste_outline(self):
         text = self.app.clipboard
         if len(text.encode('utf-8')) > EDIT_LIMIT_BYTES:
-            self.notify('Clipboard exceeds the note size limit.', severity='error')
+            self.notify(f'Not pasted: the clipboard text would put the note over the {NOTE_LIMIT} size limit.',
+                        severity='error')
             return
         def paste():
             imported = Outline(text)
@@ -794,7 +815,9 @@ class OutlinerScreen(Modal[None]):
         self.action_edit_block()
 
     def action_commands(self):
-        choices = [(name, label) for name, label in ACTIONS.items()]
+        keys = outline_keys(self.app.settings.outline_hotkeys)
+        choices = [(name, label + (' · ' + ' / '.join(map(key_name, keys[name])) if name in keys else ''))
+                   for name, label in ACTIONS.items()]
         choices += [('app:' + key, label) for key, label in self.app.command_choices() if key != 'outliner']
         def run(key):
             if not key:
@@ -824,7 +847,8 @@ class OutlinerScreen(Modal[None]):
         editor = self.block_editor()
         offset = editor.char_offset(editor.cursor_location)
         trigger = editor.text[max(0, offset - 2):offset]
-        if editor.has_focus and editor.selection.is_empty and trigger in {'[[', ';;'} and self.app.screen is self:
+        if (editor.has_focus and editor.selection.is_empty and trigger in {'[[', ';;'} and self.app.screen is self
+                and not editor.in_code(editor.cursor_location)):
             self.insert_completion(trigger, offset)
 
     def insert_completion(self, trigger, offset=None):
@@ -836,7 +860,8 @@ class OutlinerScreen(Modal[None]):
             choices = (self.app.note_choices(self.app.vault.search(workspace=self.app.workspace)) if trigger == '[[' else
                        [(name, name) for name in Templates(self.app.vault.path).names()])
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed('Could not list notes to link' if trigger == '[[' else 'Could not list snippets', error),
+                        severity='error')
             return
         def complete(key):
             if not key or editor.text != original:
@@ -853,7 +878,8 @@ class OutlinerScreen(Modal[None]):
                 editor.display = True
                 editor.focus()
             except (OSError, ValueError) as error:
-                self.notify(str(error), severity='error')
+                what = 'Could not insert that link' if trigger == '[[' else f'Could not insert the snippet “{key}”'
+                self.notify(failed(what, error), severity='error')
         self.app.push_screen(Palette(choices, 'Insert note link' if trigger == '[[' else 'Insert snippet'), complete)
 
     def action_insert_link(self):
@@ -887,7 +913,7 @@ class OutlinerScreen(Modal[None]):
                 else:
                     self.notify('Referenced block no longer exists.', severity='warning')
             except (OSError, ValueError) as error:
-                self.notify(str(error), severity='error')
+                self.notify(failed('Could not preview the referenced block', error), severity='error')
 
     def restore_state(self):
         state = ({} if self.app.current.encrypted else
@@ -914,7 +940,8 @@ class OutlinerScreen(Modal[None]):
             write_state(self.app.vault.path / '.jotline-outline.json', self.note_id,
                         None if self.app.current.encrypted else data)
         except (OSError, ValueError) as error:
-            self.notify('Could not save outline view: ' + str(error), severity='warning')
+            self.notify(failed('Could not remember folds and position for this outline', error,
+                               'Your note text is not affected.'), severity='warning')
 
     def action_save(self):
         if self.flush():

@@ -34,11 +34,14 @@ def test_build_backend_and_runtime_dependency_bounds_are_explicit():
     assert data["tool"]["pytest"]["ini_options"]["asyncio_default_fixture_loop_scope"] == "function"
 
 
-def test_ci_gives_pytest_eight_minutes():
+def test_ci_gives_pytest_at_least_eight_minutes():
+    """A slow PDF converter must not fail a finished suite; the job budget has to cover the step."""
     workflow = (ROOT / ".github/workflows/test.yml").read_text()
+    step = re.search(r"      - name: Run tests\n        timeout-minutes: (\d+)\n", workflow)
+    job = re.search(r"\n    timeout-minutes: (\d+)\n", workflow)
 
-    assert "      - name: Run tests\n        timeout-minutes: 8\n" in workflow
-    assert "timeout-minutes: 15" in workflow
+    assert step and int(step[1]) >= 8
+    assert job and int(job[1]) >= int(step[1]) + 7
 
 
 def test_ruff_lints_for_defects_rather_than_style():

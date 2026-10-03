@@ -570,7 +570,7 @@ def test_read_only_commands_do_not_create_a_vault(tmp_path):
     missing = tmp_path / "typo"
     for command in ("list", "doctor", "workspaces", "stats"):
         result = run_cli(missing, command)
-        assert result.returncode == 1 and b"Vault does not exist" in result.stderr
+        assert result.returncode == 0, result.stderr
         assert not missing.exists()
     result = run_cli(missing, "path")
     assert result.returncode == 0 and result.stdout.strip() == str(missing.resolve()).encode()

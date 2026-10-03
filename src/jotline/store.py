@@ -44,6 +44,7 @@ from .limits import (
     MAX_SETTINGS_BYTES,
 )
 from .links import LINK, NoteConnections, connect_note, wiki_link_targets  # noqa: F401
+from .messages import NOTE_LIMIT
 from .search import compile_query
 from .tasks import gather
 
@@ -55,6 +56,9 @@ OTHER_WORKSPACE = "Note is in another workspace; pass --workspace NAME"
 # Start with the literal marker so the regex engine can skip directly to '#'.
 # The two-character lookbehind then rejects the same word/# prefixes as before.
 TAG = re.compile(r"#(?<![\w#]#)([\w][\w/-]*)", re.UNICODE)
+# Leading heading, quote, list and task markers, and emphasis wrapping a whole title.
+TITLE_MARKER = re.compile(r"(?:#+|>|[-*+](?=\s|$)|\d{1,9}[.)](?=\s)|\[[ xX]\](?=\s|$))\s*")
+TITLE_WRAP = re.compile(r"(\*\*|__|~~|[*_`])(?=\S)(.+?)(?<=\S)\1")
 
 
 def _derived_values(pattern: re.Pattern, body: str, label: str) -> tuple[set[str], str]:
@@ -64,6 +68,20 @@ def _derived_values(pattern: re.Pattern, body: str, label: str) -> tuple[set[str
             return values, f"Note has more than {MAX_DERIVED_ITEMS} {label}; results were truncated"
         values.add(match.group(1))
     return values, ""
+
+
+def plain_title(line: str) -> str:
+    """A title line as shown: Markdown block markers and whole-line emphasis removed."""
+    text = line.strip()
+    while True:
+        previous = text
+        while match := TITLE_MARKER.match(text):
+            text = text[match.end():]
+        if (wrapped := TITLE_WRAP.fullmatch(text)) and wrapped[1] not in wrapped[2]:
+            text = wrapped[2]
+        text = text.strip()
+        if text == previous:
+            return text
 
 
 def validate_workspace(name: str) -> str:
@@ -206,7 +224,13 @@ class Note:
 
     @property
     def title(self) -> str:
-        return self.heading[:100]
+        """The heading without Markdown markers; a line of only markers yields to the next one."""
+        if self.locked:
+            return self.heading
+        for line in self.body.split("\n"):
+            if line.strip() and (text := plain_title(line)):
+                return text[:100]
+        return "Untitled"
 
     @property
     def tags(self) -> set[str]:
@@ -324,7 +348,7 @@ class Vault:
                         raise ValueError("Metadata is nested too deeply") from None
             body = body[boundary.end():]
         if meta.get("collection", "inbox") not in COLLECTIONS:
-            raise ValueError("Unknown collection")
+            raise ValueError(f"The note's header names an unknown collection {meta['collection']!r}")
         if any(not isinstance(meta.get(k, ""), str) for k in ("created", "updated")):
             raise ValueError("Invalid timestamps")
         if not isinstance(meta.get("starred", False), bool):
@@ -455,7 +479,7 @@ class Vault:
     def _check_saveable(self, note: Note) -> None:
         validate_workspace(note.workspace)
         if note.collection not in COLLECTIONS:
-            raise ValueError("Unknown collection")
+            raise ValueError(f"Unknown collection {note.collection!r}; use one of {', '.join(COLLECTIONS)}")
         if not isinstance(note.body, str) or not isinstance(note.starred, bool):
             raise ValueError("Invalid note body or starred value")
         if not all(isinstance(value, str) for value in (note.created, note.updated)):
@@ -491,7 +515,7 @@ class Vault:
         stored = note.sealed if note.locked else self.cipher.seal(note.id, note.body) if note.encrypted else note.body
         raw = "---\njotline: 1\n" + "\n".join(f"{k}: {json.dumps(v)}" for k, v in meta.items()) + "\n---\n" + stored
         if len(raw.encode("utf-8")) > MAX_NOTE_BYTES:
-            raise ValueError(f"Note exceeds the {MAX_NOTE_BYTES}-byte file limit")
+            raise ValueError(f"The note is over the {NOTE_LIMIT} file limit; shorten it to save")
         return stamp, meta, raw, newly_encrypted
 
     def _write_temp(self, directory: int, raw: str) -> str:

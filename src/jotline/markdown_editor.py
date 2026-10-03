@@ -9,7 +9,9 @@ the note.
 from __future__ import annotations
 
 from bisect import bisect_right
-from collections import defaultdict
+from dataclasses import replace as fresh
+from collections import OrderedDict, defaultdict
+from collections.abc import Sequence
 import re
 
 from rich.cells import cell_len
@@ -21,7 +23,8 @@ from textual.theme import Theme
 from textual.widgets import TextArea
 from textual.widgets.text_area import Edit, TextAreaTheme
 
-from .limits import EDIT_LIMIT_BYTES
+from .limits import EDIT_LIMIT_BYTES, MAX_NOTE_BYTES
+from .messages import megabytes
 from .store import LINK as WIKI, TAG
 from .tasks import FENCE, TASK, closes_fence, code_spans, fenced_rows, opens_fence, set_done
 
@@ -33,6 +36,9 @@ HIGHLIGHT_MAX_LINE_CHARS = 4096
 # Candidate delimiters and whitespace can each restart a regex scan. Keep a
 # conservative per-line work estimate as well as the absolute length bound.
 HIGHLIGHT_MAX_LINE_WORK = 64 * 1024
+
+# Insertions at least this long are checked against the note file limit.
+LARGE_EDIT_CHARS = 4096
 
 # The default palette, shared by the main app and the quick-capture window.
 JOTLINE_THEME = Theme(name="jotline", primary="#a8d5a2", accent="#a8d5a2", foreground="#d6ddd8",
@@ -200,12 +206,40 @@ def headings(lines: list[str]) -> list[tuple[int, int, str]]:
     return found
 
 
-def continuation(line: str, column: int) -> tuple[str, bool] | None:
+def code_at(lines: Sequence[str], row: int, column: int, fenced: set[int] | None = None) -> bool:
+    """Whether ``column`` on ``row`` is fenced code or follows an open or enclosing code span."""
+    if row in (fenced_rows(list(lines[:row + 1])) if fenced is None else fenced):
+        return True
+    before = lines[row][:column]
+    last = 0
+    for start, end in code_spans(before):
+        if "`" in before[last:start]:
+            break
+        last = end
+    return "`" in before[last:]
+
+
+def outdented(indent: str, above: Sequence[str] = (), quote_prefix: str = "") -> str:
+    """Indentation one list level up: the nearest shallower item above, else one tab or two spaces less."""
+    width = len(indent.expandtabs(4))
+    for line in reversed(above):
+        if quote_prefix and line.startswith(quote_prefix):
+            line = line[len(quote_prefix):]
+        if item := list_item(line):
+            if len(item["indent"].expandtabs(4)) < width:
+                return item["indent"]
+        elif line.strip() and not line[:1].isspace():
+            break
+    return re.sub(r"^(?:  ?|\t)", "", indent)
+
+
+def continuation(line: str, column: int, above: Sequence[str] = ()) -> tuple[str, bool] | None:
     """What Enter should do on a Markdown list or quote line.
 
-    Returns (prefix for the new line, False), or ("", True) when the item is
-    empty and Enter should end the list by clearing its marker. None means an
-    ordinary newline.
+    Returns (prefix for the new line, False), or (replacement, True) when the
+    item is empty: a nested item moves up one level, using the lines ``above``
+    to find its parent, and a top-level one ends the list by clearing its
+    marker. None means an ordinary newline.
     """
     quote = QUOTE.match(line)
     quote_prefix = quote[0] if quote and ">" in quote[0] else ""
@@ -215,7 +249,9 @@ def continuation(line: str, column: int) -> tuple[str, bool] | None:
         if column < item.end():
             return None
         if not line[item.end():].strip() and column >= len(line.rstrip()):
-            return "", True
+            if not item["indent"]:
+                return "", True
+            return quote_prefix + outdented(item["indent"], above, quote_prefix) + line[item.start("marker"):], True
         marker = item["marker"]
         if item["number"]:
             marker = str(int(item["number"]) + 1) + item["delimiter"]
@@ -490,6 +526,39 @@ def syntax_styles(theme) -> dict[str, Style]:
     }
 
 
+class UndoStash:
+    """Undo histories of recently left notes, each kept with the exact text it was recorded against.
+
+    Textual's ``load_text`` clears the history, so switching notes used to lose
+    it. A history is only valid for the document it was built on, so it comes
+    back only when the note's text is unchanged; anything else drops it.
+    """
+
+    def __init__(self, size: int = 8) -> None:
+        self.size = size
+        self.entries: OrderedDict[str, tuple[str, object]] = OrderedDict()
+
+    def keep(self, key: str, editor: MarkdownEditor) -> None:
+        """Detach the editor's history for ``key``, leaving it an empty one to load into."""
+        self.entries.pop(key, None)
+        history, editor.history = editor.history, fresh(editor.history)
+        if history.undo_stack or history.redo_stack:
+            self.entries[key] = (editor.text, history)
+            while len(self.entries) > self.size:
+                self.entries.popitem(last=False)
+
+    def restore(self, key: str, editor: MarkdownEditor) -> bool:
+        text, history = self.entries.pop(key, (None, None))
+        if history is None or text != editor.text:
+            return False
+        history.checkpoint()
+        editor.history = history
+        return True
+
+    def forget(self, key: str) -> None:
+        self.entries.pop(key, None)
+
+
 class MarkdownEditor(TextArea):
     """The writing surface: TextArea plus Markdown highlighting and list continuation.
 
@@ -560,9 +629,26 @@ class MarkdownEditor(TextArea):
         self._pending_edit = edit
         self._resize_document(edit)
         try:
-            return super().edit(edit)
+            result = super().edit(edit)
         finally:
             self._pending_edit = None
+        if len(edit.text) >= LARGE_EDIT_CHARS:
+            self._warn_if_oversized()
+        return result
+
+    def _warn_if_oversized(self) -> None:
+        """Say at once when a paste pushes the note past the file limit, instead of at the next save.
+
+        Only large insertions call this, and a document under a quarter of the
+        limit in characters cannot be over it in UTF-8, so typing never encodes.
+        """
+        if self._document_size() + self.document.line_count * 2 <= EDIT_LIMIT_BYTES // 4:
+            return
+        size = len(self.text.encode("utf-8"))
+        if size > EDIT_LIMIT_BYTES:
+            self.notify(f"This note is now {megabytes(size)}, {megabytes(size - EDIT_LIMIT_BYTES)} over the "
+                        f"{megabytes(MAX_NOTE_BYTES)} file limit. It will not save until it is shorter.",
+                        severity="warning", timeout=12)
 
     def _resize_document(self, edit: Edit) -> None:
         """Carry the document's character count across one edit.
@@ -665,7 +751,7 @@ class MarkdownEditor(TextArea):
         if event.key == "enter" and not self.read_only and self.selection.is_empty:
             row, column = self.cursor_location
             line = self.document.get_line(row)
-            action = continuation(line, column) if self.smart_lists else None
+            action = continuation(line, column, self.document.lines[max(0, row - 500):row]) if self.smart_lists else None
             if action:
                 fenced = self._fenced if self._fenced is not None else fenced_rows(self.document.lines[:row + 1])
                 if row not in fenced:
@@ -674,7 +760,7 @@ class MarkdownEditor(TextArea):
                     self._restart_blink()
                     prefix, clear = action
                     if clear:
-                        self._replace_via_keyboard("", (row, 0), (row, len(line)))
+                        self._replace_via_keyboard(prefix, (row, 0), (row, len(line)))
                     else:
                         self._replace_via_keyboard("\n" + prefix, (row, column), (row, column))
                     return
@@ -687,6 +773,9 @@ class MarkdownEditor(TextArea):
                 self._replace_via_keyboard("\n" + indentation, (row, column), (row, column))
                 return
         await super()._on_key(event)
+
+    def in_code(self, location: tuple[int, int]) -> bool:
+        return code_at(self.document.lines, *location, self._fenced)
 
     def char_offset(self, location: tuple[int, int], text: str | None = None) -> int:
         """Character offset in the editor's text for a (row, column) location."""

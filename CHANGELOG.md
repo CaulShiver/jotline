@@ -1,5 +1,118 @@
 # Changelog
 
+## Unreleased
+
+- **Titles no longer show Markdown markers.** A note that starts `- [ ] buy milk`,
+  `> quote` or `**Bold**` is listed, picked and linked as "buy milk", "quote" and
+  "Bold". The note file is unchanged, and links or `jotline open` using the old
+  marked-up title still find it.
+- **The writing guide no longer creates a note.** "Open writing and workflow
+  guide" shows the guide in a read-only window, so opening it again adds nothing
+  to your inbox. "Start weekly review" still opens the review as a note, but it
+  is saved only once you type into it.
+- **A new vault opens with the quick start walkthrough.** The first plain
+  `jotline` launch on an empty vault shows the walkthrough once and records that
+  in settings, so it never opens by itself again. `jotline open` and
+  `jotline daily` go straight to the note.
+- **Enter in the search box opens the top result.** The cursor lands in the
+  editor, ready to write. Down moves into the list with the first row
+  highlighted, Esc clears the query (a second Esc returns to writing), and
+  tabbing into an unhighlighted list highlights its first row. Enter pressed
+  while you are still typing acts on what you typed, not the previous results.
+- **Everyday moves have keys.** Ctrl+R opens recent notes with the note you
+  just left already selected, so Ctrl+R then Enter goes back. Ctrl+G follows
+  the link under the cursor and Ctrl+L toggles the task on the current line.
+  Back to previous note and Find in this note can be given keys in Settings. If
+  you already use one of the new keys for something else, yours wins and the
+  new command starts unassigned.
+- **F1 shows a keyboard cheat sheet.** It lists the keys in effect now,
+  including your own changes, for writing, finding, notes, the editor and the
+  outliner, and says which readline keys Jotline takes over. It is also in the
+  palette as Keyboard shortcuts, and works from the outliner. Settings moves to
+  Ctrl+, only; if your terminal swallows Ctrl+, use Ctrl+P → Settings.
+- **Outliner keys that work without Alt.** Ctrl+Up and Ctrl+Down (or
+  Ctrl+Shift+Up/Down) move branches, and F6 switches between the tree and the
+  block, for terminals that send Ctrl+Tab as plain Tab. The outliner's command
+  palette now shows each command's keys.
+- **Undo survives switching notes.** Each of the last eight notes you left keeps
+  its undo history, so going back and pressing ctrl+z picks up where you were.
+  The history is dropped whenever the note's text changed in between, from
+  another program, `$EDITOR`, a task ticked from the palette or a sync, and it is
+  never kept for encrypted or trashed notes.
+- **`[[` and `;;` stay quiet inside code.** Typing `for(;;)` or a `[[` in a
+  fenced block or an inline code span no longer opens the snippet or link picker.
+- **Enter on an empty nested list item moves it up a level.** An empty `  - `,
+  `    - [ ] ` or `  1. ` steps out to its parent's indentation, tabs or spaces as
+  the list uses them, instead of wiping the line. A top-level empty item still
+  ends the list.
+- **A paste that makes a note too big says so at once.** The warning gives the
+  note's size in megabytes and how far it is over the 10 MB limit; the paste
+  itself still goes in so it can be trimmed.
+- **Find starts with the selected text.** Opening find with a word or phrase
+  selected on one line fills it in and jumps to that match.
+- **The connections bar's empty state points at the right command.** It now
+  suggests typing `[[` or Insert note link from the command palette, not the
+  connections key, which had nothing to show.
+- **Read commands work before the first capture.** `list`, `tasks`, `stats`,
+  `tags`, `workspaces`, `recoveries` and `backups` print an empty result and exit
+  0 on a new install instead of "Vault does not exist", and still create
+  nothing. `doctor` says where the vault will be created.
+- **`capture` confirms in words at a terminal.** It prints `Saved to inbox:
+  <title> (<short id>)`, or `Added to daily log <date>`. Piped or redirected, it
+  still prints the bare ID for scripts.
+- **`open` finds notes by part of the title.** When no exact title or ID matches,
+  `jotline open milk` opens the one clearly best match, or lists the top five
+  with short IDs. `jotline search` is another name for `jotline list`.
+- **Empty results say so.** At a terminal, `list`, `tasks`, `tags` and `actions`
+  explain on stderr why nothing printed, and `jotline run` with no actions set up
+  points at docs/actions.md. Scripts see the same empty output as before.
+- **Global options work after the command**, so `jotline list --vault X`
+  works. A value given after the command wins.
+- **A mistyped `--workspace` is refused instead of creating a workspace.** Read
+  commands report "No workspace named X"; captures, imports and other writes
+  need `--new-workspace` to start one. Workspaces created in the app, and
+  `default`, always count.
+- **Clearer shell errors.** A `--vault` that is a file says so instead of
+  "[Errno 17]". `--help` groups the commands by task and shows examples, and a
+  usage error prints only that command's usage. The settings warning names the
+  file it could not load.
+- **Import preview prints real columns, and warnings alone no longer fail an
+  import.** Fields are tab-separated and escaped one by one. An import that
+  created notes exits 0 even when some sources were skipped with a warning.
+- **A wrong `JOTLINE_PASSPHRASE` only fails commands that need it.** Others
+  print a warning and carry on with encrypted notes locked.
+- **Error messages say what failed and what to do next.** About forty in-app
+  messages that showed a bare error now name the note, view, template or action
+  involved, keep the useful part of the error (such as "Permission denied" and
+  the file), and add a next step where there is one. A failed save, for
+  example, reads "This note is not saved: … Your text is still on screen".
+- **Size limits are given in megabytes.** Every "too large" message now says the
+  limit is 10 MB, including inserts, replacements, actions and templates.
+- **Clearer wording in a few places.** Naming a saved view gives the rule for
+  view names rather than workspace names. A finished action names the note, the
+  number of steps and whether the text changed, and exported output is named by
+  title. The outliner explains why it will not merge a code block or a finished
+  task, and a block reference says whether its note is missing or matches more
+  than one. Find and replace counts "1 match" and "3 matches".
+- **Shortcut problems point at the field.** Settings names the command and key
+  in conflict, such as "Ctrl+N is assigned to both New thought and Fold or
+  expand branch (outliner)", and moves the cursor to that field. Outliner
+  shortcut fields show their default key.
+- **Keys are written one way.** The command palette, hint line, connections bar
+  and cheat sheet all show keys as Ctrl+N, Alt+K and F1.
+- **Delete moves the highlighted note to Trash.** In the note list, Delete does
+  what the note menu's Move to Trash does; restore it from Show trash. It does
+  nothing to the text in the editor.
+- **A broken converter keeps the HTML advice.** When LibreOffice is installed
+  but cannot convert, Word and PDF export show its error and suggest exporting
+  HTML instead, as they do when no converter is installed.
+- **The README is a short front door.** It keeps install, a five-minute first
+  session, where notes live, the everyday shell commands and recovery; the rest
+  moved to new guides in `docs/` for keys (`keyboard.md`), the shell
+  (`shell.md`, now including `JOTLINE_TERMINAL`), the vault (`vault.md`),
+  writing (`writing.md`) and settings (`settings.md`), with search syntax,
+  tags and workspaces added to `navigation.md`.
+
 ## 0.9.9 — 2026-10-02
 
 - **`jotline backups` lists quarantined daily archives.** Doctor reported them;

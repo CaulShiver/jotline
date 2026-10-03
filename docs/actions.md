@@ -11,6 +11,54 @@ Open the command palette and choose **Create action with step-by-step builder**.
 
 **Edit, rename, duplicate or export action** opens existing recipes. Editing the name renames the action; duplicate creates an independent copy. Existing names cannot accidentally be overwritten. Running an action remains explicit: choose **Run local action**.
 
+The **Actions** button in the sidebar opens the same choices. Recipes are
+shared across the vault, run in the active workspace, and are stored in settings
+and included in backups.
+
+## Recipes as JSON in a note
+
+You can also write a recipe directly. Put a JSON step list in a note, choose
+**Save action recipe from this note**, and give it a unique name. **Run local
+action** lists saved recipes; **Delete local action** removes one. For example:
+
+```json
+[
+  {"type": "template", "value": "{{body}}\n"},
+  {"type": "append", "value": "TARGET_NOTE_ID"},
+  {"type": "archive"}
+]
+```
+
+Replace `TARGET_NOTE_ID` with a project note's actual ID. The recipe appends the
+current text followed by a newline, then archives the source after success.
+
+| Step | Effect |
+| --- | --- |
+| `uppercase`, `lowercase`, `strip` | Transform the working text |
+| `template` | Replace the working text with the template in `value` ([placeholders](writing.md#templates)) |
+| `append` | Append the working text to the note whose ID is in `value` |
+| `quote` | Prefix each line for a Markdown blockquote |
+| `copy` | Copy the working text to the clipboard (app only) |
+| `export` | Create a new inbox note in the app, or write to stdout from the CLI |
+| `archive` | Archive the source once every step has succeeded |
+| `restore` | Reset the working text to the source text, without undoing earlier effects or collection changes |
+
+A recipe has up to 16 steps. Actions cannot append a note to itself or reach a
+different workspace.
+
+## From the shell
+
+```sh
+jotline actions
+jotline actions --json
+jotline run ACTION_NAME NOTE_ID > output.md
+jotline run ACTION_NAME NOTE_ID --raw
+```
+
+`run` writes export steps to stdout; redirect it to create a plain Markdown file.
+Output to an interactive terminal refuses control characters unless you pass
+`--raw`. With no actions saved, both commands point back to this page.
+
 ## Preview and execution
 
 Preview renders templates and text transforms without saving notes, changing collections, appending, exporting, or touching the clipboard. It shows intended effects and their text, plus the final source text; each text excerpt is limited to 20,000 characters. Preview does not prove that targets, permissions, or conflict checks will succeed when the action runs. Date/time templates use the time of preview or execution.

@@ -227,3 +227,13 @@ def test_wiki_link_at_cursor():
     assert wiki_link_at(body, 0, 6).target == "note-id"
     assert wiki_link_at(body, 0, len("See [[note-id|Title]]")).target == "note-id"
     assert wiki_link_at(body, 0, 0) is None
+
+
+async def test_empty_connections_bar_points_at_link_insertion(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(100, 35)) as pilot:
+        await pilot.pause()
+        app.connections()
+        bar = str(app.query_one("#connections", Static).render())
+        assert "Type [[" in bar and "Insert note link" in bar
+        assert "alt+k" not in bar

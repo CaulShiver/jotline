@@ -13,6 +13,7 @@ from .links import (
     stabilize_wiki_target,
     wiki_link_at,
 )
+from .messages import failed, key_name
 from .modal import Palette
 from .store import wiki_link
 
@@ -32,7 +33,7 @@ class Connections:
         return [
             Command("link", "Insert note link", lambda: self.select_related_note("link"),
                     group="everyday"),
-            Command("follow", "Follow a link in this note", self.action_follow, group="everyday"),
+            Command("follow", "Follow a link in this note", self.action_follow, "follow_link", group="everyday"),
             Command("backlinks", "Show connections", self.action_backlinks, "backlinks",
                     group="everyday"),
         ]
@@ -89,9 +90,7 @@ class Connections:
         if self.current.locked:
             line = "Encrypted note (locked). Unlock to see its outgoing links."
         elif not incoming and not outgoing:
-            backlinks_key = self.settings.effective_hotkeys.get("backlinks") or "alt+k"
-            line = self.shortcut_text(
-                f"No links yet. Type [[ to connect this note, or {backlinks_key} / ctrl+p → Insert note link")
+            line = self.shortcut_text("No links yet. Type [[ to link another note, or ctrl+p → Insert note link")
         else:
             broken = [item for item in outgoing if item.status == "broken"]
             titles = [item.title for item in incoming[:3] if item.title]
@@ -101,7 +100,7 @@ class Connections:
             if broken:
                 line += f"  ·  {len(broken)} broken"
             backlinks_key = self.settings.effective_hotkeys.get("backlinks") or "alt+k"
-            line += self.shortcut_text(f"  ·  {backlinks_key} connections")
+            line += f"  ·  {key_name(backlinks_key)} connections"
         self.query_one("#connections", Static).update(line)
         if self.compact_layout:
             self.status("Saving…" if self.dirty else ("Saved" if self.current.original else "Ready"))
@@ -181,7 +180,10 @@ class Connections:
             note_target, anchor = target.split('#^', 1)
             matches = self.cached_link_targets().get(note_target, [])
             if len(matches) != 1:
-                self.notify('Block reference needs one existing note.', severity='warning')
+                self.notify(f'This block reference points at “{note_target}”, which ' + (
+                    f'matches {len(matches)} notes. Copy permanent block reference in the outliner gives a link '
+                    'by note ID.' if matches else 'is not a note in this workspace. Check the link text.'),
+                    severity='warning')
                 return
             self.load_id(matches[0].id)
             if self.current.id != matches[0].id:
@@ -231,7 +233,7 @@ class Connections:
         try:
             self.vault.save(note)
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error")
+            self.notify(failed(f"Could not create “{title}”", error, "The link is unchanged."), severity="error")
             return
         rewritten = stabilize_wiki_target(self.editor().text, target, note)
         if rewritten != self.editor().text:

@@ -308,7 +308,8 @@ def write_recipe(name: str, destination: Path, *, force: bool = False,
 def capture_command(args) -> list[str]:
     command = [*jotline_command(), "--vault", str(Path(args.vault).expanduser())]
     if args.workspace:
-        command.extend(["--workspace", args.workspace])
+        # The hotkey names its workspace on purpose; the first capture may be what creates it.
+        command.extend(["--workspace", args.workspace, "--new-workspace"])
     command.append("capture")
     if getattr(args, "daily", False):
         command.append("--daily")

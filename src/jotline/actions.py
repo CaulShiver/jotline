@@ -3,6 +3,7 @@ from dataclasses import replace
 import re
 
 from .limits import MAX_NOTE_BYTES
+from .messages import NOTE_LIMIT
 from .store import validate_workspace
 from .templates import Templates
 
@@ -94,7 +95,7 @@ def run_action(vault, note, steps, *, selection='', copy=None, export=None, on_s
         elif kind == 'restore':
             working.body = note.body
         if len(working.body.encode('utf-8')) > MAX_NOTE_BYTES:
-            raise ValueError('Action output exceeds the note size limit')
+            raise ValueError(f'Action output is over the {NOTE_LIMIT} note size limit')
         if on_step:
             on_step(index, kind, 'completed')
     if (working.body, working.collection) != (note.body, note.collection):
