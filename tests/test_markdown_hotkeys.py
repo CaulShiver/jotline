@@ -36,7 +36,7 @@ async def test_markdown_shortcuts_can_be_assigned_cleared_and_reset(tmp_path):
     async with app.run_test(size=(110, 40)) as pilot:
         editor = app.query_one('#editor', TextArea)
         editor.insert('word')
-        await pilot.press('f1')
+        await pilot.press('ctrl+comma')
         prefs = app.screen
         assert prefs.query_one('#hotkey-preview', Input).value == ''
         prefs.query_one('#hotkey-preview', Input).value = 'f3'
@@ -50,12 +50,12 @@ async def test_markdown_shortcuts_can_be_assigned_cleared_and_reset(tmp_path):
         assert isinstance(app.screen, MarkdownPreview)
         await pilot.press('alt+b')
         assert editor.text == '**word**'
-        await pilot.press('escape', 'f1')
+        await pilot.press('escape', 'ctrl+comma')
         app.screen.query_one('#hotkey-preview', Input).value = ''
         await pilot.press('ctrl+s', 'f3')
         assert not isinstance(app.screen, MarkdownPreview)
         assert app.settings.effective_hotkeys['format_bold'] == 'alt+b'
-        await pilot.press('f1')
+        await pilot.press('ctrl+comma')
         app.screen.reset_hotkeys()
         await pilot.press('ctrl+s')
         before = editor.text

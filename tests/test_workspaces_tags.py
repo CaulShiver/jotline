@@ -132,7 +132,9 @@ def test_cli_workspace_capture_tags_and_daily(tmp_path):
         return subprocess.run([sys.executable, '-m', 'jotline', '--vault', str(tmp_path), *args],
                               text=True, capture_output=True, check=check)
     personal = cli('capture', 'Personal #home').stdout.strip()
-    work = cli('--workspace', 'work', 'capture', 'Meeting').stdout.strip()
+    refused = cli('--workspace', 'work', 'capture', 'Meeting', check=False)
+    assert refused.returncode == 1 and '--new-workspace' in refused.stderr
+    work = cli('--workspace', 'work', 'capture', 'Meeting', '--new-workspace').stdout.strip()
     cli('--workspace', 'work', 'tag', work, '#team', 'plan')
     assert '#team\t1' in cli('--workspace', 'work', 'tags').stdout
     assert work not in cli('list').stdout

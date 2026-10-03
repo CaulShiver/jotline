@@ -189,3 +189,47 @@ async def test_delete_focused_branch_and_undo_restore_descendants(tmp_path):
         assert screen.zoomed is None
         await pilot.press('ctrl+z')
         assert app.editor().text == original
+
+
+async def test_non_alt_move_switch_pane_and_keys_in_outliner_palette(tmp_path):
+    from jotline.modal import Palette
+    from jotline.navigation import KeySheet
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(110, 35)) as pilot:
+        screen = await open_outline(app, pilot, '- First\n- Second')
+        await pilot.press('down', 'ctrl+up')
+        assert app.editor().text == '- Second\n- First'
+        await pilot.press('ctrl+down')
+        assert app.editor().text == '- First\n- Second'
+        await pilot.press('f6')
+        assert screen.block_editor().has_focus
+        await pilot.press('f6')
+        assert screen.view().has_focus
+        await pilot.press('ctrl+r', 'ctrl+g', 'ctrl+l')
+        assert app.screen is screen and app.editor().text == '- First\n- Second'
+        await pilot.press('f1')
+        assert isinstance(app.screen, KeySheet)
+        await pilot.press('escape', 'ctrl+p')
+        assert isinstance(app.screen, Palette)
+        labels = dict(app.screen.choices)
+        assert labels['move_up'] == 'Move selected branches up · Alt+Shift+Up / Ctrl+Up / Ctrl+Shift+Up'
+        assert labels['task'].endswith(' · Ctrl+Enter')
+        assert labels['collapse_all'] == 'Fold all branches'
+
+
+@pytest.mark.parametrize('body', ['- run `for(;;', '- code `x [['])
+async def test_block_completion_triggers_are_ignored_inside_code(tmp_path, body):
+    from jotline.modal import Palette
+    from jotline.templates import Templates
+    Templates(tmp_path).save('snippet', 'expanded')
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(110, 35)) as pilot:
+        screen = await open_outline(app, pilot, body)
+        screen.action_edit_block()
+        await pilot.pause()
+        editor = screen.block_editor()
+        editor.move_cursor(editor.document.end)
+        await pilot.pause()
+        screen.offer_completion()
+        await pilot.pause()
+        assert not isinstance(app.screen, Palette)

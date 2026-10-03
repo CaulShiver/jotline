@@ -21,6 +21,7 @@ from .action_history import run_recorded_action
 from .actions import ActionCommitError, preview_action
 from .cli_doctor import (
     doctor_report as _doctor_report,
+    missing_vault_report,
     print_doctor,
 )
 from .cli_io import (
@@ -38,6 +39,7 @@ from .completion import SHELLS, script
 from .crypto import check_passphrase
 from .desktop import DESKTOP_ACTIONS, RECIPE_NAMES, run_desktop_command
 from .export import BINARY, FORMAT_NAMES, FORMATS, export_bytes, format_for, write_export
+from .fuzzy import match as fuzzy_match
 from .importing import apply_import, preview_import
 from .limits import MAX_NOTE_BYTES
 from .links import connection_mark
@@ -50,6 +52,16 @@ from .tasks import due_limit, gather, parse_reference, set_done, short_ids
 
 def doctor_report(vault: Vault, settings_warning: str) -> dict[str, object]:
     return _doctor_report(vault, settings_warning, cli_path=__file__)
+
+
+def no_vault_message(path: Path) -> str:
+    return f"No vault yet at {path}; it is created on first capture or launch"
+
+
+def interactive_note(message: str) -> None:
+    """Say why the output is empty, on stderr and only to a person at a terminal."""
+    if sys.stdout.isatty():
+        print(terminal_text(message), file=sys.stderr)
 
 
 def vault_path(value: str) -> Path:
@@ -105,6 +117,28 @@ def resolve_note(vault: Vault, reference: str, workspace: str) -> str:
         shown = ", ".join(note.id for note in here[:5]) + (", …" if len(here) > 5 else "")
         raise ValueError(f"{reference} matches {len(here)} notes ({shown}); use more of the ID")
     return here[0].id
+
+
+# How far the best fuzzy title match must lead the next one to be opened unasked.
+CLEAR_LEAD = 1.5
+
+
+def fuzzy_note(vault: Vault, reference: str, workspace: str, missing: NoMatchingNote) -> str:
+    """The one note whose title clearly matches, or the top candidates on stderr."""
+    terms = reference.casefold().split()
+    notes = [note for note in vault.notes()
+             if note.collection != "trash" and note.workspace == workspace and not note.locked]
+    scored = sorted(((score, note) for note in notes if (score := fuzzy_match(terms, note.title)[0])),
+                    key=lambda item: (-item[0], item[1].title))
+    if not scored:
+        raise missing
+    if len(scored) == 1 or scored[0][0] >= scored[1][0] * CLEAR_LEAD:
+        return scored[0][1].id
+    prefixes = short_ids(note.id for note in vault.notes())
+    for _, note in scored[:5]:
+        print(terminal_text(f"  {prefixes[note.id]}  {note.title}"), file=sys.stderr)
+    more = f" (showing 5 of {len(scored)})" if len(scored) > 5 else ""
+    raise ValueError(f"{reference} matches several titles{more}; run jotline open with one of these IDs")
 
 
 PASSPHRASE_NEEDED = ("This needs the passphrase for encrypted notes; run it in a terminal, "
@@ -211,87 +245,141 @@ class Parser(argparse.ArgumentParser):
         super().error(terminal_text(message))
 
 
+DESCRIPTION = ("Jotline — a terminal home for your thoughts. Run it with no command to open\n"
+               "the workspace, or use a command below from your shell and scripts.")
+EPILOG = """\
+commands by task:
+  Capture          capture, append, prepend, daily
+  Find             list (or search), open, backlinks, tags, workspaces
+  Tasks            tasks, done
+  Notes            tag, actions, run, encrypt, decrypt
+  Export & import  export, import
+  Vault care       backup, backups, recoveries, doctor, stats, encryption
+  Setup            path, sync, completion, desktop
+
+examples:
+  jotline capture "Call Sam about the venue #work"
+  echo "half an idea" | jotline capture --daily
+  jotline search venue
+  jotline open venue
+  jotline tasks --due today
+  jotline export last -o plan.pdf
+
+Global options such as --vault and --workspace work before or after the command.
+Run jotline COMMAND --help for a command's own options."""
+
+CAPTURE_DESCRIPTION = ("Save text as a new note in your default collection, or add it to a daily log with --daily. "
+                       "With no text, piped stdin is read; at a terminal with nothing piped, a small editor opens.")
+
+
+def add_global_options(container, *, defaults: bool) -> None:
+    """Options accepted before the command, and again after it, where only a value actually given counts."""
+    def default(value):
+        return value if defaults else argparse.SUPPRESS
+
+    container.add_argument("--vault", type=vault_path, default=default(default_vault()),
+                           help="Markdown vault directory")
+    container.add_argument("--workspace", default=default(None),
+                           help="Workspace name (defaults to the last workspace used in the app)")
+    container.add_argument("--new-workspace", action="store_true", default=default(False),
+                           help="Let --workspace name a workspace that does not exist yet")
+    container.add_argument("--unlock", action="store_true", default=default(False),
+                           help="Ask for the encryption passphrase first so encrypted notes are included")
+
+
+COMMAND_ALIASES = {"search": "list"}
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = Parser(prog="jotline", description="Jotline — a terminal home for your thoughts")
+    parser = Parser(prog="jotline", description=DESCRIPTION, epilog=EPILOG,
+                    formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--version", action="version", version=__version__)
-    parser.add_argument("--vault", type=vault_path, default=default_vault(), help="Markdown vault directory")
-    parser.add_argument("--workspace", help="Workspace name (defaults to the last workspace used in the app)")
-    parser.add_argument("--unlock", action="store_true",
-                        help="Ask for the encryption passphrase first so encrypted notes are included")
-    sub = parser.add_subparsers(dest="command")
-    capture = sub.add_parser("capture", help="Capture text, read piped stdin, or open a small editor")
-    capture.add_argument("text", nargs="*")
+    add_global_options(parser, defaults=True)
+    shared = argparse.ArgumentParser(add_help=False)
+    add_global_options(shared.add_argument_group("global options"), defaults=False)
+    commands = parser.add_subparsers(dest="command", metavar="COMMAND")
+
+    def add_command(name, **options):
+        # Every command also takes the global options, and describes itself in its own --help.
+        options.setdefault("description", options.get("help"))
+        return commands.add_parser(name, parents=[shared], **options)
+
+    parser.command_parsers = commands.choices
+    capture = add_command("capture", help="Capture text, read piped stdin, or open a small editor",
+                          description=CAPTURE_DESCRIPTION)
+    capture.add_argument("text", nargs="*",
+                         help="Text to save; the words are joined with spaces. Omit it to read piped stdin")
     capture.add_argument("--daily", action="store_true", help="Append to a daily log (today, or --date)")
     capture.add_argument("--date", type=calendar_date_argument, metavar="DATE",
                          help="Daily log date (YYYY-MM-DD, today, or yesterday); requires --daily")
     add_encoding_options(capture)
-    listing = sub.add_parser("list", help="Find notes")
+    listing = add_command("list", aliases=["search"], help="Find notes")
     listing.add_argument("query", nargs="?", default="")
     listing.add_argument("--json", action="store_true", help="Print note metadata as JSON")
     for command in ('append', 'prepend'):
-        update = sub.add_parser(command, help=f'{command.title()} text to an existing note')
+        update = add_command(command, help=f'{command.title()} text to an existing note')
         update.add_argument('id', metavar='NOTE', help=NOTE_HELP)
         update.add_argument('text', nargs='*')
         update.add_argument('--no-newline', action='store_true',
                             help='Join the text exactly, without adding a line break')
         add_encoding_options(update)
-    opening = sub.add_parser('open', help='Open a note in the terminal editor')
+    opening = add_command('open', help='Open a note in the terminal editor')
     opening.add_argument('id', metavar='NOTE', help=NOTE_HELP)
-    daily = sub.add_parser("daily", help="Open a daily log in the terminal editor")
+    daily = add_command("daily", help="Open a daily log in the terminal editor")
     daily.add_argument("--date", type=calendar_date_argument, metavar="DATE",
                        help="Log date (YYYY-MM-DD, today, or yesterday); default today")
-    actions = sub.add_parser('actions', help='List local actions')
+    actions = add_command('actions', help='List local actions')
     actions.add_argument("--json", action="store_true", help="Print action names and steps as JSON")
-    action = sub.add_parser('run', help='Run a named local action on a note')
+    action = add_command('run', help='Run a named local action on a note')
     action.add_argument('action')
     action.add_argument('id', metavar='NOTE', help=NOTE_HELP)
     action.add_argument('--raw', action='store_true', help='Allow terminal control characters in exported output')
-    export = sub.add_parser("export", help="Write a note's Markdown to stdout, or save it as HTML, Word or PDF")
+    export = add_command("export", help="Write a note's Markdown to stdout, or save it as HTML, Word or PDF")
     export.add_argument("id", metavar="NOTE", help=NOTE_HELP)
     export.add_argument("--format", choices=FORMATS,
                         help="markdown (default), html, docx or pdf; guessed from the --output file extension")
     export.add_argument("-o", "--output", type=Path, help="Write this file instead of stdout; needed for docx and pdf")
     export.add_argument("--force", action="store_true", help="Replace the output file if it already exists")
     export.add_argument("--raw", action="store_true", help="Allow terminal control characters on an interactive terminal")
-    workspaces = sub.add_parser("workspaces", help="List workspaces")
+    workspaces = add_command("workspaces", help="List workspaces")
     workspaces.add_argument("--json", action="store_true", help="Print workspaces as JSON")
-    tag_list = sub.add_parser("tags", help="List tags and note counts in this workspace")
+    tag_list = add_command("tags", help="List tags and note counts in this workspace")
     tag_list.add_argument("--json", action="store_true", help="Print tags and counts as JSON")
-    tagging = sub.add_parser("tag", help="Add inline tags to a note")
+    tagging = add_command("tag", help="Add inline tags to a note")
     tagging.add_argument("id", metavar="NOTE", help=NOTE_HELP)
     tagging.add_argument("tags", nargs="+")
-    backlinks = sub.add_parser("backlinks", help="List notes that link here, and outgoing links")
+    backlinks = add_command("backlinks", help="List notes that link here, and outgoing links")
     backlinks.add_argument("id", metavar="NOTE", help=NOTE_HELP)
     backlinks.add_argument("--json", action="store_true", help="Print connections as JSON")
-    tasks = sub.add_parser("tasks", help="List open checkbox tasks across notes")
+    tasks = add_command("tasks", help="List open checkbox tasks across notes")
     tasks.add_argument("query", nargs="?", default="", help="Only notes matching this search, such as #work")
     tasks.add_argument("--done", action="store_true", help="Include completed tasks")
     tasks.add_argument("--due", type=due_argument, metavar="DATE",
                        help="Only tasks due on or before DATE (YYYY-MM-DD or today)")
     tasks.add_argument("--json", action="store_true", help="Print tasks as JSON")
-    stats = sub.add_parser("stats", help="Print workspace counts without note bodies")
+    stats = add_command("stats", help="Print workspace counts without note bodies")
     stats.add_argument("--json", action="store_true", help="Print counts as JSON")
-    finish = sub.add_parser("done", help="Check off a task listed by jotline tasks")
+    finish = add_command("done", help="Check off a task listed by jotline tasks")
     finish.add_argument("task", metavar="NOTE:LINE", help="The reference printed by jotline tasks")
     finish.add_argument("--undo", action="store_true", help="Mark the task as not done again")
     for command, text in (("encrypt", "Encrypt a note's text on disk"),
                           ("decrypt", "Store an encrypted note as plain text again")):
-        sealing = sub.add_parser(command, help=text)
+        sealing = add_command(command, help=text)
         sealing.add_argument("id", metavar="NOTE", help=NOTE_HELP)
-    encryption = sub.add_parser("encryption", help="Set up encryption, change its passphrase, or show status")
+    encryption = add_command("encryption", help="Set up encryption, change its passphrase, or show status")
     encryption.add_argument("action", choices=("status", "setup", "passphrase"))
-    sub.add_parser("backup", help="Back up notes, settings and templates to a local ZIP")
-    backups = sub.add_parser("backups", help="List local ZIP backups and verify they open")
+    add_command("backup", help="Back up notes, settings and templates to a local ZIP")
+    backups = add_command("backups", help="List local ZIP backups and verify they open")
     backups.add_argument("--json", action="store_true", help="Print backup names and validity as JSON")
-    recoveries = sub.add_parser("recoveries", help="List inbox copies saved after an external change")
+    recoveries = add_command("recoveries", help="List inbox copies saved after an external change")
     recoveries.add_argument("--json", action="store_true", help="Print recovery copies as JSON")
-    sub.add_parser("path", help="Print the vault path")
-    doctor = sub.add_parser("doctor", help="Check the vault, runtime and local Jotline state")
+    add_command("path", help="Print the vault path")
+    doctor = add_command("doctor", help="Check the vault, runtime and local Jotline state")
     doctor.add_argument("--json", action="store_true", help="Print machine-readable diagnostics")
-    syncing = sub.add_parser("sync", help="Print a Git or Syncthing recipe for this vault (not a Jotline cloud)")
+    syncing = add_command("sync", help="Print a Git or Syncthing recipe for this vault (not a Jotline cloud)")
     syncing.add_argument("tool", nargs="?", choices=("git", "syncthing"),
                          help="Show only the Git or Syncthing recipe")
-    importing = sub.add_parser("import", help="Import UTF-8 text, a folder, or a Drafts export")
+    importing = add_command("import", help="Import UTF-8 text, a folder, or a Drafts export")
     importing.add_argument("file", type=Path)
     import_mode = importing.add_mutually_exclusive_group()
     import_mode.add_argument("--preview", action="store_true", help="Preview without creating notes")
@@ -303,9 +391,9 @@ def build_parser() -> argparse.ArgumentParser:
                            help="Read Jotline headers as metadata (collection, star, dates); "
                                 "use only for files from a Jotline vault")
     add_encoding_options(importing)
-    completion = sub.add_parser("completion", help="Print a shell completion script")
+    completion = add_command("completion", help="Print a shell completion script")
     completion.add_argument("shell", choices=SHELLS)
-    desktop = sub.add_parser("desktop", help="Install a capture launcher or print a desktop recipe")
+    desktop = add_command("desktop", help="Install a capture launcher or print a desktop recipe")
     desktop.add_argument("action", nargs="?", choices=DESKTOP_ACTIONS, default="status",
                          help="install, uninstall, status, recipe, or launch")
     desktop.add_argument("recipe", nargs="?", choices=RECIPE_NAMES,
@@ -325,7 +413,7 @@ class Invocation:
 
     parser: argparse.ArgumentParser
     args: argparse.Namespace
-    vault: Vault
+    vault: Vault | None  # None for a read command before the vault folder exists
     settings: Settings
     settings_warning: str
     workspace: str
@@ -366,7 +454,12 @@ def run_capture(run: Invocation) -> None:
         note = vault.append_daily(body, settings.daily_template, run.workspace, when=when)
     else:
         note = save_new_note(run, body)
-    print(note.id)
+    if not sys.stdout.isatty():
+        print(note.id)
+    elif args.daily:
+        print(f"Added to daily log {when.isoformat()}")
+    else:
+        print(terminal_text(f"Saved to {note.collection}: {note.title} ({note.id[:8]})"))
 
 
 def run_import(run: Invocation) -> None:
@@ -386,7 +479,8 @@ def run_import(run: Invocation) -> None:
     print(plan.summary())
     for item in plan.items:
         decision = "skip" if item.duplicate and plan.duplicates == "skip" else "import"
-        print(terminal_text(f"{decision}\t{item.source}\t{item.note.collection}\t{item.note.title}"))
+        print("\t".join(terminal_text(field) for field in (decision, item.source, item.note.collection,
+                                                           item.note.title)))
     for message in plan.warnings:
         warning(message)
     if not args.apply:
@@ -396,7 +490,8 @@ def run_import(run: Invocation) -> None:
     print(result.summary())
     for message in result.errors:
         warning(message)
-    if result.errors or plan.needs_review:
+    # Warnings alone are printed above; the import failed only if a write did or nothing could be imported.
+    if result.errors or (plan.needs_review and not result.imported):
         raise SystemExit(1)
 
 
@@ -459,6 +554,9 @@ def run_append(run: Invocation) -> None:
     print(note.id)
 
 
+NO_ACTIONS = "No local actions yet; see docs/actions.md"
+
+
 def run_actions(run: Invocation) -> None:
     actions = action_dicts(run.settings.actions)
     if run.args.json:
@@ -466,12 +564,16 @@ def run_actions(run: Invocation) -> None:
     else:
         for name in actions:
             print(name)
+        if not actions:
+            interactive_note(NO_ACTIONS)
 
 
 def run_action(run: Invocation) -> None:
     args = run.args
+    if not run.settings.actions:
+        raise ValueError(NO_ACTIONS + " to add one")
     if args.action not in run.settings.actions:
-        raise ValueError('Unknown action; use jotline actions')
+        raise ValueError('Unknown action; use jotline actions to list them')
     note = read_note_here(run, args.id)
     steps = action_dicts({args.action: run.settings.actions[args.action]})[args.action]
     guard_output = sys.stdout.isatty() and not args.raw
@@ -511,6 +613,9 @@ def run_list(run: Invocation) -> None:
         for note in notes:
             # Escape control characters when printing untrusted note text to a terminal.
             print(f"{note.id}\t{note.collection}\t{terminal_text(note.title)}")
+        if not notes:
+            interactive_note(f"No notes match {args.query}" if args.query.strip()
+                             else f"No notes in workspace {run.workspace} yet; add one with jotline capture")
     report_warnings(run.vault)
 
 
@@ -550,6 +655,10 @@ def run_tasks(run: Invocation) -> None:
             print("\t".join(terminal_text(field) for field in (
                 task.reference(prefixes.get(task.note_id)), "[x]" if task.done else "[ ]",
                 task.due or "-", task.text, task.note_title)))
+        if not found:
+            interactive_note(("No tasks" if args.done else "No open tasks")
+                             + (f" due by {args.due}" if args.due else "")
+                             + (f" in notes matching {args.query}" if args.query.strip() else ""))
     if locked := sum(note.locked for note in notes):
         warning(f"{locked} encrypted note{'' if locked == 1 else 's'} locked; "
                 "pass --unlock to include their tasks")
@@ -605,24 +714,39 @@ def run_encryption(run: Invocation) -> None:
         print("Encryption is not set up")
 
 
-def run_stats(run: Invocation) -> None:
-    data = run.vault.stats(run.workspace)
-    if run.args.json:
+STAT_KEYS = ("workspace", "notes", "inbox", "inbox_captures", "daily_logs", "open_tasks", "tagged", "starred")
+
+
+def print_stats(data: dict[str, object], as_json: bool) -> None:
+    if as_json:
         print(json.dumps(data, ensure_ascii=True))
     else:
-        for key in ("workspace", "notes", "inbox", "inbox_captures", "daily_logs",
-                    "open_tasks", "tagged", "starred"):
+        for key in STAT_KEYS:
             print(f"{key}\t{data[key]}")
+
+
+def run_stats(run: Invocation) -> None:
+    print_stats(run.vault.stats(run.workspace), run.args.json)
     report_warnings(run.vault)
 
 
-def run_workspaces(run: Invocation) -> None:
-    names = sorted(run.vault.workspaces() | set(run.settings.workspace_names) | {run.workspace})
-    if run.args.json:
-        print(json.dumps([dict(name=name, active=name == run.workspace) for name in names]))
+def known_workspaces(vault: Vault | None, settings: Settings, workspace: str) -> set[str]:
+    """Workspaces the app lists: any with notes, any created in the app, the active one and default."""
+    return ({"default", workspace, settings.active_workspace, *settings.workspace_names}
+            | (vault.workspaces() if vault is not None else set()))
+
+
+def print_workspaces(names: list[str], active: str, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps([dict(name=name, active=name == active) for name in names]))
     else:
         for name in names:
-            print(name + (" *" if name == run.workspace else ""))
+            print(name + (" *" if name == active else ""))
+
+
+def run_workspaces(run: Invocation) -> None:
+    print_workspaces(sorted(run.vault.workspaces() | set(run.settings.workspace_names) | {run.workspace}),
+                     run.workspace, run.args.json)
     report_warnings(run.vault)
 
 
@@ -659,6 +783,8 @@ def run_tags(run: Invocation) -> None:
     else:
         for tag, count in counts:
             print(f"#{tag}\t{count}")
+        if not counts:
+            interactive_note(f"No tags in workspace {run.workspace} yet")
     report_warnings(run.vault)
 
 
@@ -670,6 +796,34 @@ def run_doctor(run: Invocation) -> None:
         print_doctor(report)
     if report["warnings"]:
         run.parser.exit(1)
+
+
+def run_without_vault(run: Invocation) -> None:
+    """A read command before the first capture: an empty result, and no folder created."""
+    args, command = run.args, run.args.command
+    path = args.vault.expanduser().resolve()
+    if command == "doctor":
+        if args.json:
+            print(json.dumps(missing_vault_report(path, cli_path=__file__), sort_keys=True))
+        else:
+            print(terminal_text(no_vault_message(path)))
+        return
+    if command in ("export", "backlinks"):
+        raise NoMatchingNote(f"No note with ID or title {args.id}; there is no vault yet at {path}")
+    if command == "actions":
+        run_actions(run)
+        return
+    if command == "stats":
+        print_stats(dict.fromkeys(STAT_KEYS, 0) | {"workspace": run.workspace}, args.json)
+    elif command == "workspaces":
+        print_workspaces(sorted(known_workspaces(None, run.settings, run.workspace)), run.workspace, args.json)
+    elif args.json:
+        print("[]")
+    elif command == "backups":
+        print("No local ZIP backups yet. Run jotline backup.")
+    elif command == "recoveries":
+        print("No recovery copies in this workspace.")
+    interactive_note(no_vault_message(path))
 
 
 def run_app(run: Invocation) -> None:
@@ -686,7 +840,8 @@ def run_app(run: Invocation) -> None:
         initial_note = None
     from .app import Jotline  # Deferred: see the note on this module's imports.
 
-    Jotline(run.vault, workspace=run.workspace, initial_note=initial_note).run()
+    Jotline(run.vault, workspace=run.workspace, initial_note=initial_note,
+            first_run=run.args.command is None).run()
 
 
 COMMANDS = {
@@ -702,30 +857,66 @@ COMMANDS = {
 # Commands that only read must not turn a mistyped path into a new vault.
 READ_ONLY_COMMANDS = {"list", "actions", "export", "workspaces", "tags", "tasks", "doctor",
                       "stats", "backlinks", "backups", "recoveries"}
+# Commands that do not look inside a workspace, so --workspace is not checked for them.
+ANY_WORKSPACE_COMMANDS = {"actions", "backup", "backups", "doctor", "encryption"}
+
+
+def check_workspace(args: argparse.Namespace, vault: Vault | None, settings: Settings) -> str:
+    """The workspace a command uses; a mistyped --workspace must not quietly start a new one."""
+    if args.workspace is None:
+        return validate_workspace(settings.active_workspace)
+    name = validate_workspace(args.workspace)
+    if (args.new_workspace or args.command in ANY_WORKSPACE_COMMANDS
+            or name in known_workspaces(vault, settings, settings.active_workspace)):
+        return name
+    hint = "" if args.command in READ_ONLY_COMMANDS else ", or pass --new-workspace to start it"
+    raise ValueError(f"No workspace named {name}; run jotline workspaces{hint}")
 
 
 def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Invocation:
     """Open the vault and settings, unlock when asked, and resolve the note a command names."""
+    folder = args.vault.expanduser()
+    if folder.exists() and not folder.is_dir():
+        raise ValueError(f"{folder} is a file, not a vault folder")
+    if args.command in READ_ONLY_COMMANDS and not folder.exists():
+        settings = Settings()
+        return Invocation(parser, args, None, settings, "", check_workspace(args, None, settings),
+                          encoding="utf-8", errors="strict")
     vault = Vault(args.vault, create=args.command not in READ_ONLY_COMMANDS)
     # Shell captures can wait; only the interactive app needs a short lock timeout.
     vault.lock_timeout = 10.0
     settings, settings_warning = Settings.load(vault.path / ".jotline-settings.json")
-    workspace = validate_workspace(settings.active_workspace if args.workspace is None else args.workspace)
+    validate_workspace(settings.active_workspace if args.workspace is None else args.workspace)
     if settings_warning and args.command not in (None, "doctor"):
         warning(settings_warning)
-    if args.command != "encryption" and (
-            args.unlock or (os.environ.get("JOTLINE_PASSPHRASE") and vault.has_key())):
-        unlock_vault(vault)
-    if getattr(args, "id", None) is not None:
-        try:
-            args.id = resolve_note(vault, args.id, workspace)
-        except NoMatchingNote:
-            # Locked notes' titles are sealed; unlock and look again when that is possible.
-            if (vault.cipher is not None or not vault.has_key() or not can_ask_passphrase()
-                    or not any(note.locked for note in vault.notes())):
-                raise
+    passphrase_failed = False
+    if args.command != "encryption":
+        if args.unlock:
             unlock_vault(vault)
-            args.id = resolve_note(vault, args.id, workspace)
+        elif os.environ.get("JOTLINE_PASSPHRASE") and vault.has_key():
+            # Only a command that reaches an encrypted note needs the key; it asks again and fails then.
+            try:
+                unlock_vault(vault)
+            except ValueError as error:
+                passphrase_failed = True
+                warning(f"JOTLINE_PASSPHRASE did not unlock the vault ({error}); encrypted notes stay locked")
+    workspace = check_workspace(args, vault, settings)
+    if getattr(args, "id", None) is not None:
+        reference = args.id
+        try:
+            try:
+                args.id = resolve_note(vault, reference, workspace)
+            except NoMatchingNote:
+                # Locked notes' titles are sealed; unlock and look again when that is possible.
+                if (passphrase_failed or vault.cipher is not None or not vault.has_key()
+                        or not can_ask_passphrase() or not any(note.locked for note in vault.notes())):
+                    raise
+                unlock_vault(vault)
+                args.id = resolve_note(vault, reference, workspace)
+        except NoMatchingNote as missing:
+            if args.command != "open":
+                raise
+            args.id = fuzzy_note(vault, reference, workspace, missing)
         if vault.read(args.id).locked:
             unlock_vault(vault)
     return Invocation(parser, args, vault, settings, settings_warning, workspace,
@@ -738,7 +929,12 @@ def main() -> None:
         print(WINDOWS_UNSUPPORTED, file=sys.stderr)
         raise SystemExit(2)
     parser = build_parser()
-    args = parser.parse_args()
+    args, extras = parser.parse_known_args()
+    args.command = COMMAND_ALIASES.get(args.command, args.command)
+    # A usage error shows the usage of the command it is about, not every command.
+    command_parser = parser.command_parsers.get(args.command, parser)
+    if extras:
+        command_parser.error("unrecognized arguments: " + " ".join(extras))
     try:
         if args.command == "path":
             print(terminal_text(args.vault.expanduser().resolve()))
@@ -752,7 +948,10 @@ def main() -> None:
         if args.command == "desktop":
             run_desktop_command(args)
             return
-        run = prepare(parser, args)
+        run = prepare(command_parser, args)
+        if run.vault is None:
+            run_without_vault(run)
+            return
         COMMANDS[args.command](run)
         if run.vault.backup_warning:
             warning(run.vault.backup_warning)

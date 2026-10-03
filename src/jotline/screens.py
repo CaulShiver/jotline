@@ -13,6 +13,7 @@ from rich.text import Text
 from .links import wiki_target_from_href
 from .limits import EDIT_LIMIT_BYTES
 from .markdown_editor import MarkdownEditor
+from .messages import NOTE_LIMIT, TOO_LARGE, plural
 from .modal import Modal
 from .store import Note
 
@@ -130,8 +131,12 @@ class FindInNote(Modal[None]):
 
     def on_mount(self) -> None:
         editor = self.editor()
-        self.anchor = editor.char_offset(editor.cursor_location, editor.text)
-        self.query_one("#find-query", Input).focus()
+        start, end = sorted((editor.selection.start, editor.selection.end))
+        self.anchor = editor.char_offset(start, editor.text)
+        query = self.query_one("#find-query", Input)
+        if start[0] == end[0] and start != end:
+            query.value = editor.selected_text
+        query.focus()
 
     def show_match(self, *, reverse: bool = False, initial: bool = False) -> None:
         query = self.query_one("#find-query", Input).value
@@ -200,12 +205,12 @@ class FindInNote(Modal[None]):
                 replacement_bytes - len(match[0].encode("utf-8"))
                 for match in pattern.finditer(editor.text))
             if output_bytes > EDIT_LIMIT_BYTES:
-                self.app.notify("Replacement exceeds the note size limit", severity="error")
-                status.update("Not replaced · note size limit exceeded")
+                self.app.notify(TOO_LARGE, severity="error")
+                status.update(f"Not replaced · the note would be over the {NOTE_LIMIT} limit")
                 return
             body, count = pattern.subn(lambda match: replacement, editor.text)
             if count and not editor.replace_checked(body, limit=EDIT_LIMIT_BYTES):
-                status.update("Not replaced · note size limit exceeded")
+                status.update(f"Not replaced · the note would be over the {NOTE_LIMIT} limit")
                 return
         else:
             if not pattern.fullmatch(editor.selected_text):
@@ -213,11 +218,11 @@ class FindInNote(Modal[None]):
             if not pattern.fullmatch(editor.selected_text):
                 return
             if not editor.insert_checked(replacement, limit=EDIT_LIMIT_BYTES):
-                status.update("Not replaced · note size limit exceeded")
+                status.update(f"Not replaced · the note would be over the {NOTE_LIMIT} limit")
                 return
             count = 1
         self.show_match()
-        status.update(f"Replaced {count} match(es) · Undo in editor to reverse")
+        status.update(f"Replaced {plural(count, 'match', 'matches')} · Undo in editor to reverse")
 
     def action_next(self) -> None:
         self.show_match()

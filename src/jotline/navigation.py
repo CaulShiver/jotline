@@ -5,10 +5,11 @@ from textual import on
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Button, Input, Label, Select, Static, TextArea
+from rich.text import Text
 
 from .modal import Modal, Palette
-from .settings import SORT_ORDERS, THEMES, VIEW_COLLECTIONS
-from .store import validate_workspace
+from .messages import failed, key_name
+from .settings import HOTKEY_ACTIONS, SORT_ORDERS, THEMES, VIEW_COLLECTIONS, validate_view_name
 
 
 class ViewEditor(Modal[tuple[str, dict] | None]):
@@ -68,7 +69,7 @@ class ViewEditor(Modal[tuple[str, dict] | None]):
                     sort=self.query_one('#view-sort', Select).value,
                     theme=self.query_one('#view-theme', Select).value)
         try:
-            validate_workspace(name)
+            validate_view_name(name)
             if not self.filters and name != self.original and name in self.settings.saved_views:
                 raise ValueError('That name is already used; choose a different name.')
             views = dict(self.settings.saved_views)
@@ -106,6 +107,98 @@ class Walkthrough(Modal[None]):
         self.app.query_one('#editor', TextArea).focus()
 
 
+KEY_GROUPS = (
+    ('Writing', ('save', 'toggle_task', 'focus_mode', 'preview', 'live_preview', 'extract_note', 'external_editor')),
+    ('Finding', ('search', 'open_note', 'recent', 'previous_note', 'follow_link', 'backlinks', 'find_in_note',
+                 'outline', 'tags')),
+    ('Notes', ('new', 'daily', 'daily_previous', 'daily_next', 'daily_date', 'process_inbox', 'workspaces',
+               'outliner')),
+    ('App', ('commands', 'keys', 'quit')),
+)
+EDITOR_KEYS = (('Tab / Shift+Tab', 'Indent / outdent a list item'), ('[[', 'Link to a note'),
+               (';;', 'Insert a snippet'), ('Ctrl+click', 'Follow the link under the pointer'),
+               ('Esc', 'Back to the editor from the sidebar'))
+SEARCH_KEYS = (('Enter', 'Open the top result'), ('Down', 'Move into the note list'),
+               ('Esc', 'Clear the search; again to return to writing'))
+OUTLINE_LABELS = {'back': 'Leave the block, then back to Markdown', 'commands': 'Outliner commands',
+                  'edit_block': 'Edit the block', 'switch_pane': 'Switch between tree and block',
+                  'extend(-1)': 'Extend selection up', 'extend(1)': 'Extend selection down'}
+def key_sheet(hotkeys: dict[str, str], outline: dict[str, list[str]]) -> Text:
+    """The cheat sheet: every key in effect now, rebinds included."""
+    text = Text()
+
+    def section(title):
+        text.append('\n' + title + '\n', style='bold')
+
+    def row(keys, label):
+        text.append(f'  {keys:<24}  ' if len(keys) <= 24 else f'  {keys}\n' + ' ' * 28)
+        text.append(label + '\n')
+
+    text.append('Keyboard shortcuts\n', style='bold')
+    text.append('The keys in effect now, including your changes in Settings. Esc closes.\n')
+    grouped = {action for _, actions in KEY_GROUPS for action in actions}
+    writing = KEY_GROUPS[0][1] + tuple(action for action in HOTKEY_ACTIONS if action not in grouped)
+    for title, actions in (('Writing', writing), *KEY_GROUPS[1:]):
+        section(title)
+        for action in actions:
+            if key := hotkeys.get(action):
+                row(key_name(key), HOTKEY_ACTIONS[action][1].removesuffix(' (optional)'))
+        if title == 'App':
+            row('Ctrl+,', 'Settings')
+            row('Esc', 'Close a dialog')
+    unassigned = sum(1 for action in HOTKEY_ACTIONS if not hotkeys.get(action))
+    if unassigned:
+        text.append(f'\n{unassigned} more commands have no key; run them from Ctrl+P, '
+                    'or assign one in Settings → Keyboard shortcuts.\n')
+    section('Editor')
+    for keys, label in EDITOR_KEYS:
+        row(keys, label)
+    section('Search box')
+    for keys, label in SEARCH_KEYS:
+        row(keys, label)
+    section('Outliner')
+    from .outline_actions import ACTIONS
+    for action, keys in outline.items():
+        row(' / '.join(key_name(key) for key in keys), OUTLINE_LABELS.get(action) or ACTIONS.get(action, action))
+    row('Tree: Up/Down Left/Right', 'Move · Space fold · Enter edit')
+    row('Block: Enter', 'Split · Shift+Enter adds a line · Backspace at start merges')
+    text.append('\n')
+    if taken := [key for key in ('ctrl+w', 'ctrl+d') if key in hotkeys.values()]:
+        lost = {'ctrl+w': 'delete-word-left', 'ctrl+d': 'delete-right'}
+        both = len(taken) > 1
+        text.append(' and '.join(map(key_name, taken)) + (' are Jotline commands' if both else ' is a Jotline command')
+                    + ", so the editor's " + ' and '.join(lost[key] for key in taken) + (' are' if both else ' is')
+                    + ' not available there; Alt+Backspace and Delete still work. ')
+    text.append('Ctrl+, opens Settings; if your terminal swallows it, use Ctrl+P → Settings.\n')
+    return text
+
+
+class KeySheet(Modal[None]):
+    BINDINGS = [Binding('escape', 'done', 'Close')]
+    CSS = """
+    KeySheet { align: center middle; background: $background 80%; }
+    #keys-panel { width: 82; max-width: 96%; height: auto; max-height: 90%;
+        border: round $accent; padding: 1 2; background: $surface; }
+    #keys-text { height: auto; }
+    """
+
+    def __init__(self, body: Text):
+        super().__init__()
+        self.body = body
+
+    def compose(self):
+        with VerticalScroll(id='keys-panel'):
+            yield Static(self.body, id='keys-text', markup=False)
+            yield Button('Close', id='keys-close')
+
+    def on_mount(self):
+        self.query_one('#keys-panel').focus()
+
+    @on(Button.Pressed, '#keys-close')
+    def action_done(self):
+        self.dismiss(None)
+
+
 class Views:
     """Saved-view ownership. Bound onto Jotline; not inherited."""
 
@@ -118,7 +211,13 @@ class Views:
                 Command('manage-views', 'Manage saved views · edit, rename, duplicate', self.manage_views),
                 Command('filters', 'Edit search filters and sort', self.edit_filters, group='everyday'),
                 Command('update-view', 'Update active saved view from current filters', self.update_active_view),
-                Command('walkthrough', 'Quick start walkthrough', self.show_walkthrough, group='everyday')]
+                Command('walkthrough', 'Quick start walkthrough', self.show_walkthrough, group='everyday'),
+                Command('keys', 'Keyboard shortcuts', self.action_keys, 'keys', group='everyday')]
+
+    def action_keys(self):
+        from .outliner_ui import outline_keys
+        self.push_screen(KeySheet(key_sheet(self.settings.effective_hotkeys,
+                                            outline_keys(self.settings.outline_hotkeys))))
 
     def current_view(self):
         return dict(workspace=self.workspace, query=self.query_one('#search', Input).value,
@@ -134,13 +233,13 @@ class Views:
         if not name:
             return
         try:
-            validate_workspace(name)
+            validate_view_name(name)
             if name in self.settings.saved_views:
                 raise ValueError('View already exists; delete it first or choose another name')
             self.replace_settings(saved_views={**self.settings.saved_views, name: self.current_view()})
             self.notify('View saved')
         except (ValueError, OSError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed(f'View “{name}” was not saved', error), severity='error')
 
     def save_view_prompt(self):
         self.push_screen(ViewEditor('', self.current_view(), self.settings), self.store_edited_view)
@@ -158,7 +257,7 @@ class Views:
             views[name] = view
             self.replace_settings(saved_views=views)
         except (ValueError, OSError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed(f'View “{name}” was not saved', error), severity='error')
             return
         self.apply_view(name)
         self.notify('View saved')

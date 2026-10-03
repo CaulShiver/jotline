@@ -182,3 +182,77 @@ async def test_the_note_list_redraws_only_when_its_rows_change(tmp_path, monkeyp
         assert redraws == [4]
         assert listing.option_count == 5
         assert listing.get_option_at_index(listing.highlighted).id == app.current.id
+
+
+async def test_search_enter_down_and_escape(tmp_path):
+    vault = Vault(tmp_path)
+    vault.save(vault.new('Alpha plan\nkiwi'))
+    vault.save(vault.new('Beta notes\nmango'))
+    app = Jotline(vault)
+    async with app.run_test(size=(110, 34)) as pilot:
+        await pilot.press('ctrl+f', *'mango')
+        assert app._search_timer is not None
+        # Enter inside the debounce window acts on the query as typed, not the stale list.
+        await pilot.press('enter')
+        assert app.current.title == 'Beta notes'
+        assert app.editor().has_focus
+        await pilot.press('ctrl+f')
+        search = app.query_one('#search', Input)
+        assert search.value == 'mango'
+        await pilot.press('escape')
+        assert search.value == '' and search.has_focus
+        await pilot.press(*'kiwi', 'down')
+        notes = app.query_one('#notes', OptionList)
+        assert notes.has_focus and notes.highlighted == 0
+        await pilot.press('enter')
+        assert app.current.title == 'Alpha plan'
+        await pilot.press('ctrl+f', 'escape')
+        assert search.value == '' and search.has_focus
+        await pilot.press('escape')
+        assert app.editor().has_focus
+        await pilot.press('ctrl+f', *'nothing-matches', 'enter')
+        assert app.current.title == 'Alpha plan'
+
+
+async def test_tab_into_note_list_highlights_first_row(tmp_path):
+    vault = Vault(tmp_path)
+    vault.save(vault.new('Alpha'))
+    vault.save(vault.new('Beta'))
+    app = Jotline(vault)
+    async with app.run_test(size=(110, 34)) as pilot:
+        await pilot.press('ctrl+f')
+        notes = app.query_one('#notes', OptionList)
+        assert notes.highlighted is None
+        await pilot.press('tab')
+        assert notes.has_focus and notes.highlighted == 0
+
+
+async def test_key_sheet_lists_current_bindings_and_closes(tmp_path):
+    from jotline.navigation import KeySheet
+    Settings(hotkeys={'new': 'alt+n', 'workspaces': 'alt+w'}, outline_hotkeys={'collapse_all': 'f9'}).save(
+        tmp_path / '.jotline-settings.json')
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.press('f1')
+        assert isinstance(app.screen, KeySheet)
+        text = app.screen.body.plain
+        for expected in ('Alt+N', 'New thought', 'Ctrl+R', 'Recent notes', 'Ctrl+G', 'Ctrl+L', 'Ctrl+,',
+                         '[[', ';;', 'Alt+Shift+Up / Ctrl+Up', 'F6', 'F9', 'Fold all branches',
+                         "Ctrl+D is a Jotline command, so the editor's delete-right", 'Ctrl+P → Settings'):
+            assert expected in text, expected
+        assert 'Ctrl+N' not in text and 'Ctrl+W' not in text
+        await pilot.press('escape')
+        assert not isinstance(app.screen, KeySheet)
+        await pilot.press('ctrl+p', *'keyboard shortcuts', 'enter')
+        assert isinstance(app.screen, KeySheet)
+
+
+def test_key_sheet_groups_cover_every_rebindable_action():
+    from jotline.navigation import KEY_GROUPS, key_sheet
+    from jotline.settings import HOTKEY_ACTIONS
+    grouped = [action for _, actions in KEY_GROUPS for action in actions]
+    assert len(grouped) == len(set(grouped)) and set(grouped) <= set(HOTKEY_ACTIONS)
+    every = {action: f'f{index % 12 + 1}' for index, action in enumerate(HOTKEY_ACTIONS)}
+    text = key_sheet(every, {}).plain
+    assert all(label.removesuffix(' (optional)') in text for _, label in HOTKEY_ACTIONS.values())
+    assert 'no key' not in text

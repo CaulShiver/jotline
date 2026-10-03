@@ -261,6 +261,36 @@ async def test_autocomplete_link_and_snippet_cancel(tmp_path):
         assert editor.text.endswith('expanded;;')
 
 
+@pytest.mark.parametrize('body', ['```sh\necho [[', '~~~\nfor(;;', 'run `for(;;', 'run `x [[` then', '```\n'])
+async def test_completion_triggers_are_ignored_inside_code(tmp_path, body):
+    Templates(tmp_path).save('snippet', 'expanded')
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test() as pilot:
+        editor = app.query_one('#editor', TextArea)
+        editor.load_text(body)
+        editor.move_cursor(editor.location_at(body.index(' then') if ' then' in body else len(body)))
+        if body == '```\n':
+            editor.insert('[[')
+        await pilot.pause()
+        app.offer_completion()
+        await pilot.pause()
+        assert not isinstance(app.screen, Palette)
+
+
+async def test_completion_still_offered_after_closed_code(tmp_path):
+    Templates(tmp_path).save('snippet', 'expanded')
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test() as pilot:
+        editor = app.query_one('#editor', TextArea)
+        editor.load_text('```\ncode\n```\nsee `x` ;;')
+        editor.move_cursor(editor.document.end)
+        await pilot.pause()
+        if not isinstance(app.screen, Palette):
+            app.offer_completion()
+        await wait_for_command_palette(app, pilot)
+        assert app.screen.heading == 'Insert snippet'
+
+
 async def test_offer_completion_without_editor_focus(tmp_path):
     Templates(tmp_path).save('snippet', 'expanded')
     app = Jotline(Vault(tmp_path))
@@ -300,7 +330,7 @@ async def test_settings_defaults_keep_views_and_actions(tmp_path):
     settings.save(tmp_path / '.jotline-settings.json')
     app = Jotline(Vault(tmp_path))
     async with app.run_test() as pilot:
-        await pilot.press('f1')
+        await pilot.press('ctrl+comma')
         app.screen.query_one('#default-preferences', Button).press()
         await pilot.pause()
         await pilot.press('ctrl+s')

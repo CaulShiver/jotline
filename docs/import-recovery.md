@@ -2,8 +2,9 @@
 
 ## Import a library
 
-In Commands, choose **Import notes from file, folder or Drafts export** and enter a Markdown/text file, a folder,
-or a `.draftsExport` path. Folder imports include subfolders. Review the list and
+Choose **Import** in the sidebar, or **Import notes from file, folder or Drafts
+export** in Commands, and enter a Markdown/text file, a folder, or a
+`.draftsExport` path. Folder imports include subfolders. Review the list and
 warnings, then choose **Import**. Cancel leaves the vault unchanged. Import creates
 new notes; it never modifies source files or overwrites existing notes.
 
@@ -14,7 +15,13 @@ jotline import ~/Documents/notes --recursive
 jotline import ~/Documents/notes --recursive --apply
 jotline --workspace work import ~/Downloads/backup.draftsExport
 jotline --workspace work import ~/Downloads/backup.draftsExport --apply
+jotline --workspace archive --new-workspace import ~/Downloads/old.draftsExport --apply
 ```
+
+`--workspace` must name an existing workspace; add `--new-workspace` to import
+into one that does not exist yet. Preview prints one row per source with
+tab-separated columns (decision, source, collection, title), each escaped for
+the terminal.
 
 Folder and Drafts imports default to preview. A single Markdown/text file retains
 its previous immediate-import behavior; add `--preview` to review it first.
@@ -55,8 +62,11 @@ including mapped metadata. Folder imports recognize `.md`, `.txt`, and
 `.draftsExport`. Symlinks are not followed. Invalid
 records are reported separately so valid notes can still be imported. The final
 summary reports imported, skipped, and failed counts; failures do not undo earlier
-successful imports. CLI `--apply` exits nonzero when warnings or failures require
-review. Retry with the default skip policy to avoid duplicating successful notes.
+successful imports. CLI `--apply` exits nonzero when a write failed, or when
+sources were skipped with a warning and nothing was imported. An import that
+created notes exits 0 even when some sources were skipped; the warnings are
+still printed. Retry with the
+default skip policy to avoid duplicating successful notes.
 
 ## Recover after an external edit
 

@@ -205,3 +205,34 @@ def test_sticky_warnings_are_not_duplicated(tmp_path):
     vault.notes()
     assert vault.warnings.count("kept") == 1
     assert vault.warnings.count("other") == 1
+
+
+@pytest.mark.parametrize("body, title", [
+    ("- [ ] buy milk", "buy milk"), ("* [x] done", "done"), ("+ item", "item"), ("1. first", "first"),
+    ("2) second", "second"), ("> quote", "quote"), (">> > nested", "nested"), ("> - [X] quoted task", "quoted task"),
+    ("**Bold**", "Bold"), ("__Strong__", "Strong"), ("*Em*", "Em"), ("_em_", "em"), ("`code`", "code"),
+    ("~~gone~~", "gone"), ("***both***", "both"), ("# Heading", "Heading"), ("## **Bold heading**", "Bold heading"),
+    ("- **Buy** milk", "**Buy** milk"), ("**a** and **b**", "**a** and **b**"), ("-5 degrees", "-5 degrees"),
+    ("*a* b", "*a* b"), ("1.5 kg", "1.5 kg"), ("- [ ]\n\n> real title", "real title"), ("- \n>", "Untitled"),
+])
+def test_title_hides_markdown_markers(tmp_path, body, title):
+    vault = Vault(tmp_path)
+    note = vault.new(body)
+    vault.save(note)
+    assert note.title == title
+    assert vault.read(note.id).body == body
+    assert wiki_link(note) == f'[[{note.id}|{title}]]' or '|' not in title
+
+
+def test_marked_titles_still_resolve_by_their_raw_line(tmp_path):
+    from jotline.cli import resolve_note
+    vault = Vault(tmp_path)
+    linked = vault.new('> **Garden plan**')
+    raw = vault.new('See [[> **Garden plan**]]')
+    plain = vault.new('See [[Garden plan]]')
+    target = vault.new('- [ ] buy milk\nbefore Friday')
+    for note in (linked, raw, plain, target):
+        vault.save(note)
+    assert {note.id for note in vault.backlinks(linked)} == {raw.id, plain.id}
+    assert resolve_note(vault, 'buy milk', 'default') == target.id
+    assert resolve_note(vault, '- [ ] buy milk', 'default') == target.id

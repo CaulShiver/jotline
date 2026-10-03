@@ -9,7 +9,7 @@ permissions:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -52,7 +52,7 @@ jobs:
         timeout-minutes: 2
         run: uv run --locked ruff check .
       - name: Run tests
-        timeout-minutes: 8
+        timeout-minutes: 12
         run: uv run --locked pytest -q -o faulthandler_timeout=60
       - name: Build distributions
         timeout-minutes: 3

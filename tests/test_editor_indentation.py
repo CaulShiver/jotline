@@ -110,7 +110,7 @@ async def test_hover_descriptions_are_hidden(tmp_path, capture):
         await pilot.pause(0.05)
         assert not app.screen.query_one(Tooltip).visible
         if not capture:
-            await pilot.press("f1")
+            await pilot.press("ctrl+comma")
             await pilot.hover("#pref-theme")
             await pilot.pause(0.05)
             assert not app.screen.query_one(Tooltip).visible

@@ -30,7 +30,8 @@ from .environment import child_environment
 from .external_editor import ENCRYPTED, NO_EDITOR, UNSAVED, configured_editor
 from .import_ui import RecoveryImport
 from .links import wiki_link_at, wiki_target_from_href
-from .markdown_editor import JOTLINE_THEME, MarkdownEditor
+from .markdown_editor import JOTLINE_THEME, MarkdownEditor, UndoStash
+from .messages import TOO_LARGE, failed, key_name, reason
 from .modal import Palette, TextPrompt
 from .navigation import Views, Walkthrough
 from .note_menu import NoteList, NoteMenu
@@ -41,7 +42,7 @@ from .recovery_ui import HealthScreen
 from .review_ui import Review
 from .screens import FindInNote, MarkdownPreview, RevisionPreview
 from .search import Match, parse_query, rank, sought
-from .settings import HOTKEY_ACTIONS, Settings, VIEW_COLLECTIONS
+from .settings import HOTKEY_ACTIONS, YIELDING_HOTKEYS, Settings, VIEW_COLLECTIONS
 from .store import (COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, daily_date_from_id,
                     is_daily_id, parse_calendar_date, tagged_body, validate_workspace)
 from .sync import sync_guide
@@ -69,6 +70,13 @@ STATUS_SUMMARY_SECONDS = 0.25
 # How long the note list waits for a pause in typing before it rebuilds. Rebuilding
 # measures the height of every row, so a burst of keys pays for one pass, not one per key.
 SEARCH_DEBOUNCE_SECONDS = 0.2
+REFRESH_HINT = "Use Ctrl+P → Refresh vault from disk to update the list."
+
+
+class SearchBox(Input):
+    """Enter opens the top result; Down moves into the list; Esc clears the query first."""
+    BINDINGS = [Binding("down", "app.search_down", show=False),
+                Binding("escape", "app.search_escape", show=False)]
 
 
 def _bind_capabilities(target, *sources):
@@ -120,16 +128,20 @@ class Jotline(App):
     """
     BINDINGS = [Binding(key or "jotline_" + action + "_unassigned",
                         "format_markdown(" + repr(action[7:]) + ")" if action.startswith("format_") else action,
-                        label, priority=True, show=bool(key), id="jotline." + action)
+                        label, priority=True, show=bool(key) and action not in {"recent", "follow_link", "toggle_task"},
+                        id="jotline." + action)
                 for action, (key, label) in HOTKEY_ACTIONS.items()] + [
-        Binding("ctrl+comma,f1", "settings", "Settings", priority=True),
+        Binding("ctrl+comma", "settings", "Settings", priority=True),
         Binding("escape", "editor_focus", "Write", show=False),
     ]
 
-    def __init__(self, vault: Vault, workspace: str | None = None, initial_note: Note | None = None):
+    def __init__(self, vault: Vault, workspace: str | None = None, initial_note: Note | None = None,
+                 *, first_run: bool = False):
         super().__init__()
         self.vault = vault
         self.initial_note = initial_note
+        # Only a plain `jotline` launch may introduce an empty vault.
+        self.first_run = first_run and initial_note is None
         self.settings_path = vault.path / '.jotline-settings.json'
         self.settings, self.settings_warning = Settings.load(self.settings_path)
         self.workspace = validate_workspace(self.settings.active_workspace if workspace is None else workspace)
@@ -154,6 +166,7 @@ class Jotline(App):
         self.inbox_capture_count = 0
         self.recent_note_ids = []
         self.note_positions = {}
+        self.undo_stash = UndoStash()
         self._editor_baseline = ""
         self.view_sort = None
         self.active_view = None
@@ -188,8 +201,8 @@ class Jotline(App):
                 with Horizontal(classes="navigation-row"):
                     yield Button("Import", id="nav-import")
                 yield Static("INBOX", id="collection", markup=False)
-                yield Input(placeholder="Search words or #tags", id="search",
-                            tooltip="Search this workspace by words or #tags")
+                yield SearchBox(placeholder="Search words or #tags", id="search",
+                                tooltip="Search this workspace by words or #tags · Enter opens the top result")
                 yield Static("", id="empty-notes", markup=False)
                 notes = NoteList(id="notes")
                 notes.tooltip = "Notes in the current collection"
@@ -227,6 +240,9 @@ class Jotline(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        if (self.first_run and not self.settings.walkthrough_shown and not self.settings_warning
+                and next(self.vault.path.glob("*.md"), None) is None):
+            self.call_after_refresh(self.first_run_walkthrough)
         self.apply_settings(startup=True)
         self.omarchy_sync.start()
         self.update_responsive_layout()
@@ -284,7 +300,9 @@ class Jotline(App):
                 self._shown_storage_warnings.add(warning)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        if isinstance(self.screen, OutlinerScreen) and action in {'commands', 'open_note', 'daily', 'daily_previous', 'daily_next', 'new', 'quit', 'settings', 'format_markdown', 'save'}:
+        if action in YIELDING_HOTKEYS and not self.settings.effective_hotkeys.get(action):
+            return False
+        if isinstance(self.screen, OutlinerScreen) and action in {'commands', 'open_note', 'daily', 'daily_previous', 'daily_next', 'new', 'quit', 'settings', 'format_markdown', 'save', 'keys'}:
             return True
         if isinstance(self.screen, ModalScreen) and action not in {'focus_next', 'focus_previous'}:
             return False
@@ -307,8 +325,9 @@ class Jotline(App):
 
     def shortcut_text(self, text: str) -> str:
         effective = self.settings.effective_hotkeys
-        keys = {default: effective[action] for action, (default, _) in HOTKEY_ACTIONS.items()}
-        return re.sub(r"ctrl\+[a-z]", lambda match: keys.get(match[0].lower(), match[0]), text, flags=re.I)
+        keys = {default: effective[action] for action, (default, _) in HOTKEY_ACTIONS.items() if default}
+        return re.sub(r"\b(?:ctrl|alt)\+[a-z]\b",
+                      lambda match: key_name(keys.get(match[0].lower(), match[0].lower())), text, flags=re.I)
 
     def action_settings(self) -> None:
         self.push_screen(Preferences(self.settings), self.save_settings)
@@ -325,7 +344,8 @@ class Jotline(App):
             values.pop(name, None)
             self.replace_settings(**{field: values})
         except (ValueError, OSError) as error:
-            self.notify(str(error), severity='error')
+            kind = 'view' if field == 'saved_views' else 'action'
+            self.notify(failed(f'Could not delete the {kind} “{name}”', error, 'It is still saved.'), severity='error')
 
     def save_settings(self, settings: Settings | None) -> None:
         if settings is None:
@@ -333,7 +353,8 @@ class Jotline(App):
         try:
             settings.save(self.settings_path)
         except (OSError, ValueError) as error:
-            self.notify(f'Settings were not saved: {error}', severity='error', timeout=10)
+            self.notify(failed('Settings were not saved', error, 'Your previous settings stay in effect.'),
+                        severity='error', timeout=10)
             return
         self.settings = settings
         self.apply_settings()
@@ -534,6 +555,42 @@ class Jotline(App):
             return
         self._search_timer = self.set_timer(SEARCH_DEBOUNCE_SECONDS, self.refresh_notes)
 
+    def settle_search(self) -> None:
+        """List what the box says now, so a key pressed mid-debounce acts on the current results."""
+        if self._search_timer is not None or self.query_one("#search", Input).value != self._listed_query:
+            self.refresh_notes()
+
+    @on(Input.Submitted, "#search")
+    def search_submitted(self) -> None:
+        self.settle_search()
+        listing = self.query_one("#notes", OptionList)
+        if not listing.option_count or not (note_id := listing.get_option_at_index(0).id):
+            return
+        self.load_id(note_id)
+        if self.current.id == note_id:
+            self.action_editor_focus()
+
+    def action_search_down(self) -> None:
+        self.settle_search()
+        listing = self.query_one("#notes", OptionList)
+        if listing.option_count:
+            listing.focus()
+            listing.highlighted = 0
+
+    def action_search_escape(self) -> None:
+        search = self.query_one("#search", Input)
+        if not search.value:
+            self.action_editor_focus()
+            return
+        search.value = ""
+        self.refresh_notes()
+
+    @on(events.DescendantFocus, "#notes")
+    def notes_focused(self) -> None:
+        listing = self.query_one("#notes", OptionList)
+        if listing.highlighted is None and listing.option_count:
+            listing.highlighted = 0
+
     @on(OptionList.OptionSelected, "#notes")
     def note_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option.id:
@@ -545,9 +602,10 @@ class Jotline(App):
         try:
             note = self.vault.read(event.note_id)
             if note.workspace != self.workspace:
-                raise ValueError('Note moved to another workspace; refresh the vault')
+                raise ValueError('Note moved to another workspace')
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity='error')
+            self.notify(failed('Could not open the menu for that note', error,
+                               self.shortcut_text(REFRESH_HINT)), severity='error')
             return
         choices = [('move', 'Move to collection…')]
         if not is_daily_id(note.id):
@@ -556,6 +614,21 @@ class Jotline(App):
                        else ('trash', 'Delete · Move to Trash'))
         self.push_screen(NoteMenu(note.title, choices, event.x, event.y),
                          lambda action: self.note_context_action(note, action, event.x, event.y))
+
+    @on(NoteList.TrashRequested)
+    def note_trash_requested(self, event: NoteList.TrashRequested) -> None:
+        """Delete on a highlighted note does what the menu's Move to Trash does."""
+        event.stop()
+        try:
+            note = self.vault.read(event.note_id)
+        except (OSError, ValueError) as error:
+            self.notify(failed('Could not move that note to Trash', error,
+                               self.shortcut_text(REFRESH_HINT)), severity='error')
+            return
+        if note.collection == 'trash':
+            self.notify(f'“{note.title}” is already in Trash. Shift+F10 → Restore to Inbox brings it back.')
+            return
+        self.move_context_note(note, collection='trash')
 
     def note_context_action(self, note: Note, action: str | None, x: int, y: int) -> None:
         if action in ('trash', 'restore'):
@@ -592,14 +665,17 @@ class Jotline(App):
                 moved.workspace = workspace
             self.vault.save(moved)
         except (OSError, ValueError) as error:
-            self.notify(f'Note was not moved: {error}', severity='error', timeout=10)
+            self.notify(failed(f'“{note.title}” was not moved', error), severity='error', timeout=10)
             return
         if is_current:
             gone = moved.workspace != self.workspace or moved.collection == 'trash'
             self.load(self.new_note() if gone else moved)
+        if moved.collection == 'trash':
+            self.undo_stash.forget(moved.id)
         self.refresh_notes()
         self.notify_backup_warning()
-        self.notify(f'Moved to {workspace or collection}')
+        self.notify(f'Moved “{moved.title}” to Trash. Restore it from Show trash.' if collection == 'trash' else
+                    f'Moved “{moved.title}” to {workspace or collection}')
 
     @on(TextArea.Changed, "#editor")
     def edited(self) -> None:
@@ -687,8 +763,9 @@ class Jotline(App):
         except (OSError, ValueError) as error:
             conflict = isinstance(error, ConflictError)
             guidance = ("Your on-screen draft is safe. Open Commands → Save recovery copy, then Refresh vault "
-                        "to review the external version.") if conflict else str(error)
-            message = "NOT SAVED · " + ("External change detected" if conflict else str(error))
+                        "to review the external version.") if conflict else failed(
+                "This note is not saved", error, "Your text is still on screen, and Jotline keeps trying to save it.")
+            message = "NOT SAVED · " + ("External change detected" if conflict else reason(error))
             self.status(message)
             if guidance != self.last_error or explicit:
                 self.notify(guidance, severity="error", timeout=12)
@@ -722,12 +799,18 @@ class Jotline(App):
             raise ValueError("Note moved to another workspace; save a recovery copy if needed")
         editor = self.editor()
         self.note_positions[self.current.id] = editor.cursor_location
+        if not (self.current.encrypted or self.current.locked):
+            self.undo_stash.keep(self.current.id, editor)
         if self.current.original is not None and self.current.id != note.id:
             self.recent_note_ids = [self.current.id] + [key for key in self.recent_note_ids if key != self.current.id]
             self.recent_note_ids = self.recent_note_ids[:50]
         self.current, self.dirty, self.last_error = note, False, ""
         editor.load_text(note.body)
         self._editor_baseline = editor.text
+        if note.encrypted or note.locked:
+            self.undo_stash.forget(note.id)
+        else:
+            self.undo_stash.restore(note.id, editor)
         editor.move_cursor(self.note_positions.get(note.id, (0, 0)))
         editor.focus()
         self.status("Saved" if note.original is not None else "Ready")
@@ -750,7 +833,8 @@ class Jotline(App):
                 return
             self.load(note)
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error")
+            self.notify(failed("Could not open that note", error,
+                               self.shortcut_text(REFRESH_HINT)), severity="error")
 
     def action_external_editor(self) -> None:
         """Save, hand the file to $EDITOR, then read back whatever came home."""
@@ -804,7 +888,8 @@ class Jotline(App):
             self.notify("That note is no longer on disk. Nothing was reloaded.", severity="error", timeout=12)
             return
         except (OSError, ValueError) as error:
-            self.notify(f"The note could not be read back: {error}", severity="error", timeout=15)
+            self.notify(failed("Could not read the note back from your editor", error,
+                               "Fix the file, then use Refresh vault from disk."), severity="error", timeout=15)
             return
         if note.locked:
             self.prompt_unlock(then=lambda: self.reload_external_edit(note_id))
@@ -812,7 +897,7 @@ class Jotline(App):
         try:
             self.load(note)
         except ValueError as error:
-            self.notify(str(error), severity="error", timeout=12)
+            self.notify(failed("Could not show the edited note", error), severity="error", timeout=12)
             return
         self.refresh_notes()
         self.notify("Reloaded from disk.")
@@ -843,7 +928,7 @@ class Jotline(App):
         try:
             self.open_daily(parse_calendar_date(value))
         except ValueError as error:
-            self.notify(str(error), severity="error")
+            self.notify(f"“{value}” is not a date. {reason(error)}.", severity="error")
 
     def open_daily(self, when: date) -> None:
         if not self.save_current(explicit=True):
@@ -851,7 +936,7 @@ class Jotline(App):
         try:
             note = self.vault.daily(self.settings.daily_template, self.workspace, when=when)
         except (OSError, ValueError) as error:
-            self.notify(f"Could not open the {when.isoformat()} daily log: {error}", severity="error", timeout=10)
+            self.notify(failed(f"Could not open the {when.isoformat()} daily log", error), severity="error", timeout=10)
             return
         self.collection = note.collection
         self.load(note)
@@ -907,7 +992,7 @@ class Jotline(App):
     @staticmethod
     def note_excerpt(note: Note) -> str:
         lines = [line.strip().lstrip("# ") for line in note.body.splitlines() if line.strip()]
-        excerpt = next((line for line in lines if line != note.title), "")
+        excerpt = next((line for line in lines if line not in (note.heading, note.title)), "")
         return re.sub(r"\s+", " ", excerpt)[:44]
 
     def note_choices(self, notes: list[Note]) -> list[tuple[str, str]]:
@@ -953,7 +1038,7 @@ class Jotline(App):
             self.replace_settings(active_workspace=name,
                                   workspace_names=sorted(set(self.settings.workspace_names) | {name}))
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error")
+            self.notify(failed(f"Could not switch to workspace “{name}”", error), severity="error")
             return
         self.workspace = name
         self.active_view = None
@@ -994,10 +1079,10 @@ class Jotline(App):
         try:
             body = tagged_body(editor.text, tags)
         except ValueError as error:
-            self.notify(str(error), severity="error")
+            self.notify(failed("Tags were not added", error), severity="error")
             return
         if len(body.encode("utf-8")) > EDIT_LIMIT_BYTES:
-            self.notify("Result exceeds the note size limit", severity="error")
+            self.notify(TOO_LARGE, severity="error")
             return
         editor.insert(body[len(editor.text):], editor.document.end)
         self.save_current()
@@ -1007,7 +1092,8 @@ class Jotline(App):
         try:
             names = Templates(self.vault.path).names()
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error")
+            self.notify(failed("Could not list templates", error,
+                               "Check the .jotline-templates folder in your vault."), severity="error")
             return
         self.push_screen(Palette([(name, name) for name in names],
                                  "Copy template source" if source else "New note from template"),
@@ -1020,7 +1106,7 @@ class Jotline(App):
             templates = Templates(self.vault.path)
             body = templates.read(name) if source else templates.render(name, self.workspace)
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error")
+            self.notify(failed(f"Could not use the template “{name}”", error), severity="error")
             return
         note = self.new_note(body)
         self.collection = note.collection
@@ -1041,7 +1127,7 @@ class Jotline(App):
         try:
             Templates(self.vault.path).save(name, self.editor().text)
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error")
+            self.notify(failed(f"Template “{name}” was not saved", error), severity="error")
             return
         self.notify("Template saved locally. Use New note from template to reuse it.")
 
@@ -1056,7 +1142,8 @@ class Jotline(App):
         try:
             path = self.vault.backup()
         except (OSError, ValueError) as error:
-            self.notify(f"Backup failed: {error}", severity="error", timeout=10)
+            self.notify(failed("Backup failed", error, "Your notes are unchanged; try Back up vault now again."),
+                        severity="error", timeout=10)
             return
         self.notify(f"Backup saved: {path}", timeout=10)
         self.notify_backup_warning()
@@ -1065,7 +1152,7 @@ class Jotline(App):
         try:
             notes = self.vault.history_notes(self.workspace)
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error")
+            self.notify(failed("Could not list saved note history", error), severity="error")
             return
         if not notes:
             self.notify("No saved history in this workspace yet.")
@@ -1078,7 +1165,7 @@ class Jotline(App):
         try:
             revisions = self.vault.history(note_id)
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error")
+            self.notify(failed("Could not list this note's saved versions", error), severity="error")
             return
         if not revisions:
             self.notify("No saved versions for this note yet.")
@@ -1096,7 +1183,7 @@ class Jotline(App):
             if note.workspace != self.workspace:
                 raise ValueError("This version belongs to another workspace; switch workspaces to view it")
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error")
+            self.notify(failed("Could not open that saved version", error), severity="error")
             return
         self.push_screen(RevisionPreview(note), lambda restore: self.restore_revision(note) if restore else None)
 
@@ -1106,7 +1193,8 @@ class Jotline(App):
         try:
             restored = self.vault.recovery(note)
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error")
+            self.notify(failed("The saved version was not restored", error, "Your current note is unchanged."),
+                        severity="error")
             return
         self.collection = "inbox"
         self.query_one("#search", Input).value = ""
@@ -1152,7 +1240,9 @@ class Jotline(App):
             except (OSError, ValueError) as error:
                 self.dirty = kept_unsaved = reload_failed = True
                 self.status("Could not reload file · recovery available")
-                self.notify(f"Could not reload this note: {error}", severity="error", timeout=10)
+                self.notify(failed("Could not reload this note", error,
+                                   "Your text on screen is kept; use Save recovery copy to keep it."),
+                            severity="error", timeout=10)
         self.refresh_notes()
         if kept_unsaved and not reload_failed:
             self.status("Refreshed · unsaved changes kept")
@@ -1197,11 +1287,11 @@ class Jotline(App):
             Command("daily-date", "Open daily log by date", self.action_daily_date, "daily_date"),
             Command("open", "Open a note", self.action_open_note, "open_note", group="everyday"),
             Command("focus", "Toggle focus mode", self.action_focus_mode, "focus_mode", group="everyday"),
-            Command("find", "Find within current note", lambda: self.push_screen(FindInNote()),
+            Command("find", "Find within current note", self.action_find_in_note, "find_in_note",
                     group="everyday"),
             Command("refresh", "Refresh vault from disk", self.refresh_vault, group="everyday"),
             Command("star", "Toggle star on this note", self.toggle_star, group="everyday"),
-            Command("task", "Toggle task on current line", self.toggle_task, group="everyday"),
+            Command("task", "Toggle task on current line", self.toggle_task, "toggle_task", group="everyday"),
             Command("copy", "Copy note to the clipboard", self.copy_current_note,
                     group="everyday"),
             Command("accessibility", "Clipboard, IME, and screen-reader notes", self.show_accessibility_notes),
@@ -1212,8 +1302,8 @@ class Jotline(App):
                     group="everyday"),
             Command("review", "Start weekly review", lambda: self.open_generated_note(REVIEW),
                     group="everyday"),
-            Command("help", "Open writing and workflow guide", lambda: self.open_generated_note(GUIDE),
-                    group="everyday"),
+            Command("help", "Open writing and workflow guide",
+                    lambda: self.push_screen(Walkthrough(self.shortcut_text(GUIDE))), group="everyday"),
         ]
         commands.extend(Command("format:" + style, "Format " + label,
                                 lambda style=style: self.action_format_markdown(style), "format_" + style)
@@ -1251,7 +1341,7 @@ class Jotline(App):
         for command in self.command_registry.values():
             label = self.shortcut_text(command.label)
             if command.hotkey_action and (key := hotkeys.get(command.hotkey_action)):
-                label += " · " + key
+                label += " · " + key_name(key)
             choices.append((command.key, label))
         return choices
 
@@ -1313,6 +1403,15 @@ class Jotline(App):
         self.editor().toggle_task_line()
         self.capture_current_buffer()
 
+    def action_toggle_task(self) -> None:
+        self.toggle_task()
+
+    def action_find_in_note(self) -> None:
+        self.push_screen(FindInNote())
+
+    def action_follow_link(self) -> None:
+        self.action_follow()
+
     def show_sync_guide(self) -> None:
         self.push_screen(Walkthrough(self.shortcut_text(sync_guide(self.vault.path))))
 
@@ -1323,7 +1422,8 @@ class Jotline(App):
             self.refresh_notes()
             self.notify("Saved a separate recovery copy in the inbox. Open a recovery copy lists them later.")
         except (OSError, ValueError) as error:
-            self.notify(str(error), severity="error")
+            self.notify(failed("The recovery copy was not saved", error, "Your text is still on screen."),
+                        severity="error")
 
     def action_doctor(self) -> None:
         report = doctor_report(self.vault, self.settings_warning)
@@ -1361,10 +1461,16 @@ class Jotline(App):
             self.follow_wiki_target(link.target)
 
     def open_generated_note(self, body: str) -> None:
+        """Open a filled-in draft that, like a new thought, is saved only once it is typed into."""
         if self.save_current():
             self.load(self.vault.new(self.shortcut_text(body), workspace=self.workspace))
-            self.dirty = True
-            self.save_current()
+
+    def first_run_walkthrough(self) -> None:
+        try:
+            self.replace_settings(walkthrough_shown=True)
+        except (OSError, ValueError):
+            pass
+        self.show_walkthrough()
 
 
 _bind_capabilities(Jotline, Encryption, Review, RecoveryImport, ActionWorkflows, Views, Workflows, Connections)

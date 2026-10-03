@@ -15,7 +15,7 @@ from jotline.settings import Settings
 from jotline.store import ConflictError, Vault, read_regular_file
 
 
-@pytest.mark.parametrize("body", ["", "   \n\t", "#", "###", "\n  ###  \nbody"])
+@pytest.mark.parametrize("body", ["", "   \n\t", "#", "###", "\n  ###  \n", "- [ ]\n> "])
 def test_empty_heading_has_visible_title(tmp_path, body):
     assert Vault(tmp_path).new(body).title == "Untitled"
 

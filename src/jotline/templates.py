@@ -9,6 +9,7 @@ import stat
 
 from .filesystem import create_private_temp, fs as os, read_regular_at, vault_lock
 from .limits import MAX_NOTE_BYTES
+from .messages import NOTE_LIMIT
 from .store import validate_workspace
 
 BUILTIN_TEMPLATES = {
@@ -96,7 +97,7 @@ class Templates:
             raise ValueError("Template body must be text")
         raw = body.encode("utf-8")
         if len(raw) > MAX_NOTE_BYTES:
-            raise ValueError("Template exceeds the note size limit")
+            raise ValueError(f"Template is over the {NOTE_LIMIT} note size limit")
         with vault_lock(self.vault_path) as vault_directory, self._directory(
                 create=True, vault_directory=vault_directory) as directory:
             fd, temporary = create_private_temp(directory, ".tmp-")
@@ -144,12 +145,12 @@ class Templates:
                 for piece in (text[end:match.start()], substitute(match)):
                     size += len(piece.encode('utf-8'))
                     if size > MAX_NOTE_BYTES:
-                        raise ValueError("Expanded template exceeds the note size limit")
+                        raise ValueError(f"Expanded template is over the {NOTE_LIMIT} note size limit")
                     pieces.append(piece)
                 end = match.end()
             tail = text[end:]
             if size + len(tail.encode('utf-8')) > MAX_NOTE_BYTES:
-                raise ValueError("Expanded template exceeds the note size limit")
+                raise ValueError(f"Expanded template is over the {NOTE_LIMIT} note size limit")
             return ''.join(pieces) + tail
         return expand(source, ())
 
