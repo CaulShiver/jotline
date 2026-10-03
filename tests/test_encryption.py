@@ -217,9 +217,10 @@ def test_imports_skip_encrypted_note_files(tmp_path):
     source = tmp_path / "source"
     source.mkdir()
     (source / "copied.md").write_bytes((vault.path / f"{note.id}.md").read_bytes())
-    plan = preview_import(Vault(tmp_path / "other"), source)
-    assert plan.items == []
-    assert any("Encrypted Jotline note skipped" in warning for warning in plan.warnings)
+    for trusted in (False, True):
+        plan = preview_import(Vault(tmp_path / "other"), source, jotline_notes=trusted)
+        assert plan.items == []
+        assert any("Encrypted Jotline note skipped" in warning for warning in plan.warnings)
 
 
 def run_cli(vault: Path, *args, passphrase: str | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -363,3 +364,61 @@ def test_a_link_to_an_encrypted_note_carries_no_label(tmp_path):
     note = encrypted_note(vault, "SECRETLINE Sam HIV status\n")
     assert wiki_link(vault.read(note.id)) == f"[[{note.id}]]"
     assert wiki_link(vault.new("Ordinary note")).endswith("|Ordinary note]]")
+
+
+def test_a_key_file_from_another_vault_is_named_as_such(tmp_path):
+    # A sync tool or a restore put another vault's key file in place. Every unlock
+    # then said "wrong passphrase", which sends the user hunting for a passphrase
+    # they have right. Notes record which key sealed them, so this one can tell.
+    vault = encrypted_vault(tmp_path / "mine")
+    encrypted_note(vault, "secret")
+    other = Vault(tmp_path / "theirs")
+    other.setup_encryption("their passphrase", n=FAST)
+    (vault.path / ".jotline-key.json").write_bytes((other.path / ".jotline-key.json").read_bytes())
+    with pytest.raises(EncryptionError, match="another vault"):
+        Vault(vault.path).unlock(PASSPHRASE)
+    # Their passphrase opens their key, which still seals none of these notes.
+    with pytest.raises(EncryptionError, match="another vault"):
+        Vault(vault.path).unlock("their passphrase")
+
+
+def test_a_wrong_passphrase_still_says_so(tmp_path):
+    vault = encrypted_vault(tmp_path)
+    encrypted_note(vault, "secret")
+    with pytest.raises(EncryptionError, match="Wrong passphrase"):
+        Vault(tmp_path).unlock("not the passphrase")
+
+
+def test_notes_record_the_key_that_sealed_them_and_keep_it_while_locked(tmp_path):
+    vault = encrypted_vault(tmp_path)
+    note = encrypted_note(vault, "secret")
+    key_id = json.loads((tmp_path / ".jotline-key.json").read_text())["key_id"]
+    assert f'key_id: "{key_id}"' in (tmp_path / f"{note.id}.md").read_text()
+    locked = Vault(tmp_path)
+    sealed = locked.read(note.id)
+    sealed.starred = True
+    locked.save(sealed)
+    assert f'key_id: "{key_id}"' in (tmp_path / f"{note.id}.md").read_text()
+    vault.change_passphrase(PASSPHRASE, "battery staple", n=FAST)
+    assert json.loads((tmp_path / ".jotline-key.json").read_text())["key_id"] == key_id
+
+
+def test_older_key_files_and_notes_gain_a_key_id_without_breaking_0_9_9(tmp_path):
+    vault = encrypted_vault(tmp_path)
+    note = encrypted_note(vault, "secret")
+    path = tmp_path / ".jotline-key.json"
+    data = json.loads(path.read_text())
+    key_id = data.pop("key_id")
+    path.write_text(json.dumps(data))
+    raw = (tmp_path / f"{note.id}.md").read_text().replace(f'key_id: "{key_id}"\n', "")
+    (tmp_path / f"{note.id}.md").write_text(raw)
+    # No note records a key yet, so a wrong passphrase cannot be mistaken for a foreign key.
+    with pytest.raises(EncryptionError, match="Wrong passphrase"):
+        Vault(tmp_path).unlock("not the passphrase")
+    fresh = Vault(tmp_path)
+    fresh.unlock(PASSPHRASE)
+    assert fresh.read(note.id).body == "secret"
+    written = json.loads(path.read_text())
+    assert written["key_id"] == key_id
+    # The checksum 0.9.9 verifies covers the same bytes as before, so 0.9.9 still reads the file.
+    assert written["checksum"] == data["checksum"]

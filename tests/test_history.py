@@ -122,6 +122,28 @@ def test_unsafe_history_directory_is_skipped_with_warning(tmp_path):
     assert any('history is not being kept' in item for item in vault.warnings)
 
 
+
+@pytest.mark.parametrize('where', ['root', 'note'])
+def test_history_of_a_non_directory_reads_as_none_kept(tmp_path, where):
+    # Saving already survived a stray file where history belongs; reading it
+    # raised, so opening the note's history showed an error instead of nothing.
+    vault = Vault(tmp_path / 'vault')
+    note = vault.new('data')
+    vault.save(note)
+    folder = vault.path / '.jotline-history'
+    for child in folder.iterdir():
+        for revision in child.iterdir():
+            revision.unlink()
+        child.rmdir()
+    if where == 'root':
+        folder.rmdir()
+        folder.write_text('not a folder')
+    else:
+        (folder / note.id).write_text('not a folder')
+    assert vault.history(note.id) == []
+    assert any('history is not being kept' in item for item in vault.warnings)
+    assert vault.history_notes('default') == []
+
 def test_unsafe_backup_directory_is_skipped_with_warning(tmp_path):
     # A backup that cannot be written safely must not hold the note hostage.
     vault = Vault(tmp_path / 'vault')

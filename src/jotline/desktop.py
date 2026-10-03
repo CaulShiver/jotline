@@ -105,13 +105,20 @@ def jotline_shell(command: list[str] | None = None) -> str:
     return " ".join(shlex.quote(part) for part in (command or jotline_command()))
 
 
+DESKTOP_STRING_ESCAPES = {"\\": "\\\\", "\n": "\\n", "\t": "\\t", "\r": "\\r"}
+
+
 def quote_desktop_arg(value: str) -> str:
     # Exec= reads % as a field code (%f, %u, ...) whether or not the argument is quoted.
     value = value.replace("%", "%%")
+    if any(ord(character) < 32 and character not in DESKTOP_STRING_ESCAPES for character in value):
+        raise ValueError(f"A control character cannot be written into a desktop entry: {value!r}")
     if value and not any(character in DESKTOP_RESERVED or ord(character) < 32 for character in value):
         return value
-    escaped = (value.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$").replace("`", "\\`"))
-    return f'"{escaped}"'
+    quoted = (value.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$").replace("`", "\\`"))
+    # The Exec value is a string, and the spec applies its escapes before the
+    # quoting rule, so a reader undoes them first: \\$ reads as \$, then as $.
+    return '"' + "".join(DESKTOP_STRING_ESCAPES.get(character, character) for character in quoted) + '"'
 
 
 def desktop_exec(command: list[str]) -> str:

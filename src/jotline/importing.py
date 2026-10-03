@@ -33,6 +33,9 @@ class ImportPlan:
     # The warnings that leave nothing for the user to fix: a link the importer
     # never follows, or a note already in the vault that could not be read.
     notices: list[str] = field(default_factory=list)
+    # Note-shaped files whose Jotline header stayed in the body because the
+    # import was not asked to read headers as metadata.
+    jotline_candidates: int = 0
 
     def notice(self, message):
         self.warnings.append(message)
@@ -136,12 +139,20 @@ def _open_directory(path):
         fs.close(directory)
 
 
-def _jotline_note(vault, raw, workspace, default_collection):
-    """Carry a Jotline-format file's own metadata instead of treating it as body."""
-    parsed = Vault.parse_note(vault.new().id, raw)
-    if parsed.encrypted:
+def _refuse_encrypted(vault, raw):
+    try:
+        encrypted = Vault.parse_note(vault.new().id, raw).encrypted
+    except ValueError:
+        return  # Not a well-formed note, so it is text like any other.
+    if encrypted:
         # The text is bound to its own vault's key and note ID; importing it would copy unreadable text.
         raise ValueError('Encrypted Jotline note skipped; it only opens in the vault that encrypted it')
+
+
+def _jotline_note(vault, raw, workspace, default_collection):
+    """Carry a Jotline-format file's own metadata instead of treating it as body."""
+    _refuse_encrypted(vault, raw)
+    parsed = Vault.parse_note(vault.new().id, raw)
     note = vault.new(parsed.body, workspace=workspace)
     note.collection = parsed.collection if parsed.collection != 'trash' else default_collection
     note.starred = parsed.starred
@@ -153,9 +164,10 @@ def _jotline_note(vault, raw, workspace, default_collection):
 def _note_file(source):
     """Whether a vault would read this file as one of its notes: an ID-shaped .md name.
 
-    Only such a file's header is metadata. Any other file is outside text, so a
-    header at its start stays in the body where the review shows it; a file
-    cannot pick its own collection, star or dates just by starting with one.
+    With jotline_notes, only such a file's header is metadata. Any other file is
+    outside text, so a header at its start stays in the body where the review
+    shows it. Most simple names are ID-shaped, so without jotline_notes no file
+    can pick its own collection, star or dates just by starting with a header.
     """
     if source.suffix.lower() != '.md':
         return False
@@ -203,7 +215,8 @@ def _scan_folder(root: Path, recursive: bool, plan: ImportPlan) -> list[Path]:
 
 
 def preview_import(vault: Vault, path: Path, workspace='default', default_collection='inbox',
-                   duplicates='skip', recursive=False, encoding='utf-8', errors='strict') -> ImportPlan:
+                   duplicates='skip', recursive=False, encoding='utf-8', errors='strict',
+                   jotline_notes=False) -> ImportPlan:
     validate_workspace(workspace)
     if duplicates not in ('skip', 'copy') or default_collection not in COLLECTIONS:
         raise ValueError('Invalid import options')
@@ -246,9 +259,15 @@ def preview_import(vault: Vault, path: Path, workspace='default', default_collec
                     if is_drafts:
                         note = _draft(vault, entry, workspace)
                     elif _note_file(source) and re.match(r'\A\ufeff?---\r?\njotline: 1\r?\n', entry):
-                        note = _jotline_note(vault, entry, workspace, default_collection)
-                        # The header is gone from the body, so say where the collection came from.
-                        label += ' (Jotline note)'
+                        if jotline_notes:
+                            note = _jotline_note(vault, entry, workspace, default_collection)
+                            # The header is gone from the body, so say where the collection came from.
+                            label += ' (Jotline note)'
+                        else:
+                            _refuse_encrypted(vault, entry)
+                            note = vault.new(entry.removeprefix('\ufeff'), workspace=workspace)
+                            note.collection = default_collection
+                            plan.jotline_candidates += 1
                     else:
                         note = vault.new(entry.removeprefix('\ufeff'), workspace=workspace)
                         note.collection = default_collection
@@ -265,6 +284,10 @@ def preview_import(vault: Vault, path: Path, workspace='default', default_collec
             plan.warnings.append(f'{source.name}: {decode_problem(error, encoding)}')
         except (OSError, ValueError) as error:
             plan.warnings.append(f'{source.name}: {error}')
+    if plan.jotline_candidates:
+        plan.notice(f'{plan.jotline_candidates} file(s) start with a Jotline header, kept as text. If they '
+                    'came from a Jotline vault, import them as Jotline notes (--jotline-notes) to keep their collection, star '
+                    'and dates')
     return plan
 
 

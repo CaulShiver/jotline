@@ -387,6 +387,9 @@ def build_parser() -> argparse.ArgumentParser:
     importing.add_argument("--recursive", action="store_true", help="Include subfolders without following links")
     importing.add_argument("--duplicates", choices=("skip", "copy"), default="skip",
                            help="Skip matching bodies/UUIDs (default), or create separate copies")
+    importing.add_argument("--jotline-notes", action="store_true",
+                           help="Read Jotline headers as metadata (collection, star, dates); "
+                                "use only for files from a Jotline vault")
     add_encoding_options(importing)
     completion = add_command("completion", help="Print a shell completion script")
     completion.add_argument("shell", choices=SHELLS)
@@ -471,7 +474,8 @@ def run_import(run: Invocation) -> None:
     if args.preview and args.apply:
         run.parser.error("Choose --preview or --apply")
     plan = preview_import(run.vault, args.file, run.workspace, run.settings.default_collection,
-                          args.duplicates, args.recursive, encoding=run.encoding, errors=run.errors)
+                          args.duplicates, args.recursive, encoding=run.encoding, errors=run.errors,
+                          jotline_notes=args.jotline_notes)
     print(plan.summary())
     for item in plan.items:
         decision = "skip" if item.duplicate and plan.duplicates == "skip" else "import"

@@ -187,7 +187,9 @@ jotline import ~/Downloads/library.draftsExport --apply
 
 Preview prints one tab-separated row per source. `--preview` reviews a single
 file first, and `--duplicates copy` creates separate copies instead of skipping
-matches. See [import and recovery](import-recovery.md) for limits, exit status
+matches. To move notes between Jotline vaults, add `--jotline-notes` so each note
+keeps its collection, star and dates; without it a Jotline header stays in the
+note as text. See [import and recovery](import-recovery.md) for limits, exit status
 and the Drafts field mapping.
 
 ## Actions
