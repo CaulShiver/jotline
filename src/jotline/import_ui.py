@@ -9,7 +9,7 @@ from textual.widgets import Button, Input, Label, Static
 
 from .importing import preview_import, apply_import
 from .messages import failed, reason
-from .modal import Modal, TextPrompt
+from .modal import Modal, Palette, TextPrompt
 from .recovery_ui import RecoveryScreen
 from .terminal import terminal_text
 
@@ -98,16 +98,37 @@ class RecoveryImport:
         self.push_screen(RecoveryScreen(self.current.body, external, error), resolve)
 
     def import_library(self):
-        def choose_path(value):
-            if not value:
-                return
+        def preview(value, jotline_notes=False):
             try:
-                plan = preview_import(self.vault, Path(value), self.workspace, self.settings.default_collection,
-                                      recursive=True)
+                return preview_import(self.vault, Path(value), self.workspace, self.settings.default_collection,
+                                      recursive=True, jotline_notes=jotline_notes)
             except (OSError, ValueError) as error:
                 self.notify(failed(f'Nothing was imported from {value}', error,
                                    'Check the path; a file, a folder or a .draftsExport works.'), severity='error')
+                return None
+
+        def choose_path(value):
+            if not value:
                 return
+            plan = preview(value)
+            if plan is None:
+                return
+            if not plan.jotline_candidates:
+                review(plan)
+                return
+
+            def choose_headers(choice):
+                if choice is None:
+                    return
+                chosen = preview(value, jotline_notes=True) if choice == 'notes' else plan
+                if chosen is not None:
+                    review(chosen)
+            self.push_screen(Palette([
+                ('text', 'Keep the headers as text (files from anywhere else)'),
+                ('notes', 'Read them as Jotline notes: collection, star and dates (files from a Jotline vault)'),
+            ], f'{plan.jotline_candidates} file(s) start with a Jotline header'), choose_headers)
+
+        def review(plan):
             def confirmed(accepted):
                 if not accepted:
                     return
@@ -120,4 +141,5 @@ class RecoveryImport:
                 self.notify(result.summary() + ('. ' + ' | '.join(result.errors[:3]) if result.errors else ''),
                             severity='error' if result.errors else 'information', timeout=12)
             self.push_screen(ImportPreviewScreen(plan), confirmed)
+
         self.push_screen(TextPrompt('Import file, folder, or .draftsExport (subfolders included)', '/path/to/notes'), choose_path)

@@ -147,7 +147,7 @@ def test_folder_import_of_jotline_notes_keeps_their_metadata(tmp_path):
     source.mkdir()
     (source / f"{note.id}.md").write_bytes(old.file(note.id).read_bytes())
     new = Vault(tmp_path / "new")
-    apply_import(new, preview_import(new, source, "work"))
+    apply_import(new, preview_import(new, source, "work", jotline_notes=True))
     got = new.notes()[0]
     assert got.title == "Quarterly plan"
     assert (got.collection, got.starred, got.workspace) == ("projects", True, "work")

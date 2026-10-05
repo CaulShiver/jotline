@@ -12,7 +12,8 @@ import sys
 from time import monotonic
 from uuid import uuid4
 
-from .crypto import KEY_FILE, LOCKED, SCRYPT_N, EncryptionError, KeyFile, NoteCipher, is_sealed, new_note_key
+from .crypto import (FOREIGN_KEY, KEY_FILE, KEY_ID, LOCKED, SCRYPT_N, EncryptionError, KeyFile, NoteCipher,
+                     is_sealed, key_id, new_note_key)
 # Several names below are re-exported: other modules and the tests import
 # them from jotline.store rather than reaching into jotline.filesystem.
 from .filesystem import (
@@ -192,6 +193,8 @@ class Note:
     encrypted: bool = False
     # Note ID this inbox copy was preserved from after an external change.
     recovery_of: str | None = None
+    # Which note key sealed an encrypted note; see crypto.key_id.
+    key_id: str | None = None
     # The encrypted text while encrypted notes are locked; the body is empty then.
     sealed: str | None = field(default=None, repr=False)
     derived_warnings: list[str] = field(default_factory=list, repr=False, compare=False)
@@ -341,7 +344,7 @@ class Vault:
             for line in header.splitlines():
                 key, sep, value = line.partition(": ")
                 if sep and key in {"collection", "created", "updated", "starred", "workspace",
-                                   "encrypted", "recovery_of"}:
+                                   "encrypted", "recovery_of", "key_id"}:
                     try:
                         meta[key] = json.loads(value)
                     except RecursionError:
@@ -355,6 +358,9 @@ class Vault:
             raise ValueError("Invalid starred value")
         if not isinstance(meta.get("encrypted", False), bool):
             raise ValueError("Invalid encrypted value")
+        if meta.get("key_id") is not None and (not isinstance(meta["key_id"], str)
+                                                or not KEY_ID.fullmatch(meta["key_id"])):
+            raise ValueError("Invalid key ID")
         if meta.get("recovery_of") is not None:
             if not isinstance(meta["recovery_of"], str):
                 raise ValueError("Invalid recovery source")
@@ -510,6 +516,9 @@ class Vault:
                 "updated": stamp, "starred": note.starred, "workspace": note.workspace}
         if note.encrypted:
             meta["encrypted"] = True
+            sealed_by = note.key_id if note.locked else self.cipher.key_id
+            if sealed_by:
+                meta["key_id"] = sealed_by
         if note.recovery_of:
             meta["recovery_of"] = validate_note_id(note.recovery_of)
         stored = note.sealed if note.locked else self.cipher.seal(note.id, note.body) if note.encrypted else note.body
@@ -877,15 +886,73 @@ class Vault:
         finally:
             unlink_quietly(directory, temp)
 
+    def _seals_none_of_these_notes(self, candidate: str, directory: int) -> bool:
+        """Whether every encrypted note records a key ID and none records this one.
+
+        A note written before key IDs has none until it is saved again. If any
+        encrypted note lacks one, this key is not treated as foreign: the right
+        passphrase still unlocks and a wrong one still says so. Stops at the
+        first note sealed by the candidate, or the first encrypted note with no ID.
+        """
+        saw_other = False
+        with os.scandir(directory) as entries:
+            for index, entry in enumerate(entries):
+                if index >= MAX_SCAN_ENTRIES:
+                    break
+                if not entry.name.endswith(".md"):
+                    continue
+                try:
+                    note = self.parse_note(entry.name[:-3], read_regular_at(directory, entry.name, MAX_NOTE_BYTES))
+                except (OSError, ValueError):
+                    continue
+                if not note.encrypted:
+                    continue
+                if not note.key_id or note.key_id == candidate:
+                    return False
+                saw_other = True
+        return saw_other
+
+    def _unwrap(self, key: KeyFile, passphrase: str, directory: int) -> bytes:
+        """Unwrap the note key, naming a key file that seals none of these notes.
+
+        A wrong passphrase and another vault's key file fail the same AES-GCM
+        check. They can be told apart only once every encrypted note records a
+        key ID and none of those IDs is this key.
+        """
+        try:
+            note_key = key.unwrap(passphrase)
+        except EncryptionError:
+            if key.key_id and self._seals_none_of_these_notes(key.key_id, directory):
+                raise EncryptionError(FOREIGN_KEY) from None
+            raise
+        if self._seals_none_of_these_notes(key_id(note_key), directory):
+            raise EncryptionError(FOREIGN_KEY)
+        return note_key
+
     def unlock(self, passphrase: str) -> None:
         """Unwrap the note key so encrypted notes read and save as text."""
         directory = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             key = self._read_key(directory)
+            cipher = NoteCipher(self._unwrap(key, passphrase, directory))
         finally:
             os.close(directory)
-        self.cipher = NoteCipher(key.unwrap(passphrase))
+        self.cipher = cipher
         self.invalidate_cache()
+        if key.key_id != cipher.key_id:
+            self._record_key_id(key, cipher.key_id)
+
+    def _record_key_id(self, unlocked: KeyFile, recorded: str) -> None:
+        """Add the key ID to a key file written before it had one; same wrapping, same checksum."""
+        try:
+            with self.write_lock() as directory:
+                current = self._read_key(directory)
+                same = (current.salt, current.nonce, current.wrapped) == (unlocked.salt, unlocked.nonce,
+                                                                          unlocked.wrapped)
+                if same and current.key_id != recorded:
+                    self._write_key(directory, replace(current, key_id=recorded), replace_existing=True)
+        except (OSError, ValueError) as error:
+            self.retain_warning(f"The key file could not record its key ID: {error}")
 
     def lock(self) -> None:
         self.cipher = None
@@ -910,7 +977,7 @@ class Vault:
         """Rewrap the note key; encrypted notes themselves are not rewritten."""
         with self.write_lock() as directory:
             current = self._read_key(directory)
-            note_key = current.unwrap(old)
+            note_key = self._unwrap(current, old, directory)
             # The current work factor, not the file's: this is the one time a
             # vault set up with a weaker n gets stronger, and its key ID is written.
             self._write_key(directory, KeyFile.create(new, note_key, n=n or SCRYPT_N), replace_existing=True)

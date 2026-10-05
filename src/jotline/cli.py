@@ -387,6 +387,10 @@ def build_parser() -> argparse.ArgumentParser:
     importing.add_argument("--recursive", action="store_true", help="Include subfolders without following links")
     importing.add_argument("--duplicates", choices=("skip", "copy"), default="skip",
                            help="Skip matching bodies/UUIDs (default), or create separate copies")
+    importing.add_argument("--jotline-notes", action="store_true",
+                           help="Read Jotline headers as metadata (collection, star, dates). "
+                                "A single file is imported immediately; a folder still needs --apply. "
+                                "Use only for files from a Jotline vault")
     add_encoding_options(importing)
     completion = add_command("completion", help="Print a shell completion script")
     completion.add_argument("shell", choices=SHELLS)
@@ -459,11 +463,37 @@ def run_capture(run: Invocation) -> None:
         print(terminal_text(f"Saved to {note.collection}: {note.title} ({note.id[:8]})"))
 
 
+def _import_jotline_file(run: Invocation) -> None:
+    """Import one file now, reading a Jotline header as metadata.
+
+    A single file does not need --apply. The library importer is what turns
+    that header into the note's collection, star and dates.
+    """
+    args = run.args
+    plan = preview_import(run.vault, args.file, run.workspace, run.settings.default_collection,
+                          args.duplicates, encoding=run.encoding, errors=run.errors,
+                          jotline_notes=True)
+    for message in plan.warnings:
+        warning(message)
+    result = apply_import(run.vault, plan)
+    for message in result.errors:
+        warning(message)
+    if result.imported:
+        print(result.imported[0])
+    elif not result.errors and not plan.needs_review:
+        print(result.summary())
+    if result.errors or (plan.needs_review and not result.imported):
+        raise SystemExit(1)
+
+
 def run_import(run: Invocation) -> None:
     args = run.args
     library = (args.preview or args.apply or args.recursive or args.file.is_dir()
                or args.file.suffix.lower() == ".draftsexport")
     if not library:
+        if args.jotline_notes:
+            _import_jotline_file(run)
+            return
         body = decode_input(str(args.file), run.encoding, lambda: read_regular_file(
             args.file, MAX_NOTE_BYTES, ancestor_safe=True, encoding=run.encoding, errors=run.errors))
         print(save_new_note(run, body).id)
@@ -471,7 +501,8 @@ def run_import(run: Invocation) -> None:
     if args.preview and args.apply:
         run.parser.error("Choose --preview or --apply")
     plan = preview_import(run.vault, args.file, run.workspace, run.settings.default_collection,
-                          args.duplicates, args.recursive, encoding=run.encoding, errors=run.errors)
+                          args.duplicates, args.recursive, encoding=run.encoding, errors=run.errors,
+                          jotline_notes=args.jotline_notes)
     print(plan.summary())
     for item in plan.items:
         decision = "skip" if item.duplicate and plan.duplicates == "skip" else "import"

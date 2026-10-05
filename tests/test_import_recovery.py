@@ -80,7 +80,7 @@ def test_folder_import_carries_metadata_from_note_files_only(tmp_path):
     # A hand-edited vault can hold a note file written by hand under a name of the user's choosing.
     (old.path / 'todo.md').write_text('---\njotline: 1\ncollection: "areas"\n---\n# Hand written\n', encoding='utf-8')
     new = Vault(tmp_path / 'new')
-    plan = preview_import(new, old.path)
+    plan = preview_import(new, old.path, jotline_notes=True)
     assert sorted(item.source for item in plan.items) == sorted([f'{saved.id}.md (Jotline note)',
                                                                  'todo.md (Jotline note)'])
     apply_import(new, plan)
@@ -248,5 +248,95 @@ def test_recursive_import_of_a_vault_folder_leaves_its_history_behind(tmp_path):
         old.save(note)
     assert list((old.path / '.jotline-history').rglob('*.md')), 'expected the saves to leave revisions'
     new = Vault(tmp_path / 'new')
-    plan = preview_import(new, old.path, recursive=True)
+    plan = preview_import(new, old.path, recursive=True, jotline_notes=True)
     assert [item.source for item in plan.items] == [f'{note.id}.md (Jotline note)']
+
+
+def test_a_note_shaped_file_keeps_its_header_unless_jotline_notes_is_asked_for(tmp_path):
+    # Any simple .md name is note-shaped, so a file handed over from outside could
+    # file itself into a collection, star and backdate itself just by starting with
+    # a header. Only an explicit "these are Jotline notes" import reads one.
+    vault = Vault(tmp_path / 'vault')
+    source = tmp_path / 'handed-over'
+    source.mkdir()
+    header = '---\njotline: 1\ncollection: "archive"\nstarred: true\ncreated: "2001-01-01T00:00:00+00:00"\n---\n'
+    (source / 'plan.md').write_text(header + '# Forged\n', encoding='utf-8')
+    plain = preview_import(vault, source)
+    assert [item.source for item in plain.items] == ['plan.md']
+    note = plain.items[0].note
+    assert note.body.startswith(header) and note.collection == 'inbox' and not note.starred
+    assert plain.jotline_candidates == 1
+    assert any('--jotline-notes' in message for message in plain.notices)
+    assert not plain.needs_review
+    trusted = preview_import(vault, source, jotline_notes=True)
+    assert [item.source for item in trusted.items] == ['plan.md (Jotline note)']
+    note = trusted.items[0].note
+    assert (note.collection, note.starred, note.body) == ('archive', True, '# Forged\n')
+    assert trusted.jotline_candidates == 0
+
+
+def test_cli_import_of_one_file_honors_jotline_notes_without_apply(tmp_path):
+    # The immediate single-file path used to ignore --jotline-notes and keep the
+    # header in the body. It imports at once, without --apply, and the flag
+    # still turns that header into collection, star and dates.
+    header = '---\njotline: 1\ncollection: "archive"\nstarred: true\ncreated: "2001-01-01T00:00:00+00:00"\n---\n'
+    source = tmp_path / 'plan.md'
+    source.write_text(header + '# Kept\n', encoding='utf-8')
+    vault = tmp_path / 'vault'
+    result = subprocess.run([sys.executable, '-m', 'jotline', '--vault', str(vault), 'import',
+                             '--jotline-notes', str(source)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert 'Preview only' not in result.stdout
+    notes = Vault(vault).notes()
+    assert len(notes) == 1
+    note = notes[0]
+    assert result.stdout.strip() == note.id
+    assert (note.collection, note.starred, note.created, note.body) == ('archive', True,
+                                                                        '2001-01-01T00:00:00+00:00', '# Kept\n')
+    plain_vault = tmp_path / 'plain'
+    plain = subprocess.run([sys.executable, '-m', 'jotline', '--vault', str(plain_vault), 'import',
+                            str(source)], capture_output=True, text=True, check=False)
+    assert plain.returncode == 0, plain.stderr
+    copied = Vault(plain_vault).notes()
+    assert len(copied) == 1
+    assert copied[0].body.startswith(header) and copied[0].collection == 'inbox' and not copied[0].starred
+
+
+def test_cli_import_reads_jotline_headers_only_with_the_flag(tmp_path):
+    old = Vault(tmp_path / 'old')
+    saved = old.new('# Kept\n')
+    saved.collection = 'projects'
+    old.save(saved)
+    new = tmp_path / 'new'
+    preview = subprocess.run([sys.executable, '-m', 'jotline', '--vault', str(new), 'import', '--preview',
+                              str(old.path)], capture_output=True, text=True, check=False)
+    assert preview.returncode == 0, preview.stderr
+    assert '--jotline-notes' in preview.stderr
+    applied = subprocess.run([sys.executable, '-m', 'jotline', '--vault', str(new), 'import', '--apply',
+                              '--jotline-notes', str(old.path)], capture_output=True, text=True, check=False)
+    assert applied.returncode == 0, applied.stderr
+    assert [note.collection for note in Vault(new).notes()] == ['projects']
+
+
+@pytest.mark.parametrize('choice, collection', [('text', 'inbox'), ('notes', 'projects')])
+async def test_app_import_asks_before_reading_jotline_headers(tmp_path, choice, collection):
+    from textual.widgets import Input
+    from jotline.app import Jotline, Palette, TextPrompt
+    old = Vault(tmp_path / 'old')
+    saved = old.new('# Kept\n')
+    saved.collection = 'projects'
+    old.save(saved)
+    app = Jotline(Vault(tmp_path / 'new'))
+    async with app.run_test() as pilot:
+        app.autosave_timer.stop()
+        app.command('import-library')
+        await pilot.pause()
+        assert isinstance(app.screen, TextPrompt)
+        app.screen.query_one(Input).value = str(old.path)
+        await pilot.press('enter')
+        await pilot.pause()
+        assert isinstance(app.screen, Palette)
+        app.screen.dismiss(choice)
+        await pilot.pause()
+        assert isinstance(app.screen, ImportPreviewScreen)
+        assert [item.note.collection for item in app.screen.plan.items] == [collection]

@@ -4,6 +4,12 @@ on:
     branches: ['**']
   pull_request:
   workflow_call:
+# push and pull_request both run this workflow for the same commit. Queue the
+# second run instead of starting twelve jobs at once; macOS runners were
+# cancelling matrix jobs that never got a runner.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
@@ -12,6 +18,10 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
+      # A hosted job that is still waiting after about 15 minutes is cancelled
+      # ("not acquired by Runner"). Cap in-flight jobs so the rest stay queued
+      # behind the matrix instead of losing that race.
+      max-parallel: 2
       matrix:
         os: [ubuntu-latest, macos-latest]
         python: ['3.11', '3.12', '3.13']

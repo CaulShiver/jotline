@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import base64
 import binascii
+import dataclasses
 from dataclasses import dataclass
+import re
 import hashlib
+import hmac
 import json
 import os
 import textwrap
@@ -35,6 +38,10 @@ LOCKED = "This note is encrypted; unlock encrypted notes first"
 _NOTE_CONTEXT = b"jotline-note-v1\0"
 _KEY_CONTEXT = b"jotline-key-v1"
 _CHECKSUM_CONTEXT = b"jotline-key-checksum-v1"
+_KEY_ID_CONTEXT = b"jotline-key-id-v1"
+KEY_ID = re.compile(r"[0-9a-f]{16}")
+FOREIGN_KEY = ("The encryption key file does not belong to this vault's encrypted notes; it may come from "
+               "another vault or a sync conflict. Restore .jotline-key.json from a backup")
 
 
 class EncryptionError(ValueError):
@@ -75,6 +82,16 @@ def _derive(passphrase: str, salt: bytes, n: int, r: int, p: int) -> bytes:
                           maxmem=MAX_SCRYPT_MEMORY + 16 * 1024 * 1024, dklen=KEY_BYTES)
 
 
+def key_id(note_key: bytes) -> str:
+    """Name the note key without revealing it: an HMAC keyed by the note key itself.
+
+    Each sealed note records it, and so does the key file, so a key file from
+    another vault can be told from a wrong passphrase once every encrypted note
+    has one. It depends only on the note key, so changing the passphrase keeps it.
+    """
+    return hmac.new(note_key, _KEY_ID_CONTEXT, hashlib.sha256).hexdigest()[:16]
+
+
 def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
 
@@ -99,12 +116,15 @@ class KeyFile:
     p: int
     nonce: bytes
     wrapped: bytes
+    # Key files written before 0.9.10 carry none; unlocking one adds it.
+    key_id: str | None = None
 
     @classmethod
     def create(cls, passphrase: str, note_key: bytes, *, n: int = SCRYPT_N) -> "KeyFile":
         salt, nonce = os.urandom(SALT_BYTES), os.urandom(NONCE_BYTES)
         wrapping = _derive(check_passphrase(passphrase), salt, n, SCRYPT_R, SCRYPT_P)
-        return cls(salt, n, SCRYPT_R, SCRYPT_P, nonce, _aead(wrapping).encrypt(nonce, note_key, _KEY_CONTEXT))
+        return cls(salt, n, SCRYPT_R, SCRYPT_P, nonce, _aead(wrapping).encrypt(nonce, note_key, _KEY_CONTEXT),
+                   key_id(note_key))
 
     def unwrap(self, passphrase: str) -> bytes:
         wrapping = _derive(passphrase, self.salt, self.n, self.r, self.p)
@@ -122,12 +142,17 @@ class KeyFile:
         # note key never enter it. It tells a key file damaged on disk or by
         # a sync tool from a wrong passphrase, which the AES-GCM tag alone
         # cannot, since both fail the same check. A rewrap gets a new one.
+        # It leaves out the key ID so that 0.9.9, which predates it, still
+        # verifies a key file written now.
         return hashlib.sha256(_CHECKSUM_CONTEXT + self.salt + self.nonce + self.wrapped).hexdigest()[:16]
 
     def dumps(self) -> str:
-        return json.dumps({"jotline_key": 1, "kdf": "scrypt", "salt": _b64(self.salt), "n": self.n, "r": self.r,
-                           "p": self.p, "cipher": "aes-256-gcm", "nonce": _b64(self.nonce),
-                           "wrapped": _b64(self.wrapped), "checksum": self.checksum}, indent=2) + "\n"
+        data = {"jotline_key": 1, "kdf": "scrypt", "salt": _b64(self.salt), "n": self.n, "r": self.r,
+                "p": self.p, "cipher": "aes-256-gcm", "nonce": _b64(self.nonce),
+                "wrapped": _b64(self.wrapped), "checksum": self.checksum}
+        if self.key_id is not None:
+            data["key_id"] = self.key_id
+        return json.dumps(data, indent=2) + "\n"
 
     @classmethod
     def loads(cls, raw: str) -> "KeyFile":
@@ -146,6 +171,11 @@ class KeyFile:
         # wrong passphrase. It catches corruption, not a hostile edit, which can recompute it.
         if data.get("checksum") is not None and data["checksum"] != key.checksum:
             raise EncryptionError("The encryption key file is damaged; restore it from a backup")
+        recorded = data.get("key_id")
+        if recorded is not None:
+            if not isinstance(recorded, str) or not KEY_ID.fullmatch(recorded):
+                raise EncryptionError("The encryption key file is damaged; restore it from a backup")
+            key = dataclasses.replace(key, key_id=recorded)
         return key
 
 
@@ -156,6 +186,7 @@ class NoteCipher:
         if len(note_key) != KEY_BYTES:
             raise EncryptionError("The encryption key file is damaged")
         self._aead = _aead(note_key)
+        self.key_id = key_id(note_key)
 
     def seal(self, note_id: str, body: str) -> str:
         nonce = os.urandom(NONCE_BYTES)

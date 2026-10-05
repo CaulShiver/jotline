@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, date
+import errno
 import json
 from pathlib import Path
 import re
@@ -150,11 +151,22 @@ def _revisions_at(vault, note_id: str, folder: int) -> list[Revision]:
     return [revision for _, revision in sorted(result, key=lambda item: (item[0], item[1].id), reverse=True)]
 
 
+def _not_a_folder(error: OSError) -> bool:
+    # O_DIRECTORY | O_NOFOLLOW refuses a file with ENOTDIR and a symlink with ELOOP.
+    return isinstance(error, NotADirectoryError) or error.errno == errno.ELOOP
+
+
 def revisions(vault, note_id: str, *, vault_directory: int | None = None) -> list[Revision]:
     try:
         with _revision_directory(vault, note_id, create=False, vault_directory=vault_directory) as (_, folder):
             return _revisions_at(vault, note_id, folder)
     except FileNotFoundError:
+        return []
+    except OSError as error:
+        if not _not_a_folder(error):
+            raise
+        # The same stray file or link that saving already steps around.
+        vault.retain_warning(f"Note history is not being kept: {error}")
         return []
 
 
@@ -307,6 +319,11 @@ def history_note_ids(vault, *, vault_directory: int | None = None) -> list[str]:
                             pass
                 return result
     except FileNotFoundError:
+        return []
+    except OSError as error:
+        if not _not_a_folder(error):
+            raise
+        vault.retain_warning(f"Note history is not being kept: {error}")
         return []
 
 

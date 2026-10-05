@@ -3,6 +3,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
@@ -217,9 +218,10 @@ def test_imports_skip_encrypted_note_files(tmp_path):
     source = tmp_path / "source"
     source.mkdir()
     (source / "copied.md").write_bytes((vault.path / f"{note.id}.md").read_bytes())
-    plan = preview_import(Vault(tmp_path / "other"), source)
-    assert plan.items == []
-    assert any("Encrypted Jotline note skipped" in warning for warning in plan.warnings)
+    for trusted in (False, True):
+        plan = preview_import(Vault(tmp_path / "other"), source, jotline_notes=trusted)
+        assert plan.items == []
+        assert any("Encrypted Jotline note skipped" in warning for warning in plan.warnings)
 
 
 def run_cli(vault: Path, *args, passphrase: str | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -363,3 +365,111 @@ def test_a_link_to_an_encrypted_note_carries_no_label(tmp_path):
     note = encrypted_note(vault, "SECRETLINE Sam HIV status\n")
     assert wiki_link(vault.read(note.id)) == f"[[{note.id}]]"
     assert wiki_link(vault.new("Ordinary note")).endswith("|Ordinary note]]")
+
+
+def test_a_key_file_from_another_vault_is_named_as_such(tmp_path):
+    # A sync tool or a restore put another vault's key file in place. Every unlock
+    # then said "wrong passphrase", which sends the user hunting for a passphrase
+    # they have right. Notes record which key sealed them, so this one can tell.
+    vault = encrypted_vault(tmp_path / "mine")
+    encrypted_note(vault, "secret")
+    other = Vault(tmp_path / "theirs")
+    other.setup_encryption("their passphrase", n=FAST)
+    (vault.path / ".jotline-key.json").write_bytes((other.path / ".jotline-key.json").read_bytes())
+    with pytest.raises(EncryptionError, match="another vault"):
+        Vault(vault.path).unlock(PASSPHRASE)
+    # Their passphrase opens their key, which still seals none of these notes.
+    with pytest.raises(EncryptionError, match="another vault"):
+        Vault(vault.path).unlock("their passphrase")
+
+
+def test_a_wrong_passphrase_still_says_so(tmp_path):
+    vault = encrypted_vault(tmp_path)
+    encrypted_note(vault, "secret")
+    with pytest.raises(EncryptionError, match="Wrong passphrase"):
+        Vault(tmp_path).unlock("not the passphrase")
+
+
+def test_notes_record_the_key_that_sealed_them_and_keep_it_while_locked(tmp_path):
+    vault = encrypted_vault(tmp_path)
+    note = encrypted_note(vault, "secret")
+    key_id = json.loads((tmp_path / ".jotline-key.json").read_text())["key_id"]
+    assert f'key_id: "{key_id}"' in (tmp_path / f"{note.id}.md").read_text()
+    locked = Vault(tmp_path)
+    sealed = locked.read(note.id)
+    sealed.starred = True
+    locked.save(sealed)
+    assert f'key_id: "{key_id}"' in (tmp_path / f"{note.id}.md").read_text()
+    vault.change_passphrase(PASSPHRASE, "battery staple", n=FAST)
+    assert json.loads((tmp_path / ".jotline-key.json").read_text())["key_id"] == key_id
+
+
+def test_older_key_files_and_notes_gain_a_key_id_without_breaking_0_9_9(tmp_path):
+    vault = encrypted_vault(tmp_path)
+    note = encrypted_note(vault, "secret")
+    path = tmp_path / ".jotline-key.json"
+    data = json.loads(path.read_text())
+    key_id = data.pop("key_id")
+    path.write_text(json.dumps(data))
+    raw = (tmp_path / f"{note.id}.md").read_text().replace(f'key_id: "{key_id}"\n', "")
+    (tmp_path / f"{note.id}.md").write_text(raw)
+    # No note records a key yet, so a wrong passphrase cannot be mistaken for a foreign key.
+    with pytest.raises(EncryptionError, match="Wrong passphrase"):
+        Vault(tmp_path).unlock("not the passphrase")
+    fresh = Vault(tmp_path)
+    fresh.unlock(PASSPHRASE)
+    assert fresh.read(note.id).body == "secret"
+    written = json.loads(path.read_text())
+    assert written["key_id"] == key_id
+    # The checksum 0.9.9 verifies covers the same bytes as before, so 0.9.9 still reads the file.
+    assert written["checksum"] == data["checksum"]
+    # The note itself gains the ID the next time it is saved, not merely unlocked.
+    assert f'key_id: "{key_id}"' not in (tmp_path / f"{note.id}.md").read_text()
+    opened = fresh.read(note.id)
+    opened.body = "secret\nkept"
+    fresh.save(opened)
+    assert f'key_id: "{key_id}"' in (tmp_path / f"{note.id}.md").read_text()
+    assert fresh.read(note.id).body == "secret\nkept"
+
+
+def test_an_upgraded_vault_beside_a_foreign_note_still_unlocks(tmp_path):
+    # Notes saved before key IDs have none. A copied note from another vault does.
+    # The key is foreign only when every encrypted note has an ID and none matches,
+    # so the real passphrase must still open the local note. change_passphrase
+    # uses the same check.
+    vault = encrypted_vault(tmp_path / "mine")
+    local = encrypted_note(vault, "local secret")
+    key_path = vault.path / ".jotline-key.json"
+    data = json.loads(key_path.read_text())
+    recorded = data.pop("key_id")
+    key_path.write_text(json.dumps(data))
+    local_path = vault.path / f"{local.id}.md"
+    local_path.write_text(local_path.read_text().replace(f'key_id: "{recorded}"\n', ""))
+
+    other = Vault(tmp_path / "theirs")
+    other.setup_encryption("their passphrase", n=FAST)
+    foreign = encrypted_note(other, "their secret")
+    foreign_name = f"{foreign.id}.md"
+    (vault.path / foreign_name).write_bytes((other.path / foreign_name).read_bytes())
+    assert f'key_id: "{recorded}"' not in local_path.read_text()
+    assert 'key_id: "' in (vault.path / foreign_name).read_text()
+
+    with pytest.raises(EncryptionError, match="Wrong passphrase"):
+        Vault(vault.path).unlock("not the passphrase")
+    # change_passphrase shares the foreign-key check and must accept the real
+    # passphrase while a local note still has no key ID.
+    changed_path = tmp_path / "change"
+    shutil.copytree(vault.path, changed_path)
+    Vault(changed_path).change_passphrase(PASSPHRASE, "battery staple", n=FAST)
+    changed = Vault(changed_path)
+    changed.unlock("battery staple")
+    assert changed.read(local.id).body == "local secret"
+    fresh = Vault(vault.path)
+    fresh.unlock(PASSPHRASE)
+    assert fresh.read(local.id).body == "local secret"
+    with pytest.raises(EncryptionError, match="another vault"):
+        fresh.read(foreign.id)
+    # Unlock recorded the key ID. Unlabeled local notes still keep a wrong
+    # passphrase from being reported as a foreign key file.
+    with pytest.raises(EncryptionError, match="Wrong passphrase"):
+        Vault(vault.path).unlock("not the passphrase")
