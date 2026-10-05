@@ -377,9 +377,7 @@ def test_cli_recipe_output(desktop_home, tmp_path):
 def test_installed_mode_is_user_private(desktop_home):
     path = desktop.install_desktop_entry()
     assert stat.S_ISREG(path.stat().st_mode)
-    if os.name != "nt":
-        assert stat.S_IMODE(path.stat().st_mode) == 0o600
-
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 def read_desktop_arg(written):
@@ -421,3 +419,13 @@ def test_desktop_exec_applies_string_escapes_before_quoting(value, written):
 def test_desktop_exec_refuses_a_control_character_it_cannot_write():
     with pytest.raises(ValueError, match="desktop entry"):
         desktop.quote_desktop_arg("bell\x07")
+
+
+def test_windows_executable_names_are_not_jotline_or_a_terminal(monkeypatch, tmp_path):
+    fake = tmp_path / "jotline.exe"
+    fake.write_text("#!/bin/sh\n", encoding="utf-8")
+    fake.chmod(0o755)
+    monkeypatch.setattr(sys, "argv", [str(fake)])
+    monkeypatch.setattr(desktop.shutil, "which", lambda name: "/usr/bin/kitty.exe" if name == "kitty.exe" else None)
+    assert desktop.jotline_command() == [sys.executable, "-m", "jotline"]
+    assert desktop.resolve_terminal("kitty.exe") is None

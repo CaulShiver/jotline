@@ -2,8 +2,10 @@
 
 ## Unreleased
 
-Closes the last four items of the 2026-09-21 red team.
-
+- **Linux desktop entries escape `Exec=` the way the spec reads it.** A path
+  containing `$`, a backslash, a quote, or a backtick is written so a desktop
+  parser yields that path. A control character the spec cannot represent is
+  refused. There is still no AppImage and no macOS application bundle.
 - **A key file from another vault is named as such.** Each encrypted note now
   records which key sealed it (`key_id` in its header, an HMAC of the note key
   that reveals nothing about it), and so does the key file. Unlocking with a key
@@ -19,12 +21,6 @@ Closes the last four items of the 2026-09-21 red team.
 - **Opening the history of a note whose history folder is a file or a link**
   shows no saved versions and the same warning saving gives, instead of an
   error.
-- **Desktop entries escape quoted arguments the way the spec reads them.** The
-  string escapes apply before the quoting rule, so a literal `$` in a quoted
-  path is written `\\$` and a backslash as four. A newline or tab in an argument is
-  written as `\n` or `\t`, and any other control character is refused rather than
-  breaking the file.
-
 - **Titles no longer show Markdown markers.** A note that starts `- [ ] buy milk`,
   `> quote` or `**Bold**` is listed, picked and linked as "buy milk", "quote" and
   "Bold". The note file is unchanged, and links or `jotline open` using the old

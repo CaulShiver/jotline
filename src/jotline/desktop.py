@@ -89,7 +89,7 @@ def desktop_entry_path() -> Path:
 def jotline_command() -> list[str]:
     """Argv that reinvokes this Jotline CLI."""
     candidate = Path(sys.argv[0]).expanduser()
-    if candidate.name.lower() in {"jotline", "jotline.exe"}:
+    if candidate.name.lower() == "jotline":
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return [str(candidate.resolve())]
         found = shutil.which("jotline")
@@ -363,8 +363,6 @@ def resolve_terminal(name: str) -> tuple[str, str] | None:
     if binary is None:
         return None
     kind = Path(binary).name.lower()
-    if kind.endswith(".exe"):
-        kind = kind[:-4]
     if kind not in TERMINAL_ORDER:
         return None
     return kind, binary
