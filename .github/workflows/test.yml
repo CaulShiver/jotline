@@ -18,6 +18,10 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
+      # A hosted job that is still waiting after about 15 minutes is cancelled
+      # ("not acquired by Runner"). Cap in-flight jobs so the rest stay queued
+      # behind the matrix instead of losing that race.
+      max-parallel: 2
       matrix:
         os: [ubuntu-latest, macos-latest]
         python: ['3.11', '3.12', '3.13']
