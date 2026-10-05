@@ -84,8 +84,10 @@ def test_desktop_entry_is_a_capture_launcher():
 def test_desktop_exec_quotes_spaces_and_reserved_characters():
     quoted = desktop.quote_desktop_arg("/home/user/My Notes/jotline")
     assert quoted == '"/home/user/My Notes/jotline"'
+    # The string escape rule applies before the quoting rule, so inside quotes a
+    # literal $ is written \\$ and a literal backslash as four of them.
     dollar = desktop.quote_desktop_arg("cmd$oops")
-    assert dollar == '"cmd\\$oops"'
+    assert dollar == '"cmd\\\\$oops"'
     body = desktop.render_desktop_entry(["/home/user/My Notes/jotline"])
     assert 'Exec="/home/user/My Notes/jotline" desktop launch' in body
 
@@ -375,5 +377,55 @@ def test_cli_recipe_output(desktop_home, tmp_path):
 def test_installed_mode_is_user_private(desktop_home):
     path = desktop.install_desktop_entry()
     assert stat.S_ISREG(path.stat().st_mode)
-    if os.name != "nt":
-        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def read_desktop_arg(written):
+    """A reader written from the spec: string escapes first, then the quoting rule."""
+    string = {"s": " ", "n": "\n", "t": "\t", "r": "\r", "\\": "\\"}
+    unescaped, index = "", 0
+    while index < len(written):
+        if written[index] == "\\":
+            unescaped += string[written[index + 1]]
+            index += 2
+        else:
+            unescaped += written[index]
+            index += 1
+    if not unescaped.startswith('"'):
+        return unescaped.replace("%%", "%")
+    inner, value, index = unescaped[1:-1], "", 0
+    while index < len(inner):
+        if inner[index] == "\\":
+            assert inner[index + 1] in '"`$\\'
+            index += 1
+        value += inner[index]
+        index += 1
+    return value.replace("%%", "%")
+
+
+@pytest.mark.parametrize("value, written", [
+    ("a\\b", '"a\\\\\\\\b"'),
+    ('say "hi"', '"say \\\\"hi\\\\""'),
+    ("tick`", '"tick\\\\`"'),
+    ("cost $5 at 100%", '"cost \\\\$5 at 100%%"'),
+    ("two\nlines", '"two\\nlines"'),
+    ("tab\there", '"tab\\there"'),
+])
+def test_desktop_exec_applies_string_escapes_before_quoting(value, written):
+    assert desktop.quote_desktop_arg(value) == written
+    assert read_desktop_arg(written) == value
+
+
+def test_desktop_exec_refuses_a_control_character_it_cannot_write():
+    with pytest.raises(ValueError, match="desktop entry"):
+        desktop.quote_desktop_arg("bell\x07")
+
+
+def test_windows_executable_names_are_not_jotline_or_a_terminal(monkeypatch, tmp_path):
+    fake = tmp_path / "jotline.exe"
+    fake.write_text("#!/bin/sh\n", encoding="utf-8")
+    fake.chmod(0o755)
+    monkeypatch.setattr(sys, "argv", [str(fake)])
+    monkeypatch.setattr(desktop.shutil, "which", lambda name: "/usr/bin/kitty.exe" if name == "kitty.exe" else None)
+    assert desktop.jotline_command() == [sys.executable, "-m", "jotline"]
+    assert desktop.resolve_terminal("kitty.exe") is None

@@ -89,7 +89,7 @@ def desktop_entry_path() -> Path:
 def jotline_command() -> list[str]:
     """Argv that reinvokes this Jotline CLI."""
     candidate = Path(sys.argv[0]).expanduser()
-    if candidate.name.lower() in {"jotline", "jotline.exe"}:
+    if candidate.name.lower() == "jotline":
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return [str(candidate.resolve())]
         found = shutil.which("jotline")
@@ -105,13 +105,20 @@ def jotline_shell(command: list[str] | None = None) -> str:
     return " ".join(shlex.quote(part) for part in (command or jotline_command()))
 
 
+DESKTOP_STRING_ESCAPES = {"\\": "\\\\", "\n": "\\n", "\t": "\\t", "\r": "\\r"}
+
+
 def quote_desktop_arg(value: str) -> str:
     # Exec= reads % as a field code (%f, %u, ...) whether or not the argument is quoted.
     value = value.replace("%", "%%")
+    if any(ord(character) < 32 and character not in DESKTOP_STRING_ESCAPES for character in value):
+        raise ValueError(f"A control character cannot be written into a desktop entry: {value!r}")
     if value and not any(character in DESKTOP_RESERVED or ord(character) < 32 for character in value):
         return value
-    escaped = (value.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$").replace("`", "\\`"))
-    return f'"{escaped}"'
+    quoted = (value.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$").replace("`", "\\`"))
+    # The Exec value is a string, and the spec applies its escapes before the
+    # quoting rule, so a reader undoes them first: \\$ reads as \$, then as $.
+    return '"' + "".join(DESKTOP_STRING_ESCAPES.get(character, character) for character in quoted) + '"'
 
 
 def desktop_exec(command: list[str]) -> str:
@@ -356,8 +363,6 @@ def resolve_terminal(name: str) -> tuple[str, str] | None:
     if binary is None:
         return None
     kind = Path(binary).name.lower()
-    if kind.endswith(".exe"):
-        kind = kind[:-4]
     if kind not in TERMINAL_ORDER:
         return None
     return kind, binary

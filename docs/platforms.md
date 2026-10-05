@@ -16,7 +16,9 @@ message.
 Publication is gated on `ubuntu-latest` and `macos-latest` × Python 3.11–3.13
 (six jobs), then an installed-wheel smoke on each OS through
 `scripts/install.py`. POSIX PTY smoke runs on Linux during the tag job. A failed
-job blocks the GitHub Release.
+job blocks the GitHub Release. `macos-latest` is an Apple Silicon runner. The
+published wheel is `py3-none-any`, so an Intel Mac installs the same file; it
+is not a separate build.
 
 ## Default vault locations
 
@@ -27,6 +29,23 @@ job blocks the GitHub Release.
 
 Override with `JOTLINE_VAULT` or `--vault`. Use a local filesystem with
 hard-link support (APFS, ext4).
+
+## Desktop and installers
+
+Install from PyPI with `uv tool install jotline` or `pipx install jotline`, or
+from a GitHub Release with the `install.py` one-liner in
+[install.md](install.md). Both paths install the same wheel. There is no
+AppImage, no macOS application bundle, and no PowerShell installer.
+
+On Linux, `jotline desktop install` writes `org.jotline.capture.desktop` under
+`$XDG_DATA_HOME/applications` (normally `~/.local/share/applications`). `Exec=`
+follows the Desktop Entry spec, including a path that contains a space or `$`.
+`jotline desktop recipe` prints Omarchy, Hyprland, GNOME, KDE, and clipboard
+pipe snippets on Linux and macOS.
+
+On macOS, `jotline desktop install` and `jotline desktop launch` are refused
+with a short explanation. Bind a terminal hotkey to `jotline capture`, or run
+`pbpaste | jotline capture`. Copy uses `pbcopy`.
 
 ## Known limitations
 

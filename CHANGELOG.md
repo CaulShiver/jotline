@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Linux desktop entries escape `Exec=` the way the spec reads it.** A path
+  containing `$`, a backslash, a quote, or a backtick is written so a desktop
+  parser yields that path. A control character the spec cannot represent is
+  refused. There is still no AppImage and no macOS application bundle.
 - **Titles no longer show Markdown markers.** A note that starts `- [ ] buy milk`,
   `> quote` or `**Bold**` is listed, picked and linked as "buy milk", "quote" and
   "Bold". The note file is unchanged, and links or `jotline open` using the old
