@@ -275,6 +275,33 @@ def test_a_note_shaped_file_keeps_its_header_unless_jotline_notes_is_asked_for(t
     assert trusted.jotline_candidates == 0
 
 
+def test_cli_import_of_one_file_honors_jotline_notes_without_apply(tmp_path):
+    # The immediate single-file path used to ignore --jotline-notes and keep the
+    # header in the body. It imports at once, without --apply, and the flag
+    # still turns that header into collection, star and dates.
+    header = '---\njotline: 1\ncollection: "archive"\nstarred: true\ncreated: "2001-01-01T00:00:00+00:00"\n---\n'
+    source = tmp_path / 'plan.md'
+    source.write_text(header + '# Kept\n', encoding='utf-8')
+    vault = tmp_path / 'vault'
+    result = subprocess.run([sys.executable, '-m', 'jotline', '--vault', str(vault), 'import',
+                             '--jotline-notes', str(source)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert 'Preview only' not in result.stdout
+    notes = Vault(vault).notes()
+    assert len(notes) == 1
+    note = notes[0]
+    assert result.stdout.strip() == note.id
+    assert (note.collection, note.starred, note.created, note.body) == ('archive', True,
+                                                                        '2001-01-01T00:00:00+00:00', '# Kept\n')
+    plain_vault = tmp_path / 'plain'
+    plain = subprocess.run([sys.executable, '-m', 'jotline', '--vault', str(plain_vault), 'import',
+                            str(source)], capture_output=True, text=True, check=False)
+    assert plain.returncode == 0, plain.stderr
+    copied = Vault(plain_vault).notes()
+    assert len(copied) == 1
+    assert copied[0].body.startswith(header) and copied[0].collection == 'inbox' and not copied[0].starred
+
+
 def test_cli_import_reads_jotline_headers_only_with_the_flag(tmp_path):
     old = Vault(tmp_path / 'old')
     saved = old.new('# Kept\n')

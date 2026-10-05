@@ -86,8 +86,8 @@ def key_id(note_key: bytes) -> str:
     """Name the note key without revealing it: an HMAC keyed by the note key itself.
 
     Each sealed note records it, and so does the key file, so a key file from
-    another vault can be told from a wrong passphrase. It depends only on the
-    note key, so changing the passphrase keeps it.
+    another vault can be told from a wrong passphrase once every encrypted note
+    has one. It depends only on the note key, so changing the passphrase keeps it.
     """
     return hmac.new(note_key, _KEY_ID_CONTEXT, hashlib.sha256).hexdigest()[:16]
 

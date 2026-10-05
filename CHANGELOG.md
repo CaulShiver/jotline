@@ -8,15 +8,18 @@
   refused. There is still no AppImage and no macOS application bundle.
 - **A key file from another vault is named as such.** Each encrypted note now
   records which key sealed it (`key_id` in its header, an HMAC of the note key
-  that reveals nothing about it), and so does the key file. Unlocking with a key
-  file that seals none of the vault's notes says so and points to a backup,
-  instead of reporting a wrong passphrase. Older key files gain the ID the next
-  time they unlock; older notes gain it the next time they are saved. 0.9.9 reads
-  both: it ignores the new fields, and the key file checksum is unchanged.
+  that reveals nothing about it), and so does the key file. The key file is
+  named as another vault's only when every encrypted note records an ID and
+  none of them is this key; it then points to a backup instead of reporting a
+  wrong passphrase. A note saved before key IDs has none until its next save,
+  and until then the right passphrase still unlocks and a wrong one still says
+  so. Older key files gain the ID the next time they unlock. 0.9.9 reads both:
+  it ignores the new fields, and the key file checksum is unchanged.
 - **Imports read a Jotline header only when asked.** `jotline import
   --jotline-notes` keeps each note's collection, star and dates; without it the
   header stays in the note as text, so a handed-over file cannot file, star or
-  backdate itself. The preview says how many files carry a header, and the app
+  backdate itself. A single file with the flag is imported at once. A folder
+  previews first. The preview says how many files carry a header, and the app
   asks. Encrypted notes are still skipped either way.
 - **Opening the history of a note whose history folder is a file or a link**
   shows no saved versions and the same warning saving gives, instead of an

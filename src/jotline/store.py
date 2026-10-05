@@ -887,12 +887,14 @@ class Vault:
             unlink_quietly(directory, temp)
 
     def _seals_none_of_these_notes(self, candidate: str, directory: int) -> bool:
-        """Whether encrypted notes record their key and none records this one.
+        """Whether every encrypted note records a key ID and none records this one.
 
-        Stops at the first note sealed by the candidate, which in a healthy
-        vault is the first encrypted note the scan reaches.
+        A note written before key IDs has none until it is saved again. If any
+        encrypted note lacks one, this key is not treated as foreign: the right
+        passphrase still unlocks and a wrong one still says so. Stops at the
+        first note sealed by the candidate, or the first encrypted note with no ID.
         """
-        others = False
+        saw_other = False
         with os.scandir(directory) as entries:
             for index, entry in enumerate(entries):
                 if index >= MAX_SCAN_ENTRIES:
@@ -903,18 +905,19 @@ class Vault:
                     note = self.parse_note(entry.name[:-3], read_regular_at(directory, entry.name, MAX_NOTE_BYTES))
                 except (OSError, ValueError):
                     continue
-                if note.encrypted and note.key_id:
-                    if note.key_id == candidate:
-                        return False
-                    others = True
-        return others
+                if not note.encrypted:
+                    continue
+                if not note.key_id or note.key_id == candidate:
+                    return False
+                saw_other = True
+        return saw_other
 
     def _unwrap(self, key: KeyFile, passphrase: str, directory: int) -> bytes:
         """Unwrap the note key, naming a key file that seals none of these notes.
 
         A wrong passphrase and another vault's key file fail the same AES-GCM
-        check. The notes record their key, so the second can be told apart once
-        any note does.
+        check. They can be told apart only once every encrypted note records a
+        key ID and none of those IDs is this key.
         """
         try:
             note_key = key.unwrap(passphrase)

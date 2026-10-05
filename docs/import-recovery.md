@@ -27,11 +27,18 @@ Folder and Drafts imports default to preview. A single Markdown/text file retain
 its previous immediate-import behavior; add `--preview` to review it first.
 A file that starts with a Jotline header keeps that header as text unless you
 pass `--jotline-notes`. With it, the header becomes the note's collection, star
-and dates. Use it only for files that came out of a Jotline vault: otherwise a
-file handed to you could file itself into any collection or backdate itself just
-by starting with a header. The app asks which you mean when a folder holds such
-files. Encrypted Jotline notes are skipped either way, because they only open in
-the vault that sealed them.
+and dates. On a single file that import still happens at once, without `--apply`:
+
+```sh
+jotline import ~/Documents/plan.md --jotline-notes
+```
+
+A folder still previews first, so add `--apply` there. Use the flag only for
+files that came out of a Jotline vault: otherwise a file handed to you could
+file itself into any collection or backdate itself just by starting with a
+header. The app asks which you mean when a folder holds such files. Encrypted
+Jotline notes are skipped either way, because they only open in the vault that
+sealed them.
 `--duplicates skip` is the default for batch import: matching text in the destination
 workspace or matching Drafts UUIDs are skipped. `--duplicates copy` creates new,
 independent IDs instead. There is no overwrite mode. The apply step checks again
