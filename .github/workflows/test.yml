@@ -4,6 +4,12 @@ on:
     branches: ['**']
   pull_request:
   workflow_call:
+# push and pull_request both run this workflow for the same commit. Queue the
+# second run instead of starting twelve jobs at once; macOS runners were
+# cancelling matrix jobs that never got a runner.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
