@@ -191,7 +191,8 @@ Ctrl+T browses workspace tags and counts. Ctrl+P → Add tags appends tags.
 Edit or remove inline tags directly in the note; no separate tag database is needed.
 
 ## Workspaces
-Ctrl+W switches workspaces or creates one, such as work or personal.
+Ctrl+P → Switch workspace changes or creates one, such as work or personal.
+Ctrl+W deletes the word to the left of the cursor.
 Ctrl+P → Move note to workspace moves a regular note without changing its file ID.
 Each workspace has its own daily logs, collections, search results, and links.
 Existing notes are in default. Workspace names use lowercase letters, numbers, - or _.
@@ -200,8 +201,9 @@ Appearance and editor settings are shared across this vault.
 
 ## Navigation
 Ctrl+P → Toggle task checks or unchecks the current line.
-Ctrl+B hides the sidebar. Ctrl+O finds a note by title.
-Ctrl+F searches this workspace (except trash). Multiple words narrow results.
+The note list starts hidden. F8 shows or hides it. Ctrl+O finds a note by title.
+F3 finds text in the open note. Ctrl+F searches this workspace (except trash) and shows the list.
+Multiple words narrow results.
 Alt+K shows incoming and outgoing connections, with the line that contains each link.
 Ctrl+P → Follow a link opens the [[link]] under the cursor. Broken links can create a note.
 Click a link in preview, or Ctrl+click one in the editor.
@@ -222,9 +224,9 @@ Check vault health and Open a recovery copy surface doctor warnings and copies s
 Everything stays in your local vault as readable Markdown.
 Use `jotline capture` to send text from the shell, and `jotline export` to
 write a note without metadata. No account, telemetry, or cloud service.
-`jotline sync` prints a Git or Syncthing recipe that uses the same recovery
-dialog as an external editor. Ctrl+Q flushes edits before quitting. Use it
-before closing the terminal.
+There is no sync command. Git or Syncthing can copy the vault folder; `jotline doctor`
+points at the recipe in docs/sync.md, and the same recovery dialog covers an
+external edit. Ctrl+Q flushes edits before quitting. Use it before closing the terminal.
 
 ## Clipboard and accessibility
 Ctrl+P → Copy note uses pbcopy on macOS (and wl-copy, xclip, or xsel on Linux

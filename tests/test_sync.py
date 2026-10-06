@@ -15,43 +15,50 @@ from jotline.sync import (
     syncthing_recipe,
 )
 
+import pytest
+
 from test_cli_scripting import run_cli
 
 
 DOCS = Path(__file__).resolve().parents[1] / "docs" / "sync.md"
 
 
-def test_cli_prints_git_syncthing_recovery_and_vault_path(tmp_path):
-    result = run_cli(tmp_path, "sync")
-    assert result.returncode == 0
-    out = result.stdout.decode()
+def test_recipes_name_git_syncthing_recovery_and_the_vault_path(tmp_path):
+    guide = sync_guide(tmp_path)
     resolved = str(tmp_path.resolve())
-    assert resolved in out
-    assert "not a Jotline cloud" in out
-    assert "git init" in out
-    assert "Syncthing" in out
-    assert RECOVERY_KEEP_BOTH in out
-    assert RECOVERY_OPEN_COPY in out
-    assert RECOVERY_KEEP_EDITING in out
-    assert ".jotline.lock" in out
-    assert ".jotline-key.json" in out
-    assert "jotline doctor" in out
-    assert "jotline backup" in out
+    assert resolved in guide
+    assert "not a Jotline cloud" in guide
+    assert "git init" in guide
+    assert "Syncthing" in guide
+    assert RECOVERY_KEEP_BOTH in guide
+    assert RECOVERY_OPEN_COPY in guide
+    assert RECOVERY_KEEP_EDITING in guide
+    assert ".jotline.lock" in guide
+    assert ".jotline-key.json" in guide
+    assert "jotline doctor" in guide
+    assert "jotline backup" in guide
 
 
-def test_cli_can_show_one_tool(tmp_path):
-    git = run_cli(tmp_path, "sync", "git").stdout.decode()
-    syncthing = run_cli(tmp_path, "sync", "syncthing").stdout.decode()
+def test_each_tool_has_its_own_recipe(tmp_path):
+    git = git_recipe(tmp_path)
+    syncthing = syncthing_recipe(tmp_path)
     assert "git init" in git and "## Syncthing" not in git
     assert "Share `" in syncthing and "## Git" not in syncthing
     assert RECOVERY_KEEP_BOTH in git and RECOVERY_KEEP_BOTH in syncthing
 
 
-def test_sync_does_not_create_a_vault(tmp_path):
+def test_doctor_points_at_the_sync_page(tmp_path):
+    result = run_cli(tmp_path, "doctor")
+    assert b"docs/sync.md" in result.stdout
+    assert b"does not copy notes" in result.stdout
+
+
+def test_sync_is_not_a_command_and_does_not_create_a_vault(tmp_path):
     missing = tmp_path / "no-such-vault"
     result = run_cli(missing, "sync")
-    assert result.returncode == 0
+    assert result.returncode != 0
     assert not missing.exists()
+    assert b"invalid choice" in result.stderr.lower() or b"unrecognized" in result.stderr.lower()
 
 
 def test_docs_recipe_matches_in_app_text():
@@ -101,12 +108,13 @@ async def test_inbound_sync_uses_existing_recovery_dialog(tmp_path):
         assert vault.read(note.id).body == "arrived from the other peer"
 
 
-def test_parser_lists_sync_without_cloud():
+def test_parser_points_at_the_recipe_without_a_sync_command():
     help_text = build_parser().format_help().replace("\n", " ")
     assert "Git or Syncthing" in help_text
-    assert "Jotline cloud" in help_text
-    sync_help = build_parser().parse_args(["sync", "git"])
-    assert sync_help.tool == "git"
+    assert "jotline doctor" in help_text
+    assert " sync," not in help_text and " sync " not in help_text
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["sync"])
 
 
 def test_the_git_recipe_quotes_the_vault_path(tmp_path):

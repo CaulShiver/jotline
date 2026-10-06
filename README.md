@@ -4,11 +4,12 @@
 
 ![Jotline terminal workspace](docs/screenshot.svg)
 
-Jotline opens to a blank page. Start typing; your writing saves automatically to
-local Markdown files, with no account and no cloud. Press `Ctrl+P` when you want
-to do something with it. The same notes are a shell command away, so a thought
-can go in from a hotkey or a script and come out as a task list, a search result
-or a PDF.
+Jotline opens to a blank page. The note list, formatting toolbar and hint stay
+hidden until `Ctrl+F` (search) or `Ctrl+O` (open a note); `F8` toggles them.
+Start typing; your writing saves automatically to local Markdown files, with no
+account and no cloud. Press `Ctrl+P` when you want to do something with it. The
+same notes are a shell command away, so a thought can go in from a hotkey or a
+script and come out as a task list, a search result or HTML.
 
 ## Install
 
@@ -100,7 +101,7 @@ jotline list '#work'                            # or: jotline search '#work'
 jotline open milk                               # exact title or ID, else the best title match
 jotline tasks --due today
 jotline done 3f9a8c21:4
-jotline export last --output plan.pdf
+jotline export last --output plan.html
 ```
 
 `capture` with no text opens a small editor (Ctrl+S saves, Esc cancels); bind it

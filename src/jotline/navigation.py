@@ -342,10 +342,10 @@ class Views:
         self.push_screen(Walkthrough(self.shortcut_text('''Capture, find, and use your notes
 
 1. Capture: start typing now. The first line becomes the title; text saves automatically. Ctrl+N starts another note.
-2. Find: Ctrl+F opens search. Use words or #tags. Collections and Views above the list help organize your library; Filters changes search and sorting.
-3. Process: Ctrl+P opens commands to move, star, link, format, or run actions on a note. Shift+F10 opens a selected note's menu.
-4. Reuse: save your search as a view. Manage views lets you edit, rename, duplicate, or update it. Ctrl+D opens today's log.
-5. Recover: note history restores a separate copy. Trash keeps removed notes until you move them back. Ctrl+Q saves before quitting. If Git or Syncthing changes a file while you still have unsaved text, the comparison dialog keeps both copies. Ctrl+P → How to sync this vault prints the recipe; there is no Jotline cloud.
+2. Find: the note list starts hidden. Ctrl+F opens search and shows it. Use words or #tags. Ctrl+O opens a note by title. F3 finds inside the note you are writing.
+3. Process: Ctrl+P opens everyday commands: a new thought, today's log, search, links, stars, and moving a note to inbox, archive or trash. Type to reach the rest. Shift+F10 opens a selected note's menu.
+4. Reuse: Ctrl+D opens today's log. Save a search as a view when you want it again.
+5. Recover: note history restores a separate copy. Trash keeps removed notes until you move them back; Delete on a highlighted note asks first. Ctrl+Q saves before quitting. If Git or Syncthing changes a file while you still have unsaved text, the comparison dialog keeps both copies. There is no Jotline cloud; jotline doctor points at the recipe.
 
 Ctrl+, customizes appearance and shortcuts. Esc closes this guide and returns to your text. This walkthrough never creates a note.
 ''')))

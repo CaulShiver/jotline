@@ -5,15 +5,9 @@ Jotline does not host a cloud. There is no Jotline cloud. Notes are ordinary fil
 the recovery UI you already have: conflict comparison, recovery copies, history,
 ZIP backups, and `jotline doctor`.
 
-Print the recipe with the vault path filled in:
-
-```sh
-jotline sync
-jotline sync git
-jotline sync syncthing
-```
-
-In the app: **Ctrl+P → How to sync this vault with Git or Syncthing**.
+There is no `jotline sync` command. The recipe is this page. `jotline doctor`
+prints the vault path and points here. In the app, type in **Ctrl+P** to reach
+**How to sync this vault with Git or Syncthing** when you want the path filled in.
 
 ## Before you sync
 

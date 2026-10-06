@@ -23,7 +23,8 @@ from . import clipboard
 from .accessibility import A11Y_NOTES, COPY_NATIVE, COPY_REQUEST
 from .action_ui import ActionWorkflows
 from .cli_doctor import doctor_report, format_doctor
-from .commands import Command
+from . import crypto
+from .commands import Command, writing_group
 from .connect_ui import Connections, ConnectionsBar
 from .encryption_ui import Encryption
 from .environment import child_environment
@@ -223,7 +224,6 @@ class Jotline(App):
                         yield Button(label, id="md-" + style, classes="markdown-format", tooltip=hint)
                     yield Button("More", id="md-more", tooltip="All Markdown formats, including tables and code blocks")
                     yield Button("Preview", id="md-preview", tooltip="Preview Markdown; Esc returns to writing")
-                    yield Button("Outliner", id="md-outliner", tooltip="Edit collapsible blocks and move whole branches")
                 editor = MarkdownEditor("", soft_wrap=True, tab_behavior="indent", show_line_numbers=False, id="editor")
                 editor.indent_width = 2
                 editor.tooltip = "Note editor. Start typing to capture. Text saves automatically."
@@ -326,7 +326,7 @@ class Jotline(App):
     def shortcut_text(self, text: str) -> str:
         effective = self.settings.effective_hotkeys
         keys = {default: effective[action] for action, (default, _) in HOTKEY_ACTIONS.items() if default}
-        return re.sub(r"\b(?:ctrl|alt)\+[a-z]\b",
+        return re.sub(r"\b(?:(?:ctrl|alt)\+[a-z]|f(?:[1-9]|1[0-2]))\b",
                       lambda match: key_name(keys.get(match[0].lower(), match[0].lower())), text, flags=re.I)
 
     def action_settings(self) -> None:
@@ -456,7 +456,7 @@ class Jotline(App):
         empty.update(self.empty_notes_message())
         brand = f"›_ jotline / {self.workspace}"
         if not self.compact_layout:
-            brand += "     ·     ctrl+w workspaces · ctrl+t tags"
+            brand += "     ·     ctrl+t tags"
         self.query_one("#brand", Static).update(self.shortcut_text(brand))
         self.connections(notes=snapshot)
         self.notify_storage_warnings()
@@ -534,7 +534,6 @@ class Jotline(App):
     def toolbar_preview(self) -> None:
         self.action_preview()
 
-    @on(Button.Pressed, "#md-outliner")
     def action_outliner(self) -> None:
         if isinstance(self.screen, ModalScreen):
             return
@@ -640,7 +639,7 @@ class Jotline(App):
         elif action == 'workspace':
             choices = [(name, name) for name in self.workspace_names() if name != self.workspace]
             if not choices:
-                self.notify('Create another workspace with Ctrl+W first')
+                self.notify('Create another workspace from Ctrl+P → Switch workspace first')
                 return
             self.push_screen(NoteMenu('Move to workspace', choices, x, y),
                              lambda value: self.move_context_note(note, workspace=value) if value else None)
@@ -980,6 +979,8 @@ class Jotline(App):
         self.update_responsive_layout()
 
     def show_navigation(self, target: str = "notes") -> None:
+        """Reveal the note list. The blank page is the start; this leaves it."""
+        self.set_focus_mode(False)
         self.compact_navigation = True
         self.update_responsive_layout()
         self.query_one("#" + target).focus()
@@ -1260,7 +1261,7 @@ class Jotline(App):
     def build_command_registry(self) -> dict[str, Command]:
         commands = [
             Command("outliner", "Outliner · edit collapsible blocks and branches", self.action_outliner,
-                    "outliner", group="everyday"),
+                    "outliner"),
             Command("templates", "New note from template", self.action_templates),
             Command("save-template", "Save this note as a template", self.prompt_save_template),
             Command("template-source", "Copy template source to new note", lambda: self.action_templates(source=True)),
@@ -1282,6 +1283,9 @@ class Jotline(App):
                     group="everyday"),
             Command("new", "New thought", self.action_new, "new", group="everyday"),
             Command("daily", "Open today's daily log", self.action_daily, "daily", group="everyday"),
+            Command("search", "Search notes", self.action_search, "search", group="everyday"),
+            Command("save", "Save note", self.action_save, "save", group="everyday"),
+            Command("quit", "Save and quit", self.action_quit, "quit", group="everyday"),
             Command("daily-previous", "Previous daily log", self.action_daily_previous, "daily_previous"),
             Command("daily-next", "Next daily log", self.action_daily_next, "daily_next"),
             Command("daily-date", "Open daily log by date", self.action_daily_date, "daily_date"),
@@ -1327,13 +1331,14 @@ class Jotline(App):
         commands.extend(self.navigation_commands(Command))
         commands.extend(self.recipe_commands(Command))
         commands.extend(self.review_commands(Command))
-        commands.extend(self.encryption_commands(Command))
+        if crypto.encryption_available(has_key=self.vault.has_key()):
+            commands.extend(self.encryption_commands(Command))
         commands.extend(self.connect_commands(Command))
         commands.extend([
             Command('resolve-conflict', 'Review external change and recover draft', self.show_recovery_dialog),
             Command('import-library', 'Import notes from file, folder or Drafts export', self.import_library),
         ])
-        return {command.key: command for command in commands}
+        return {command.key: writing_group(command) for command in commands}
 
     def command_choices(self) -> list[tuple[str, str]]:
         hotkeys = self.settings.effective_hotkeys

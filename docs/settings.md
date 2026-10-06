@@ -11,7 +11,8 @@ form with the original settings; nothing changes until you save.
   highlighting, and list continuation on Enter.
 - **Outliner:** open notes in outliner mode by default. See
   [the outliner](markdown.md#outliner).
-- **Layout:** sidebar width, writing hints, and starting in focus mode.
+- **Layout:** sidebar width, writing hints, and starting on a blank page.
+  A new vault hides the note list, toolbar and hint until Ctrl+F, Ctrl+O or F8.
 - **Workflow:** open a blank thought or today's log at launch, choose the
   collection for new thoughts, and sort notes by last edit, creation date or
   title (stars stay first).

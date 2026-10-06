@@ -9,6 +9,7 @@ from jotline.store import Vault
 async def test_mouse_selection_toolbar_format_undo_and_save(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test(size=(120, 36)) as pilot:
+        app.set_focus_mode(False)
         editor = app.query_one('#editor', TextArea)
         editor.insert('hello world')
         await pilot.pause()
@@ -30,6 +31,8 @@ async def test_mouse_selection_toolbar_format_undo_and_save(tmp_path):
 async def test_toolbar_more_and_preview_preserve_selection(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test(size=(120, 36)) as pilot:
+        app.set_focus_mode(False)
+        await pilot.pause()
         editor = app.query_one('#editor', TextArea)
         editor.insert('# Heading\n\nword')
         editor.move_cursor((2, 4))
@@ -55,6 +58,7 @@ async def test_toolbar_more_and_preview_preserve_selection(tmp_path):
 async def test_toolbar_scrolls_into_view_with_keyboard_in_narrow_terminal(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test(size=(40, 20)) as pilot:
+        app.set_focus_mode(False)
         editor = app.query_one('#editor', TextArea)
         toolbar = app.query_one('#markdown-toolbar')
         editor.insert('narrow note')
@@ -66,9 +70,9 @@ async def test_toolbar_scrolls_into_view_with_keyboard_in_narrow_terminal(tmp_pa
         assert editor.content_size.height > 5
         await pilot.press('enter')
         assert isinstance(app.screen, MarkdownPreview)
-        await pilot.press('escape', 'ctrl+b')
+        await pilot.press('escape', 'f8')
         assert toolbar.has_class('hidden')
-        await pilot.press('ctrl+b')
+        await pilot.press('f8')
         assert not toolbar.has_class('hidden')
 
 

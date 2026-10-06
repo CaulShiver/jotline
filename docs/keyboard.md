@@ -17,9 +17,9 @@ also in the palette as **Keyboard shortcuts**, and works from the outliner.
 | `Ctrl+L` | Toggle the task on this line |
 | `Alt+K` | Show incoming and outgoing connections |
 | `Ctrl+T` | Browse workspace tags |
-| `Ctrl+W` | Switch or create workspace |
 | `Ctrl+P` | Searchable command palette |
-| `Ctrl+B` | Toggle quiet focus mode |
+| `F8` | Show or hide the note list (focus mode). The list starts hidden |
+| `F3` | Find within the open note |
 | `Ctrl+S` | Save immediately |
 | `Ctrl+Q` | Save and quit |
 | `F1` | Keyboard cheat sheet |
@@ -32,11 +32,11 @@ Shortcuts use **Control** on macOS too, not Command.
 
 ### The command palette
 
-`Ctrl+P` opens on everyday capture, find and recover commands. Type to reach
-format, move, export, encryption, daily-log navigation, extract and inbox
-processing. Letters match in order rather than as one run, so `mtgnts` finds
-*Meeting notes*. Arrows choose, Enter runs, Esc cancels. Each command shows its
-key when it has one.
+`Ctrl+P` opens on the writing loop: new, daily, search, open, recent, find in
+this note, task toggle, link and follow, star, move to inbox, archive or trash,
+history, save, settings and quit. Type to reach everything else. Letters match
+in order rather than as one run, so `mtgnts` finds *Meeting notes*. Arrows
+choose, Enter runs, Esc cancels. Each command shows its key when it has one.
 
 Copy uses the system clipboard on macOS (`pbcopy`) and on Linux when `wl-copy`,
 `xclip` or `xsel` is available; otherwise it sends an OSC 52 request. Type
@@ -56,11 +56,11 @@ results. On narrow terminals, Ctrl+F also reveals the hidden sidebar.
 
 ### Find within a note
 
-**Ctrl+P → Find within current note** searches the open note. Opening it with a
-word or phrase selected on one line fills that in and jumps to the match. Enter
-or F3 goes to the next match, Shift+F3 to the previous one, and Escape returns
-to writing. Find has no key by default; assign **Find in this note** in
-Settings.
+**F3** (or **Ctrl+P → Find within current note**) searches the open note.
+Opening it with a word or phrase selected on one line fills that in and jumps
+to the match. Enter or F3 goes to the next match, Shift+F3 to the previous
+one, and Escape returns to writing. While the dialog is open, F3 is next
+match, not a second copy of the command.
 
 ### In the editor
 
@@ -74,7 +74,8 @@ Settings.
 | `;;` | Pick a template snippet (not inside code) |
 | `Ctrl+click` | Follow the link under the pointer |
 | `Shift+F10` | Open the menu for a focused sidebar note ([note list menu](note-menu.md)) |
-| `Delete` | Move the highlighted sidebar note to Trash (restore it from the Trash collection) |
+| `Ctrl+W` | Delete the word to the left of the cursor |
+| `Delete` | On a highlighted sidebar note, ask “Move to Trash? Enter”, then move it (restore it from the Trash collection) |
 
 Undo history is kept for each of the last eight notes you left. It is dropped
 when the note's text changed in between (another program, `$EDITOR`, a task
@@ -113,7 +114,7 @@ reassigned, and these start unassigned so you can give them a key:
 - Previous daily log, next daily log, open daily log by date
 - Extract selection to new note, process next inbox note
 - Edit this note in `$EDITOR`
-- Back to previous note, find in this note
+- Back to previous note, switch workspace
 
 Use `ctrl+letter`, `alt+letter`, or `f1`–`f12` (for example `alt+n` or `f4`).
 `Ctrl+,` and `Escape` stay fixed. Duplicate assignments are rejected, and so are
@@ -127,8 +128,8 @@ cancel. Hotkeys are stored in `.jotline-settings.json` inside the vault and
 apply to all its workspaces.
 
 When a release adds a default key that you had already given to something else,
-yours wins and the new command starts unassigned. Ctrl+R, Ctrl+G, Ctrl+L and F1
-work this way, and can be cleared.
+yours wins and the new command starts unassigned. Ctrl+R, Ctrl+G, Ctrl+L, F1,
+F3 and F8 work this way, and can be cleared.
 
 Every outliner command also has an optional key under **Settings → Outliner
 shortcuts**. A key already used by an application command cannot be assigned
@@ -150,14 +151,13 @@ of them keeps a key, use the palette or assign another key.
   the Left Option key to **Esc+** (Settings → Profiles → Keys). In the outliner,
   Ctrl+Up/Down and Ctrl+Shift+Up/Down move branches without Alt. If macOS
   Mission Control takes Ctrl+Up/Down, use the Ctrl+Shift form.
-- **tmux**: Ctrl+B is tmux's default prefix, so focus mode never reaches
-  Jotline. Press Ctrl+B twice to send it through, or assign focus mode another
-  key.
+- **tmux**: Ctrl+B is tmux's default prefix. Focus mode is F8, which default
+  tmux does not capture. Ctrl+B is not a Jotline key.
 - **Ctrl+Tab**: most terminals send it as plain Tab. In the outliner use F6 to
   switch between tree and block; in the editor, Ctrl+F reaches the search box.
 - **Shift+Enter**: some terminals send it as Enter. In the outliner use
   **Commands → Insert continuation line**, or give it a key.
-- **Readline keys**: Ctrl+W (workspaces) and Ctrl+D (daily log) are Jotline
-  commands, so the editor's delete-word-left and delete-right are not on those
-  keys. Alt+Backspace and Delete still work. The cheat sheet says which ones
-  your current keys take over.
+- **Readline keys**: Ctrl+W deletes the word to the left of the cursor.
+  Ctrl+D is still the daily log, so delete-right stays on Delete.
+  Alt+Backspace also deletes the word to the left. The cheat sheet says when
+  a key you assigned takes one of those editor keys.

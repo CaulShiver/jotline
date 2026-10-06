@@ -75,6 +75,8 @@ async def test_enter_preserves_indentation_without_smart_lists(tmp_path, body, c
 async def test_editor_still_allows_keyboard_navigation(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test() as pilot:
+        app.set_focus_mode(False)
+        await pilot.pause()
         editor = app.editor()
         await pilot.press("ctrl+tab")
         assert not editor.has_focus

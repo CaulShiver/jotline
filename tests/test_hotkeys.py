@@ -151,7 +151,12 @@ def test_new_defaults_step_aside_for_keys_people_already_use(tmp_path):
     defaults = Settings().effective_hotkeys
     assert (defaults['recent'], defaults['follow_link'], defaults['toggle_task'], defaults['keys']) == (
         'ctrl+r', 'ctrl+g', 'ctrl+l', 'f1')
-    assert defaults['previous_note'] == defaults['find_in_note'] == ''
+    assert defaults['previous_note'] == defaults['workspaces'] == ''
+    assert defaults['find_in_note'] == 'f3'
+    assert defaults['focus_mode'] == 'f8'
+    assert hotkeys['find_in_note'] == 'f3'
+    assert hotkeys['focus_mode'] == 'f8'
+    assert hotkeys['workspaces'] == ''
     with pytest.raises(ValueError):
         Settings(hotkeys={'recent': 'ctrl+n'}).validate()
 

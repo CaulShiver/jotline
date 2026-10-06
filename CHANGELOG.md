@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **The app opens on a blank page.** The note list, formatting toolbar and hint
+  start hidden. `Ctrl+F` and `Ctrl+O` bring the list back; `F8` toggles that
+  quiet layout. `Start on a blank page` in Settings is on for a new vault.
+- **Ctrl+P opens on the writing loop.** New, daily, search, open, recent, find
+  in this note, task toggle, link and follow, star, move to inbox, archive or
+  trash, history, save, settings and quit. Type to reach the rest. The outliner
+  stays in that longer list and is no longer a toolbar button.
+- **F3 finds in the open note. Ctrl+W deletes the word to the left.** Switch
+  workspace is no longer on Ctrl+W. Focus mode moved from Ctrl+B (tmux's
+  prefix) to F8.
+- **Delete on a highlighted note asks first.** The row says `Move to Trash?
+  Enter`. Any other key cancels. The note menu's Delete choice is unchanged.
+- **`jotline sync` is gone.** It only printed a recipe. `jotline doctor` points
+  at `docs/sync.md`. `encrypt`, `decrypt` and `encryption` stay out of
+  `jotline --help` and the command palette until the cryptography extra is
+  installed or a key file exists.
+
 ## 0.9.10 — 2026-10-06
 
 - **Linux desktop entries escape `Exec=` the way the spec reads it.** A path

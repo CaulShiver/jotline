@@ -66,8 +66,9 @@ tag to filter notes, or use **Ctrl+P → Add tags to this note** to append tags 
 as `#work #ideas #project/topic`. Tags are case-insensitive, can be nested, and
 stay in the Markdown body, so edit or remove them in the note itself.
 
-Press **Ctrl+W** to switch or create a workspace, such as `work`, `personal` or
-`research`. **Ctrl+P → Move note to workspace** moves the current regular note.
+**Ctrl+P → Switch workspace** switches or creates a workspace, such as `work`,
+`personal` or `research`. It has no default key, so Ctrl+W stays delete-word
+in the editor. **Ctrl+P → Move note to workspace** moves the current regular note.
 Switching saves pending edits first and stops if saving fails. Jotline remembers
 the workspace for your next launch and for shell commands run without
 `--workspace`.

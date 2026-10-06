@@ -47,7 +47,14 @@ async def test_command_palette_opens_on_everyday_commands(tmp_path):
         keys = {key for key, _ in palette.filtered}
         assert "new" in keys
         assert "daily" in keys
-        assert "recovery" in keys
+        assert "search" in keys
+        assert "find" in keys
+        assert "move:inbox" in keys
+        assert "move:archive" in keys
+        assert "move:trash" in keys
+        assert "quit" in keys
+        assert "recovery" not in keys
+        assert "outliner" not in keys
         assert "format:bold" not in keys
         assert "move:projects" not in keys
         assert "encrypt" not in keys
