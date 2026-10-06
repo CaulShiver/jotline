@@ -1,35 +1,37 @@
-Jotline 0.9.9 adds an inline outliner and ranked search, and ships the fixes
-from two red team passes. Linux and macOS remain the supported operating
+Jotline 0.9.10 is an everyday usability release, and it closes the last items
+from the 2026-09-21 red team. Linux and macOS remain the supported operating
 systems. Windows is out of scope. Publication gates on Ubuntu and macOS ×
 Python 3.11–3.13.
 
-The outliner edits a note as a tree of blocks: folding, branch focus,
-breadcrumbs, search through folded content, bulk selection, move-to and
-optional block references. It writes plain Markdown, so the note stays readable
-anywhere. Search now orders notes by match quality and quotes the matched line,
-pickers match the letters you type in order, and **Edit this note in $EDITOR**
-hands a note to your own editor. `jotline capture` starts in about a tenth of a
-second.
+Search, capture and the shell are easier to use without looking things up.
+Enter in the search box opens the top result. A new vault shows the quick
+start once. `jotline open` finds a note from part of its title, and
+`jotline capture` confirms in words at a terminal. Read commands work on a
+fresh install and still create nothing. Titles in lists and pickers drop
+Markdown markers. F1 shows the keys in effect, including your own. Ctrl+R
+returns to the note you just left, Ctrl+G follows the link under the cursor,
+and Ctrl+L toggles the task on the current line. If you already use one of
+those keys, yours wins. Undo survives switching among the last eight notes.
+Delete in the note list moves the highlighted note to Trash.
 
-The red team fixes cover saves, encryption and the terminal. A note
-interrupted mid-save comes back instead of disappearing. Encrypted notes no
-longer leak through extract, exports, links, history or the daily backup, and
-no process Jotline starts inherits your passphrase. Note text and command-line
-arguments can no longer send control sequences to your terminal. `jotline
-backups` lists quarantined archives. The full list is in the changelog.
+A key file from another vault is named as such and points at a backup,
+instead of a wrong passphrase. Each encrypted note records which key sealed
+it. 0.9.9 still reads these files: it ignores the new fields, and the key
+file checksum is unchanged. Imports keep a Jotline header only with
+`jotline import --jotline-notes`; without that flag the header stays in the
+note as text. Linux desktop entries write `Exec=` the way the spec reads it.
+The full list is in the changelog.
 
-Key files now carry a checksum so a damaged file is reported as damaged rather
-than as a wrong passphrase. Key files written by 0.9.8 keep working, and 0.9.8
-can still read a key file written by 0.9.9. Notes and settings are unchanged.
+Notes stay plain Markdown. A new vault records that the quick start has been
+shown. Run `jotline backup` before upgrading.
 
 - Linux / macOS: `curl -fsSL https://github.com/CaulShiver/jotline/releases/latest/download/install.py | python3`
 - PyPI: `uv tool install jotline` or `pipx install jotline` after this tag
   publishes. Python 3.11+ is required; Git is not.
 
-Download `jotline-0.9.9-py3-none-any.whl` only if you want to verify
-`SHA256SUMS` by hand, then `uv tool install ./jotline-0.9.9-py3-none-any.whl`
-or `pipx install ./jotline-0.9.9-py3-none-any.whl`. For an existing
+Download `jotline-0.9.10-py3-none-any.whl` only if you want to verify
+`SHA256SUMS` by hand, then `uv tool install ./jotline-0.9.10-py3-none-any.whl`
+or `pipx install ./jotline-0.9.10-py3-none-any.whl`. For an existing
 installation add `--force`.
 
-Run `jotline backup` before upgrading. See the README, changelog, install
-guide, and [supported platforms](platforms.md).
+See the README, changelog, install guide, and [supported platforms](platforms.md).

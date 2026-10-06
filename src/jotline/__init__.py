@@ -1,2 +1,2 @@
 """Jotline: a terminal home for your thoughts."""
-__version__ = "0.9.9"
+__version__ = "0.9.10"
