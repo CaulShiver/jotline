@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.10 — 2026-10-06
 
 - **Linux desktop entries escape `Exec=` the way the spec reads it.** A path
   containing `$`, a backslash, a quote, or a backtick is written so a desktop

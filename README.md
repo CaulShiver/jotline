@@ -145,7 +145,7 @@ Save conflicts, recovery copies and sync are covered in
 
 ## Status
 
-Version 0.9.9 is an early release: Markdown source editing, an inline outliner,
+Version 0.9.10 is an early release: Markdown source editing, an inline outliner,
 rendered preview, configurable local actions, and guided import and recovery.
 See [CHANGELOG.md](CHANGELOG.md) and [ROADMAP.md](ROADMAP.md). Full Vim
 emulation, cloud sync, plugins and dictation remain future work. IME composition

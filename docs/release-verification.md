@@ -1,5 +1,22 @@
 # Release verification
 
+## 0.9.10
+
+- Package version `0.9.10`. Publication gates on Ubuntu and macOS × Python
+  3.11–3.13, as for 0.9.9.
+- Local locked suite on Linux / Python 3.12: **1145 passed, 43 skipped**.
+  `ruff check`, `uv lock --check` and `git diff --check` passed.
+- `uv build --clear` produced the wheel and sdist; `release_metadata.py
+  --checksums` verified `v0.9.10` and wrote `SHA256SUMS`; `twine==7.0.0 check`
+  passed. `install.py --from-dir dist` installed the wheel into a clean venv,
+  `jotline --version` reported `0.9.10`, and the installed-wheel and POSIX PTY
+  smoke tests passed. The PTY smoke closes the first-run quick start with Esc
+  before it pastes; Ctrl+Q does not quit while that guide is open.
+- Key files and encrypted notes gain a key id. 0.9.9 ignores those fields, and
+  the key file checksum is unchanged. A new vault records that the quick start
+  has been shown. Notes stay plain Markdown.
+- VoiceOver remains untested; issue #3 stays open.
+
 ## 0.9.9
 
 - Package version `0.9.9`. Publication gates on Ubuntu and macOS × Python
