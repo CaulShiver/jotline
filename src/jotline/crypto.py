@@ -48,6 +48,27 @@ class EncryptionError(ValueError):
     """Encryption is unavailable, misconfigured, or a passphrase is wrong."""
 
 
+def library_installed() -> bool:
+    """True when the optional cryptography extra can seal notes.
+
+    The import stays inside the function because a default install does not
+    include the package, and importing it at module load would make every
+    command fail closed.
+    """
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    except ImportError:
+        return False
+    return AESGCM is not None
+
+
+def encryption_available(*, library: bool | None = None, has_key: bool = False) -> bool:
+    """Show encryption doors when the extra is installed or a key file exists."""
+    if library is None:
+        library = library_installed()
+    return bool(library or has_key)
+
+
 def _aead(key: bytes):
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM

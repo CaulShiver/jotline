@@ -69,7 +69,8 @@ async def test_create_switch_tag_browse_move_and_reopen(tmp_path):
     app = Jotline(vault)
     async with app.run_test(size=(110, 40)) as pilot:
         app.query_one('#editor', TextArea).insert('Personal note')
-        await pilot.press('ctrl+w')
+        app.action_workspaces()
+        await pilot.pause()
         assert isinstance(app.screen, Palette)
         app.screen.query_one(Input).value = 'Create'
         await pilot.press('enter')

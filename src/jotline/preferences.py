@@ -61,7 +61,7 @@ class Preferences(Modal[Settings | None]):
                                     ('highlight_line', 'Highlight current line'),
                                     ('markdown_highlighting', 'Highlight Markdown syntax'),
                                     ('smart_lists', 'Continue lists and quotes on Enter'),
-                                    ('focus_on_start', 'Start in focus mode'),
+                                    ('focus_on_start', 'Start on a blank page'),
                                     ('show_hints', 'Show writing hints'),
                                     ('outliner_on_start', 'Open notes in outliner mode')):
                     with Horizontal(classes='pref-toggle'):

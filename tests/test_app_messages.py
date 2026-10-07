@@ -168,7 +168,9 @@ async def test_shortcut_text_uses_one_key_style_everywhere(tmp_path):
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         assert 'Ctrl+P commands · Ctrl+D daily log' in str(app.query_one('#hint', Static).render())
-        assert 'Ctrl+W workspaces · Ctrl+T tags' in str(app.query_one('#brand', Static).render())
+        brand = str(app.query_one('#brand', Static).render())
+        assert 'Ctrl+T tags' in brand
+        assert 'workspaces' not in brand
         app.connections()
         assert 'Alt+K connections' in str(app.query_one('#connections', Static).render())
         assert dict(app.command_choices())['new'].endswith(' · Ctrl+N')
@@ -187,13 +189,20 @@ async def test_delete_in_the_note_list_moves_the_note_to_trash(tmp_path):
                                    if listing.get_option_at_index(index).id == note.id)
         await pilot.press('delete')
         await pilot.pause()
+        assert vault.read(note.id).collection == 'inbox'
+        assert 'Move to Trash? Enter' in str(listing.get_option_at_index(listing.highlighted).prompt)
+        await pilot.press('escape')
+        assert vault.read(note.id).collection == 'inbox'
+        listing.focus()
+        await pilot.press('delete', 'enter')
+        await pilot.pause()
         assert vault.read(note.id).collection == 'trash'
         assert notifications(app)[-1] == 'Moved “Old idea” to Trash. Restore it from Show trash.'
         app.command('view:trash')
         await pilot.pause()
         listing.focus()
         listing.highlighted = 0
-        await pilot.press('delete')
+        await pilot.press('delete', 'enter')
         await pilot.pause()
         assert vault.read(note.id).collection == 'trash'
         assert notifications(app)[-1].startswith('“Old idea” is already in Trash.')

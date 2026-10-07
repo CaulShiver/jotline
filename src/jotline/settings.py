@@ -35,13 +35,14 @@ BOOLEAN_SETTINGS = ('line_numbers', 'soft_wrap', 'highlight_line', 'markdown_hig
 HOTKEY_ACTIONS = {
     "new": ("ctrl+n", "New thought"),
     "tags": ("ctrl+t", "Browse tags"),
-    "workspaces": ("ctrl+w", "Switch workspace"),
+    "workspaces": ("", "Switch workspace (optional)"),
     "commands": ("ctrl+p", "Command palette"),
     "open_note": ("ctrl+o", "Open note"),
     "daily": ("ctrl+d", "Daily log"),
     "search": ("ctrl+f", "Search notes"),
     "save": ("ctrl+s", "Save note"),
-    "focus_mode": ("ctrl+b", "Focus mode"),
+    # F8 reaches Jotline under default tmux. Ctrl+B is that multiplexer's prefix.
+    "focus_mode": ("f8", "Focus mode"),
     "quit": ("ctrl+q", "Quit"),
     "preview": ("", "Preview Markdown (optional)"),
     "format_bold": ("", "Format bold (optional)"),
@@ -74,12 +75,15 @@ HOTKEY_ACTIONS = {
     "recent": ("ctrl+r", "Recent notes"),
     "follow_link": ("ctrl+g", "Follow link under cursor"),
     "toggle_task": ("ctrl+l", "Toggle task on this line"),
-    "find_in_note": ("", "Find in this note (optional)"),
+    # F3 is find-next inside the dialog; it opens find from the editor.
+    "find_in_note": ("f3", "Find in this note"),
     "keys": ("f1", "Keyboard shortcuts"),
 }
 # Defaults shipped after people had saved their own maps: one of these steps aside,
 # unassigned, when the user already gave its key to something else, and may be cleared.
-YIELDING_HOTKEYS = frozenset({"recent", "follow_link", "toggle_task", "keys"})
+YIELDING_HOTKEYS = frozenset({
+    "recent", "follow_link", "toggle_task", "keys", "find_in_note", "focus_mode",
+})
 HOTKEY_PATTERN = r"(?:ctrl|alt)\+[a-z]|f(?:[1-9]|1[0-2])"
 # Preserve editing controls and terminal aliases for Tab, Enter and Backspace.
 RESERVED_HOTKEYS = {"ctrl+" + letter for letter in "acehijkmuvxyz"}
@@ -159,7 +163,7 @@ class Settings:
     highlight_line: bool = True
     markdown_highlighting: bool = True
     smart_lists: bool = True
-    focus_on_start: bool = False
+    focus_on_start: bool = True
     show_hints: bool = True
     outliner_on_start: bool = False
     outline_hotkeys: dict[str, str] = field(default_factory=dict)

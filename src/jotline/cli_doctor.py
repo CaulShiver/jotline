@@ -344,6 +344,8 @@ def format_doctor(report: dict[str, object]) -> str:
         f"Limits: notes={limits['note_bytes']} bytes, settings={limits['settings_bytes']} bytes, "
         f"lock={limits['lock_timeout_seconds']}s")
     lines.append(f"Warnings: {len(report['warnings'])}")
+    lines.append("Sync: Jotline does not copy notes between machines. "
+                 "Use Git or Syncthing on this folder; see docs/sync.md.")
     return "\n".join(lines)
 
 

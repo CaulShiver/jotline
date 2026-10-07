@@ -72,7 +72,8 @@ There is no second Vim editor. Optional motions are out of scope.
 
 ## Outliner
 
-Choose **Outliner** above the editor, or **Ctrl+P → Outliner**. Blocks wrap in
+Choose **Ctrl+P → Outliner** (type to reach it; it is not on the toolbar or the
+everyday list). Blocks wrap in
 one outline surface. Use arrows or click to navigate, then **Enter** or **F2**
 to edit directly on the selected row. **Ctrl+Tab** or **F6** switches between
 editing text and navigating branches; F6 works in terminals that send Ctrl+Tab

@@ -5,9 +5,11 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.message import Message
 from textual.widgets import Label, OptionList
-from textual.widgets.option_list import Option
+from textual.widgets.option_list import Option, OptionDoesNotExist
 
 from .modal import Modal
+
+TRASH_CONFIRM = "Move to Trash? Enter"
 
 
 class NoteList(OptionList):
@@ -23,6 +25,11 @@ class NoteList(OptionList):
         def __init__(self, note_id: str):
             super().__init__()
             self.note_id = note_id
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._confirm_id: str | None = None
+        self._confirm_prompt = None
 
     def _on_click(self, event: events.Click) -> None:
         if event.button == 1:
@@ -44,11 +51,53 @@ class NoteList(OptionList):
             if option.id and not option.disabled:
                 self.post_message(self.ContextRequested(option.id, self.region.x + 2, self.region.y))
 
-    def action_trash_note(self) -> None:
-        if self.highlighted is not None:
+    def clear_options(self):
+        self._confirm_id = None
+        self._confirm_prompt = None
+        return super().clear_options()
+
+    def on_blur(self) -> None:
+        self._clear_confirm(restore=True)
+
+    def on_key(self, event: events.Key) -> None:
+        # Enter confirms and Delete keeps the prompt. Any other key drops it
+        # so the list goes back to opening notes.
+        if self._confirm_id and event.key not in {"enter", "delete"}:
+            self._clear_confirm(restore=True)
+
+    def action_select(self) -> None:
+        if self._confirm_id and self.highlighted is not None:
             option = self.get_option_at_index(self.highlighted)
-            if option.id and not option.disabled:
-                self.post_message(self.TrashRequested(option.id))
+            if option.id == self._confirm_id:
+                note_id = option.id
+                self._clear_confirm(restore=False)
+                self.post_message(self.TrashRequested(note_id))
+                return
+            self._clear_confirm(restore=True)
+        super().action_select()
+
+    def action_trash_note(self) -> None:
+        if self.highlighted is None:
+            return
+        option = self.get_option_at_index(self.highlighted)
+        if not option.id or option.disabled or option.id == self._confirm_id:
+            return
+        self._clear_confirm(restore=True)
+        self._confirm_id = option.id
+        self._confirm_prompt = option.prompt
+        self.replace_option_prompt(option.id, Text(TRASH_CONFIRM))
+
+    def _clear_confirm(self, *, restore: bool) -> None:
+        option_id = self._confirm_id
+        prompt = self._confirm_prompt
+        self._confirm_id = None
+        self._confirm_prompt = None
+        if not restore or option_id is None or prompt is None:
+            return
+        try:
+            self.replace_option_prompt(option_id, prompt)
+        except OptionDoesNotExist:
+            return
 
 
 class NoteMenuOptions(OptionList):

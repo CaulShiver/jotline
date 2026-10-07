@@ -18,7 +18,12 @@ async def test_capture_switch_and_reopen(tmp_path):
         await pilot.press('enter')
         await pilot.pause()
         assert app.query_one(TextArea).text == 'hello'
-        await pilot.press('ctrl+b')
+        assert app.query_one('#sidebar').has_class('hidden')
+        assert app.query_one('#markdown-toolbar').has_class('hidden')
+        assert app.query_one('#hint').has_class('hidden')
+        await pilot.press('f8')
+        assert not app.query_one('#sidebar').has_class('hidden')
+        await pilot.press('f8')
         assert app.query_one('#sidebar').has_class('hidden')
         await pilot.press('ctrl+f')
         assert app.query_one('#search', Input).has_focus

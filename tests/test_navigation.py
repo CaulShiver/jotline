@@ -12,6 +12,8 @@ from jotline.store import Vault
 async def test_navigation_and_walkthrough_preserve_capture(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test(size=(110, 34)) as pilot:
+        app.set_focus_mode(False)
+        await pilot.pause()
         editor = app.query_one('#editor', TextArea)
         editor.insert('Unfinished thought')
         await pilot.click('#nav-collections')

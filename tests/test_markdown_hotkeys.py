@@ -23,7 +23,7 @@ def test_markdown_defaults_preserve_existing_custom_shortcuts(tmp_path):
 
 @pytest.mark.parametrize('hotkeys', [
     {'preview': 'ctrl+n'}, {'preview': 'f3', 'format_bold': 'f3'},
-    {'format_bold': 'ctrl+b'}, {'preview': 'ctrl+c'}, {'preview': 'p'},
+    {'format_bold': 'ctrl+q'}, {'preview': 'ctrl+c'}, {'preview': 'p'},
     {'preview': None}, {'new': ' '},
 ])
 def test_optional_shortcuts_still_validate_conflicts_and_key_safety(hotkeys):
@@ -39,20 +39,20 @@ async def test_markdown_shortcuts_can_be_assigned_cleared_and_reset(tmp_path):
         await pilot.press('ctrl+comma')
         prefs = app.screen
         assert prefs.query_one('#hotkey-preview', Input).value == ''
-        prefs.query_one('#hotkey-preview', Input).value = 'f3'
+        prefs.query_one('#hotkey-preview', Input).value = 'f9'
         prefs.query_one('#hotkey-format_bold', Input).value = 'alt+b'
         await pilot.press('ctrl+s')
         editor.move_cursor((0, 0))
         editor.move_cursor((0, 4), select=True)
         await pilot.press('alt+b')
         assert editor.text == '**word**'
-        await pilot.press('f3')
+        await pilot.press('f9')
         assert isinstance(app.screen, MarkdownPreview)
         await pilot.press('alt+b')
         assert editor.text == '**word**'
         await pilot.press('escape', 'ctrl+comma')
         app.screen.query_one('#hotkey-preview', Input).value = ''
-        await pilot.press('ctrl+s', 'f3')
+        await pilot.press('ctrl+s', 'f9')
         assert not isinstance(app.screen, MarkdownPreview)
         assert app.settings.effective_hotkeys['format_bold'] == 'alt+b'
         await pilot.press('ctrl+comma')

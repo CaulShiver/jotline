@@ -115,7 +115,7 @@ class Palette(Modal[str | None]):
             count.update("No matching commands · adjust the filter or press Esc")
         help_text = self.query_one("#palette-help", Static)
         if hidden:
-            help_text.update("Everyday commands · type to see format, move, export, encryption")
+            help_text.update("Everyday writing · type to see everything else")
         else:
             help_text.update("Type to filter · ↑↓ choose · Enter run · Esc cancel")
         if self.filtered:

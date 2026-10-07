@@ -54,16 +54,18 @@ async def test_default_collection_is_visible_and_labeled(tmp_path):
 async def test_focus_on_start_does_not_change_current_session(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test(size=(100, 30)) as pilot:
+        assert app.focused_writing
+        assert app.query_one('#sidebar').has_class('hidden')
         app.command('settings')
         await pilot.pause()
         assert isinstance(app.screen, Preferences)
-        app.screen.query_one('#pref-focus_on_start', Switch).value = True
+        app.screen.query_one('#pref-focus_on_start', Switch).value = False
         await pilot.press('ctrl+s')
         await pilot.pause()
 
-        assert app.settings.focus_on_start
-        assert not app.focused_writing
-        assert not app.query_one('#sidebar').has_class('hidden')
+        assert not app.settings.focus_on_start
+        assert app.focused_writing
+        assert app.query_one('#sidebar').has_class('hidden')
 
 
 async def test_preferences_reports_missing_number_in_plain_language(tmp_path):
@@ -226,12 +228,12 @@ async def test_find_starts_at_cursor_on_later_line_with_unicode(tmp_path):
 async def test_search_and_collection_view_restore_visible_hints(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test(size=(100, 30)):
-        app.action_focus_mode()
         assert app.query_one('#hint').has_class('hidden')
 
         app.action_search()
         assert not app.query_one('#hint').has_class('hidden')
         app.action_focus_mode()
+        assert app.query_one('#hint').has_class('hidden')
         app.command('view:projects')
         assert not app.query_one('#hint').has_class('hidden')
 

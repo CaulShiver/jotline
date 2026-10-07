@@ -17,6 +17,8 @@ async def test_right_click_moves_clicked_note_and_preserves_open_buffer(tmp_path
     Settings(sort_order='title').save(tmp_path / '.jotline-settings.json')
     app = Jotline(vault)
     async with app.run_test(size=(100, 32)) as pilot:
+        app.set_focus_mode(False)
+        await pilot.pause()
         app.autosave_timer.stop()
         app.load_id(first.id)
         editor = app.query_one('#editor', TextArea)
@@ -46,6 +48,8 @@ async def test_right_click_cancel_blank_space_and_left_click(tmp_path):
     note = save(vault, 'Click me')
     app = Jotline(vault)
     async with app.run_test(size=(100, 32)) as pilot:
+        app.set_focus_mode(False)
+        await pilot.pause()
         initial = app.current.id
         await pilot.click('#notes', offset=(3, 12), button=3)
         assert not isinstance(app.screen, NoteMenu)

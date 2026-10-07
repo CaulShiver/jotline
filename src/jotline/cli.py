@@ -36,6 +36,7 @@ from .cli_io import (
     warning,
 )
 from .completion import SHELLS, script
+from . import crypto
 from .crypto import check_passphrase
 from .desktop import DESKTOP_ACTIONS, RECIPE_NAMES, run_desktop_command
 from .export import BINARY, FORMAT_NAMES, FORMATS, export_bytes, format_for, write_export
@@ -46,7 +47,6 @@ from .links import connection_mark
 from .settings import Settings, action_dicts
 from .store import (OTHER_WORKSPACE, Vault, parse_calendar_date, read_regular_file, tagged_body,
                     validate_workspace)
-from .sync import sync_guide
 from .tasks import due_limit, gather, parse_reference, set_done, short_ids
 
 
@@ -247,15 +247,37 @@ class Parser(argparse.ArgumentParser):
 
 DESCRIPTION = ("Jotline — a terminal home for your thoughts. Run it with no command to open\n"
                "the workspace, or use a command below from your shell and scripts.")
-EPILOG = """\
+
+
+def encryption_in_help() -> bool:
+    """List encrypt, decrypt and encryption only when that door can open.
+
+    Help is built before a --vault argument is applied, so a key file counts
+    when it sits in the default vault. Another vault still accepts the commands.
+    """
+    has_key = False
+    try:
+        has_key = (default_vault() / crypto.KEY_FILE).is_file()
+    except OSError:
+        has_key = False
+    return crypto.encryption_available(library=crypto.library_installed(), has_key=has_key)
+
+
+def command_epilog(*, encryption: bool) -> str:
+    notes = "tag, actions, run"
+    vault = "backup, backups, recoveries, doctor, stats"
+    if encryption:
+        notes += ", encrypt, decrypt"
+        vault += ", encryption"
+    return f"""\
 commands by task:
   Capture          capture, append, prepend, daily
   Find             list (or search), open, backlinks, tags, workspaces
   Tasks            tasks, done
-  Notes            tag, actions, run, encrypt, decrypt
+  Notes            {notes}
   Export & import  export, import
-  Vault care       backup, backups, recoveries, doctor, stats, encryption
-  Setup            path, sync, completion, desktop
+  Vault care       {vault}
+  Setup            path, completion, desktop
 
 examples:
   jotline capture "Call Sam about the venue #work"
@@ -263,10 +285,11 @@ examples:
   jotline search venue
   jotline open venue
   jotline tasks --due today
-  jotline export last -o plan.pdf
+  jotline export last -o plan.html
 
 Global options such as --vault and --workspace work before or after the command.
-Run jotline COMMAND --help for a command's own options."""
+Run jotline COMMAND --help for a command's own options.
+Copy the vault with Git or Syncthing; jotline doctor points at the recipe."""
 
 CAPTURE_DESCRIPTION = ("Save text as a new note in your default collection, or add it to a daily log with --daily. "
                        "With no text, piped stdin is read; at a terminal with nothing piped, a small editor opens.")
@@ -291,7 +314,8 @@ COMMAND_ALIASES = {"search": "list"}
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = Parser(prog="jotline", description=DESCRIPTION, epilog=EPILOG,
+    parser = Parser(prog="jotline", description=DESCRIPTION,
+                    epilog=command_epilog(encryption=encryption_in_help()),
                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--version", action="version", version=__version__)
     add_global_options(parser, defaults=True)
@@ -376,9 +400,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_command("path", help="Print the vault path")
     doctor = add_command("doctor", help="Check the vault, runtime and local Jotline state")
     doctor.add_argument("--json", action="store_true", help="Print machine-readable diagnostics")
-    syncing = add_command("sync", help="Print a Git or Syncthing recipe for this vault (not a Jotline cloud)")
-    syncing.add_argument("tool", nargs="?", choices=("git", "syncthing"),
-                         help="Show only the Git or Syncthing recipe")
     importing = add_command("import", help="Import UTF-8 text, a folder, or a Drafts export")
     importing.add_argument("file", type=Path)
     import_mode = importing.add_mutually_exclusive_group()
@@ -965,9 +986,6 @@ def main() -> None:
     try:
         if args.command == "path":
             print(terminal_text(args.vault.expanduser().resolve()))
-            return
-        if args.command == "sync":
-            print(sync_guide(args.vault, args.tool).rstrip())
             return
         if args.command == "completion":
             sys.stdout.write(script(args.shell, parser))

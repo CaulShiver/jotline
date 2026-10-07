@@ -65,8 +65,9 @@ Obsidian's 📅 due marker is understood alongside `due:`.
 
 ## Find and replace in a note
 
-**Find within current note** searches the open note without changing the vault
-search. Enter or F3 advances, Shift+F3 goes back, and Escape returns to writing.
+**F3** opens **Find within current note**. It searches the open note without
+changing the vault search. Enter or F3 advances, Shift+F3 goes back, and Escape
+returns to writing.
 Navigation moves past the selected match whether you selected its text forwards
 or backwards, and clearing the search leaves the editor selection in place.
 

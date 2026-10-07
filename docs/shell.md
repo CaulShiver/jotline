@@ -11,10 +11,15 @@ with examples, and `jotline COMMAND --help` shows one command's options.
 | Capture | `capture`, `append`, `prepend`, `daily` |
 | Find | `list` (or `search`), `open`, `backlinks`, `tags`, `workspaces` |
 | Tasks | `tasks`, `done` |
-| Notes | `tag`, `actions`, `run`, `encrypt`, `decrypt` |
+| Notes | `tag`, `actions`, `run`, and `encrypt` / `decrypt` when encryption is available |
 | Export and import | `export`, `import` |
-| Vault care | `backup`, `backups`, `recoveries`, `doctor`, `stats`, `encryption` |
-| Setup | `path`, `sync`, `completion`, `desktop` |
+| Vault care | `backup`, `backups`, `recoveries`, `doctor`, `stats`, and `encryption` when a key or the extra is present |
+| Setup | `path`, `completion`, `desktop` |
+
+`encrypt`, `decrypt` and `encryption` stay off this list until the
+`jotline[encryption]` extra is installed or the default vault has a key file.
+The commands still run when you type them. Jotline does not sync; `jotline doctor`
+points at [Git or Syncthing](sync.md).
 
 ```sh
 jotline capture "A thought before I forget"
@@ -32,7 +37,7 @@ jotline backlinks last
 jotline tag NOTE_ID ideas project/topic
 jotline tasks
 jotline done 3f9a8c21:4
-jotline export last --output plan.docx
+jotline export last --output plan.html
 jotline import ~/Downloads/meeting.md
 jotline actions
 jotline run ACTION_NAME NOTE_ID > output.md
@@ -41,7 +46,6 @@ jotline doctor
 jotline backup
 jotline backups
 jotline recoveries
-jotline sync
 jotline path
 jotline desktop install
 ```
