@@ -313,7 +313,7 @@ def test_filenames_in_a_terminal_rename_only_after_yes(tmp_path):
     slug = tmp_path / f"buy-milk--{note.id[:6]}.md"
 
     declined, declined_output = run_filenames_at_terminal(tmp_path, "migrate", answer="n\n")
-    assert declined == 0, declined_output
+    assert declined == 1, declined_output
     assert "Proceed? A backup is written first. [y/N]" in declined_output
     assert "Nothing was changed." in declined_output
     assert opaque.is_file() and not slug.exists()
@@ -324,7 +324,7 @@ def test_filenames_in_a_terminal_rename_only_after_yes(tmp_path):
     assert slug.is_file() and not opaque.exists()
 
     declined_back, declined_back_output = run_filenames_at_terminal(tmp_path, "revert", answer="\n")
-    assert declined_back == 0, declined_back_output
+    assert declined_back == 1, declined_back_output
     assert "Nothing was changed." in declined_back_output
     assert slug.is_file() and not opaque.exists()
 

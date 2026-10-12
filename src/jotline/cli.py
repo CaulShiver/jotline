@@ -769,7 +769,7 @@ def run_filenames(run: Invocation) -> None:
         if _filenames_at_terminal():
             if not _confirm_filenames():
                 print("Nothing was changed.", file=sys.stderr)
-                return
+                raise SystemExit(1)
         else:
             print("jotline: Refusing to rename note files without a terminal. "
                   "Run it in a terminal, or pass --yes.", file=sys.stderr)

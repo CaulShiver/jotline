@@ -48,7 +48,8 @@ name. With the setting on, renaming a note in Jotline renames the file to the
 new slug; an unchanged save does not. The Settings switch does not turn the
 setting on and does not rename files; it points you at the command. `jotline
 filenames revert` puts `<id>.md` back and removes the header ID. In a terminal,
-a real run prints the plan and waits for yes. Without a terminal it stops
+a real run prints the plan and waits for yes. Declining changes nothing and
+exits nonzero. Without a terminal it stops
 unless you pass `--yes`. It writes a ZIP backup first and refuses to start if
 two copies of one note disagree. Do not open a migrated vault with
 Jotline 0.9.x. That version treats the filename as the ID and would see

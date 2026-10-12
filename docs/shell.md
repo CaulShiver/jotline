@@ -262,7 +262,8 @@ daily archives print as `quarantined`), and `recoveries` lists inbox copies
 saved after an external change. `filenames migrate` names notes with a title
 slug and a short ID; `filenames revert` names them with the note ID again.
 `--dry-run` changes nothing and writes no backup. In a terminal, a real run
-prints that plan and continues only after you answer yes. Without a terminal
+prints that plan and continues only after you answer yes. Declining changes
+nothing and exits nonzero. Without a terminal
 it refuses unless you pass `--yes`. It then writes a ZIP, renames, and turns
 the setting on or off only when every planned rename succeeds. It exits
 nonzero when two copies of a note disagree, and then nothing is renamed. The
