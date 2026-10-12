@@ -1,5 +1,35 @@
 # Release verification
 
+## 0.9.11
+
+- Package version `0.9.11`. Publication gates on Ubuntu and macOS × Python
+  3.11–3.13, as for 0.9.10.
+- Local locked suite on Linux / Python 3.12, with the encryption extra:
+  **1149 passed, 43 skipped**. `ruff check`, `uv lock --check` and
+  `git diff --check` passed.
+- `uv build --clear` produced the wheel and sdist; `release_metadata.py
+  --checksums` verified `v0.9.11` and wrote `SHA256SUMS`; `twine==7.0.0 check`
+  passed. `install.py --from-dir dist` installed the wheel into a clean venv,
+  `jotline --version` reported `0.9.11`, and the installed-wheel and POSIX PTY
+  smoke tests passed.
+- Manual terminal check on Linux, before the tag. A real PTY
+  (`TERM=xterm-256color`, 110×36) and tmux 3.5a with `-f /dev/null` (prefix
+  Ctrl+B, `default-terminal` screen, no F8 binding, pane `TERM=screen`, same
+  size). On an empty vault: the quick start opens; Esc leaves a blank page
+  (no note list, toolbar or hint); F8 shows that chrome and a second F8 hides
+  it, including when tmux `send-keys F8` delivers the key; Ctrl+W leaves
+  `alpha` from `alpha beta`; F3 opens find in the note; Ctrl+F shows the
+  list; Ctrl+O opens the note list; Delete on the highlighted row asks
+  `Move to Trash? Enter` and another key cancels. `scripts/smoke_pty.py`
+  passed. macOS was not tested locally.
+- Without the cryptography extra, `jotline --help` does not list `encrypt`,
+  `decrypt` or `encryption`. `jotline encrypt --help` still describes the
+  command. `jotline sync` is an invalid choice and creates nothing. On a
+  vault, `jotline doctor` points at `docs/sync.md`.
+- Notes stay plain Markdown. A new vault starts on a blank page. A vault that
+  already saved `focus_on_start` off keeps the list. No storage format change.
+- VoiceOver remains untested; issue #3 stays open.
+
 ## 0.9.10
 
 - Package version `0.9.10`. Publication gates on Ubuntu and macOS × Python

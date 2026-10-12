@@ -1,4 +1,6 @@
 """The default surface stays the writing loop."""
+import re
+
 from textual.widgets import TextArea
 
 from jotline.app import Jotline
@@ -53,22 +55,33 @@ def test_encryption_stays_hidden_until_the_extra_or_a_key_exists(tmp_path, monke
     hidden = Jotline(Vault(tmp_path))
     assert "encrypt" not in hidden.command_registry
     assert "decrypt" not in hidden.command_registry
-    task = _task_lines(build_parser().format_help())
-    assert "encrypt" not in task and "decrypt" not in task
-    assert "encryption" not in task
+    hidden_parser = build_parser()
+    _assert_encryption_listed(hidden_parser.format_help(), present=False)
+    # Still a command: another vault, or a typed name, must not be an invalid choice.
+    assert hidden_parser.parse_args(["encrypt", "note"]).command == "encrypt"
+    assert "Encrypt a note" in hidden_parser.command_parsers["encrypt"].format_help()
 
     (tmp_path / KEY_FILE).write_text("{}\n")
     revealed = Jotline(Vault(tmp_path))
     assert revealed.command_registry["encrypt"].group == "more"
-    listed = _task_lines(build_parser().format_help())
-    assert "encrypt" in listed and "decrypt" in listed and "encryption" in listed
+    _assert_encryption_listed(build_parser().format_help(), present=True)
 
     (tmp_path / KEY_FILE).unlink()
     monkeypatch.setattr(crypto, "library_installed", lambda: True)
     installed = Jotline(Vault(tmp_path))
     assert installed.command_registry["encrypt"].group == "more"
-    assert "encrypt" in _task_lines(build_parser().format_help())
+    _assert_encryption_listed(build_parser().format_help(), present=True)
 
 
 def _task_lines(help_text: str) -> str:
     return help_text.split("commands by task:", 1)[1].split("examples:", 1)[0]
+
+
+def _command_list(help_text: str) -> str:
+    return help_text.split("positional arguments:", 1)[1].split("options:", 1)[0]
+
+
+def _assert_encryption_listed(help_text: str, *, present: bool) -> None:
+    for section in (_task_lines(help_text), _command_list(help_text)):
+        for name in ("encrypt", "decrypt", "encryption"):
+            assert (re.search(rf"\b{name}\b", section) is not None) is present, section

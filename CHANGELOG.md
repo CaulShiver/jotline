@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.11 — 2026-10-12
 
 - **The app opens on a blank page.** The note list, formatting toolbar and hint
   start hidden. `Ctrl+F` and `Ctrl+O` bring the list back; `F8` toggles that
@@ -17,7 +17,8 @@
 - **`jotline sync` is gone.** It only printed a recipe. `jotline doctor` points
   at `docs/sync.md`. `encrypt`, `decrypt` and `encryption` stay out of
   `jotline --help` and the command palette until the cryptography extra is
-  installed or a key file exists.
+  installed or a key file exists. That includes the command list at the top of
+  `--help`, not only the task summary. Typing the command still works.
 
 ## 0.9.10 — 2026-10-06
 

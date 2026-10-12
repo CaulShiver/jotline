@@ -238,6 +238,24 @@ def add_encoding_options(command: argparse.ArgumentParser) -> None:
                          help="Replace bytes that cannot be decoded instead of stopping")
 
 
+class HelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Keep the epilog's columns, and leave suppressed commands out of --help.
+
+    argparse still formats a subcommand whose help is SUPPRESS, and prints the
+    sentinel itself. Skipping those subactions is what hides encrypt until the
+    extra or a key file exists, while the parser stays registered.
+    """
+
+    def _iter_indented_subactions(self, action):
+        try:
+            get_subactions = action._get_subactions
+        except AttributeError:
+            return
+        self._indent()
+        yield from (sub for sub in get_subactions() if sub.help is not argparse.SUPPRESS)
+        self._dedent()
+
+
 class Parser(argparse.ArgumentParser):
     # argparse builds messages such as "unrecognized arguments" from raw argv.
     # Subparsers inherit this class, so every usage error goes through here.
@@ -316,7 +334,7 @@ COMMAND_ALIASES = {"search": "list"}
 def build_parser() -> argparse.ArgumentParser:
     parser = Parser(prog="jotline", description=DESCRIPTION,
                     epilog=command_epilog(encryption=encryption_in_help()),
-                    formatter_class=argparse.RawDescriptionHelpFormatter)
+                    formatter_class=HelpFormatter)
     parser.add_argument("--version", action="version", version=__version__)
     add_global_options(parser, defaults=True)
     shared = argparse.ArgumentParser(add_help=False)
@@ -386,11 +404,20 @@ def build_parser() -> argparse.ArgumentParser:
     finish = add_command("done", help="Check off a task listed by jotline tasks")
     finish.add_argument("task", metavar="NOTE:LINE", help="The reference printed by jotline tasks")
     finish.add_argument("--undo", action="store_true", help="Mark the task as not done again")
+    # The commands stay registered so another vault can still use them. Help is
+    # built before --vault is applied, and argparse prints every subparser in
+    # the command list unless its help is suppressed.
+    show_encryption = encryption_in_help()
+
+    def listed(text: str) -> str:
+        return text if show_encryption else argparse.SUPPRESS
+
     for command, text in (("encrypt", "Encrypt a note's text on disk"),
                           ("decrypt", "Store an encrypted note as plain text again")):
-        sealing = add_command(command, help=text)
+        sealing = add_command(command, help=listed(text), description=text)
         sealing.add_argument("id", metavar="NOTE", help=NOTE_HELP)
-    encryption = add_command("encryption", help="Set up encryption, change its passphrase, or show status")
+    encryption_help = "Set up encryption, change its passphrase, or show status"
+    encryption = add_command("encryption", help=listed(encryption_help), description=encryption_help)
     encryption.add_argument("action", choices=("status", "setup", "passphrase"))
     add_command("backup", help="Back up notes, settings and templates to a local ZIP")
     backups = add_command("backups", help="List local ZIP backups and verify they open")
