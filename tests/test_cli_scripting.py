@@ -40,7 +40,7 @@ def test_unique_id_prefix_resolves(tmp_path):
     saved(vault, "other", "abce9999")
     assert run_cli(tmp_path, "append", "abcd", "more").returncode == 0
     assert vault.read(target.id).body == "target\nmore"
-    assert run_cli(tmp_path, "export", "abcd12").stdout == b"target\nmore"
+    assert run_cli(tmp_path, "export", "abcd12").stdout == b"target\nmore\n"
 
 
 def test_short_prefix_is_not_guessed(tmp_path):
@@ -72,7 +72,7 @@ def test_tag_rewrites_the_note_under_one_lock(tmp_path):
 def test_exact_title_ignores_case_and_must_be_unique(tmp_path):
     vault = Vault(tmp_path)
     review = saved(vault, "# Weekly Review\n\n- [ ] plan")
-    assert run_cli(tmp_path, "export", "weekly review").stdout == review.body.encode()
+    assert run_cli(tmp_path, "export", "weekly review").stdout == review.body.encode() + b"\n"
     saved(vault, "Weekly review")
     result = run_cli(tmp_path, "export", "Weekly Review")
     assert result.returncode == 1 and "matches 2 notes" in error(result)
@@ -83,14 +83,14 @@ def test_last_is_the_most_recently_updated_note(tmp_path):
     first = saved(vault, "first")
     saved(vault, "second")
     assert run_cli(tmp_path, "append", first.id, "again").returncode == 0
-    assert run_cli(tmp_path, "export", "last").stdout == b"first\nagain"
+    assert run_cli(tmp_path, "export", "last").stdout == b"first\nagain\n"
 
 
 def test_a_note_whose_id_is_a_keyword_wins(tmp_path):
     vault = Vault(tmp_path)
     saved(vault, "literal", "last")
     saved(vault, "newer")
-    assert run_cli(tmp_path, "export", "last").stdout == b"literal"
+    assert run_cli(tmp_path, "export", "last").stdout == b"literal\n"
 
 
 def test_trash_and_other_workspaces_are_not_matched_silently(tmp_path):
@@ -99,7 +99,7 @@ def test_trash_and_other_workspaces_are_not_matched_silently(tmp_path):
     assert "No note with ID or title Discarded" in error(run_cli(tmp_path, "export", "Discarded"))
     saved(vault, "Client plan", workspace="work")
     assert "Note is in another workspace" in error(run_cli(tmp_path, "export", "Client plan"))
-    assert run_cli(tmp_path, "--workspace", "work", "export", "client plan").stdout == b"Client plan"
+    assert run_cli(tmp_path, "--workspace", "work", "export", "client plan").stdout == b"Client plan\n"
 
 
 def test_title_references_never_become_paths(tmp_path):
@@ -301,6 +301,12 @@ BASH_CASES = [
     ("jotline import --duplicates ", {"skip", "copy"}),
     ("jotline append --encoding latin", {"latin-1"}),
     ("jotline list --j", {"--json"}),
+    ("jotline list --lim", {"--limit"}),
+    ("jotline list --sort ", {"updated", "created", "title"}),
+    ("jotline edi", {"edit"}),
+    ("jotline tras", {"trash"}),
+    ("jotline rena", {"rename"}),
+    ("jotline edit --j", {"--json"}),
     ("jotline capture --da", {"--daily", "--date"}),
     ("jotline capture --date ", {"today", "yesterday"}),
     ("jotline completion ", {"bash", "zsh", "fish"}),
@@ -367,6 +373,8 @@ FISH_CASES = [
     ("jotline import --duplicates c", {"copy"}),
     ("jotline append abcd --encoding latin", {"latin-1"}),
     ("jotline list --j", {"--json"}),
+    ("jotline list --sort u", {"updated"}),
+    ("jotline edi", {"edit"}),
     ("jotline capture --da", {"--daily", "--date"}),
     ("jotline completion f", {"fish"}),
     ("jotline desktop rec", {"recipe"}),

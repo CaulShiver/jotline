@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import os
 import shlex
+import subprocess
+
+from .environment import child_environment
 
 # Checked in this order, matching git, less and most other terminal programs.
 EDITOR_VARIABLES = ("JOTLINE_EDITOR", "VISUAL", "EDITOR")
@@ -40,3 +43,12 @@ def configured_editor(environment: dict[str, str] | None = None) -> list[str]:
         if command:
             return command
     return []
+
+
+def run_editor(command: list[str], path) -> subprocess.CompletedProcess[bytes]:
+    """Run the configured editor on a note file.
+
+    The caller owns the terminal. Passphrase variables are left out of the
+    editor's environment, the same way every other helper is started.
+    """
+    return subprocess.run([*command, str(path)], check=False, env=child_environment())

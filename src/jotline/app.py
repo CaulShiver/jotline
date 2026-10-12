@@ -5,7 +5,6 @@ import asyncio
 from dataclasses import replace
 from datetime import date, timedelta
 import re
-import subprocess
 from time import monotonic
 from typing import NamedTuple
 
@@ -27,8 +26,7 @@ from . import crypto
 from .commands import Command, writing_group
 from .connect_ui import Connections, ConnectionsBar
 from .encryption_ui import Encryption
-from .environment import child_environment
-from .external_editor import ENCRYPTED, NO_EDITOR, UNSAVED, configured_editor
+from .external_editor import ENCRYPTED, NO_EDITOR, UNSAVED, configured_editor, run_editor
 from .import_ui import RecoveryImport
 from .links import wiki_link_at, wiki_target_from_href
 from .markdown_editor import JOTLINE_THEME, MarkdownEditor, UndoStash
@@ -866,7 +864,7 @@ class Jotline(App):
         """
         try:
             with self.suspend():
-                subprocess.run([*command, str(path)], check=False, env=child_environment())
+                run_editor(command, path)
         except SuspendNotSupported:
             return ("This terminal cannot hand itself to another program, so "
                     f"{command[0]} was not started.")

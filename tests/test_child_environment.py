@@ -115,6 +115,19 @@ def test_an_exec_launch_does_not_see_the_passphrase(tmp_path, secrets_in_environ
 
 
 @posix_only
+def test_cli_edit_does_not_show_the_passphrase_to_the_editor(tmp_path, secrets_in_environment):
+    tool, dump = stand_in(tmp_path)
+    vault = Vault(tmp_path / "vault")
+    note = vault.new("Secret note")
+    vault.save(note)
+    env = {**os.environ, "JOTLINE_EDITOR": str(tool), "VISUAL": "", "EDITOR": ""}
+    result = subprocess.run([sys.executable, "-m", "jotline", "--vault", str(vault.path), "edit", note.id],
+                            capture_output=True, env=env, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert_clean(child_saw(dump))
+
+
+@posix_only
 def test_the_external_editor_does_not_see_the_passphrase(tmp_path, monkeypatch, secrets_in_environment):
     tool, dump = stand_in(tmp_path)
     # Suspending is the terminal's business; the run is the point.

@@ -142,7 +142,7 @@ def check(directory: str) -> None:
     command = [sys.executable, '-I', '-m', 'jotline', '--vault', directory]
     captured = run(command + ['capture', 'Installed package smoke test'], 'CLI capture')
     exported = run(command + ['export', captured.stdout.strip()], 'CLI export')
-    assert exported.stdout == 'Installed package smoke test'
+    assert exported.stdout == 'Installed package smoke test\n'
     desktop = run(command + ['desktop', 'status', '--json'], 'CLI desktop status')
     report = json.loads(desktop.stdout)
     assert report['recipes'] == ['omarchy', 'hyprland', 'gnome', 'kde', 'pipe']

@@ -119,7 +119,7 @@ async def test_an_editor_that_will_not_start_is_reported(tmp_path, monkeypatch):
 
     # Suspending is the terminal's business; the run that fails is the point.
     monkeypatch.setattr(Jotline, 'suspend', lambda self: nullcontext())
-    monkeypatch.setattr('jotline.app.subprocess.run', missing)
+    monkeypatch.setattr('jotline.external_editor.subprocess.run', missing)
     async with app.run_test(size=(110, 34)) as pilot:
         await pilot.press(*'draft')
         await pilot.pause()
