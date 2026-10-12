@@ -246,7 +246,7 @@ def test_cli_sets_up_encrypts_and_reads_with_a_passphrase(tmp_path):
     # Short words can occur by chance in valid base64 ciphertext.
     assert "Sam bench notes" not in raw and "encrypted: true" in raw
 
-    assert run_cli(tmp_path, "export", note_id, passphrase=PASSPHRASE).stdout == b"Sam bench notes"
+    assert run_cli(tmp_path, "export", note_id, passphrase=PASSPHRASE).stdout == b"Sam bench notes\n"
     listing = run_cli(tmp_path, "list").stdout.decode()
     assert "Encrypted note (locked)" in listing and "Sam" not in listing
     locked = run_cli(tmp_path, "export", note_id)

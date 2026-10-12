@@ -220,11 +220,11 @@ def test_export_refuses_terminal_controls_to_tty_without_raw(tmp_path, monkeypat
 
     monkeypatch.setattr(cli_module.sys, "argv", ["jotline", "--vault", str(tmp_path), "export", note.id, "--raw"])
     cli_module.main()
-    assert output.getvalue() == note.body
+    assert output.getvalue() == note.body + "\n"
 
     redirected = run_cli(tmp_path, "export", note.id)
     assert redirected.returncode == 0
-    assert redirected.stdout == note.body.encode()
+    assert redirected.stdout == note.body.encode() + b"\n"
 
 
 def test_an_action_guard_sees_control_characters_past_the_preview_cut(tmp_path):

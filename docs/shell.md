@@ -11,7 +11,7 @@ with examples, and `jotline COMMAND --help` shows one command's options.
 | Capture | `capture`, `append`, `prepend`, `daily` |
 | Find | `list` (or `search`), `open`, `backlinks`, `tags`, `workspaces` |
 | Tasks | `tasks`, `done` |
-| Notes | `tag`, `actions`, `run`, and `encrypt` / `decrypt` when encryption is available |
+| Notes | `tag`, `edit`, `trash`, `rename`, `actions`, `run`, and `encrypt` / `decrypt` when encryption is available |
 | Export and import | `export`, `import` |
 | Vault care | `backup`, `backups`, `recoveries`, `doctor`, `stats`, and `encryption` when a key or the extra is present |
 | Setup | `path`, `completion`, `desktop` |
@@ -33,6 +33,9 @@ printf 'Introduction' | jotline prepend NOTE_ID
 jotline list '#work'
 jotline search 'tag:work -blocked' --json
 jotline open milk
+jotline edit milk
+jotline trash milk
+jotline rename milk "Oat milk"
 jotline backlinks last
 jotline tag NOTE_ID ideas project/topic
 jotline tasks
@@ -83,21 +86,24 @@ jotline list '#team' --workspace work
 
 ## Naming a note
 
-Wherever a command takes a note, you can type less than the full 32-character
-ID:
+Every command that takes a note uses the same rule: `open`, `export`, `append`,
+`prepend`, `tag`, `backlinks`, `done`, `run`, `edit`, `trash`, `rename`, and
+`encrypt` / `decrypt`. In order:
 
-- a unique prefix of at least four characters (`jotline append 3f9a 'Next step'`),
-- the note's exact title in any letter case (`jotline export 'Weekly review'`),
-  including a title written with Markdown markers, such as `- [ ] buy milk`,
-- or `last` for the most recently updated note in the workspace.
+1. a unique prefix of at least four characters (`jotline append 3f9a 'Next step'`),
+   or the full ID,
+2. the note's exact title in any letter case (`jotline export 'Weekly review'`),
+   including a title written with Markdown markers, such as `- [ ] buy milk`,
+3. the one title that clearly matches best (`jotline export milk`).
 
-A reference that matches several notes is refused and lists their IDs. Titles
-never match notes in the trash or in another workspace. A note whose full ID is
-literally `last` still wins.
+`last` is the most recently updated note in the workspace. A note whose full ID
+is literally `last` still wins, and it is checked before the prefix rule.
 
-`open` goes one step further. When no exact title or ID matches, `jotline open
-milk` opens the one note whose title clearly matches best, or lists the top
-five with short IDs on stderr so you can pick one.
+A reference that matches several notes is refused. The error names each
+candidate's ID and title (up to five, and how many more there are). Titles
+never match notes in the trash or in another workspace. An ID prefix or exact
+title that exists only in another workspace is still reported as that, rather
+than as a loose title match here.
 
 ## Capture
 
@@ -120,8 +126,27 @@ encoding, pass `--encoding NAME` (for example `latin-1` or `cp1252`), or
 `--replace-invalid` to keep going and substitute the undecodable bytes.
 
 `daily` and `open` open the app on that note; `open` takes precedence over the
-startup-page preference. Every update uses the normal locking, history and
-conflict detection.
+startup-page preference. Both need a terminal. If stdin or stdout is not a
+TTY they exit with an error instead of drawing the app into a pipe. Every
+update uses the normal locking, history and conflict detection.
+
+## Edit, trash and rename
+
+```sh
+jotline edit milk                 # open the note in $EDITOR
+jotline edit last --json
+jotline trash milk                # move it to the trash collection
+jotline rename milk "Oat milk"    # new title, same ID
+```
+
+`edit` uses the same editor as the app: `$JOTLINE_EDITOR`, then `$VISUAL`, then
+`$EDITOR`. The editor is given the note file and, after it exits, Jotline reads
+that file back. An encrypted note stays in Jotline, because the file on disk
+holds sealed text. There is no permanent delete. `trash` moves the note to the
+trash collection and leaves the file in place; restore it from the app. `rename`
+changes the title and keeps the ID, so a `[[id]]` link still points at the note.
+A note that starts with a Markdown heading keeps that heading mark. All three
+accept `--json`.
 
 ## Find
 
@@ -129,6 +154,10 @@ conflict detection.
 for each matching note. The query uses the same syntax as the app's search:
 words, `#tags`, `"exact phrases"`, `-excluded`, `tag:work`, `title:"..."` and
 date operators. See [search syntax](navigation.md#search-syntax).
+
+`--limit N` prints at most N notes. `--sort` is `updated` (the default, newest
+first), `created` (newest first) or `title` (A–Z). Starred notes stay first, as
+they do in the app. `search` takes the same options.
 
 `backlinks NOTE` prints the notes that link to a note and the notes it links to.
 `tags` lists tags and counts in the workspace, `workspaces` lists workspaces.
@@ -171,10 +200,13 @@ convert, the error says so and suggests exporting HTML instead. Checkboxes print
 as ☐/☒ and `[[links]]` as their titles. Raw HTML in a note is shown as text and
 images become links, so an export never reads other files or contacts a server.
 
-Redirected export preserves the note body, including line endings. Export and
-`run` to an interactive terminal refuse control characters (escape sequences,
-bidirectional overrides) unless you pass `--raw`; ordinary text such as CRLF
-endings, joined emoji and soft hyphens prints normally.
+Stdout export preserves the note body, including its line endings, and ends
+with a newline when the note does not already have one, so the next shell
+prompt starts on its own line. A file written with `--output` is the note
+itself, with no extra newline. Export and `run` to an interactive terminal
+refuse control characters (escape sequences, bidirectional overrides) unless
+you pass `--raw`; ordinary text such as CRLF endings, joined emoji and soft
+hyphens prints normally.
 
 ## Import
 
@@ -218,9 +250,10 @@ captures, open tasks, tags) without note bodies. See
 ## Scripts and empty results
 
 `list`, `tags`, `workspaces`, `actions`, `tasks`, `stats`, `backlinks`,
-`doctor`, `backups` and `recoveries` accept `--json`. Warnings go to stderr, so
-stdout stays valid JSON. `list --json` returns metadata and tags, not note
-bodies.
+`doctor`, `backups`, `recoveries`, `edit`, `trash` and `rename` accept
+`--json`. Warnings go to stderr, so stdout stays valid JSON. `list --json`
+returns metadata and tags, not note bodies. `edit`, `trash` and `rename` print
+the note's id, title, collection, workspace, dates and star.
 
 When there is nothing to print, `list`, `tasks`, `tags` and `actions` explain
 why on stderr, and only at a terminal; scripts see the same empty output as
@@ -239,7 +272,7 @@ A `--vault` that points at a file is refused with a message saying so.
 | `JOTLINE_VAULT` | Default vault folder; `--vault` still overrides it ([vault location](vault.md#where-notes-live)) |
 | `XDG_DATA_HOME` | Base for the default vault on Linux, and on macOS when set explicitly |
 | `JOTLINE_PASSPHRASE` | Encryption passphrase for scripts; a wrong one only fails commands that need it, others warn and leave encrypted notes locked |
-| `JOTLINE_EDITOR`, `VISUAL`, `EDITOR` | Editor for **Edit this note in $EDITOR**, checked in that order |
+| `JOTLINE_EDITOR`, `VISUAL`, `EDITOR` | Editor for `jotline edit` and **Edit this note in $EDITOR**, checked in that order |
 | `JOTLINE_TERMINAL` | Terminal that `jotline desktop launch` opens capture in ([quick capture](quick-capture.md#choosing-the-terminal)) |
 
 ## Shell completion

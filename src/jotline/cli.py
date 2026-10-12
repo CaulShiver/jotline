@@ -40,12 +40,13 @@ from . import crypto
 from .crypto import check_passphrase
 from .desktop import DESKTOP_ACTIONS, RECIPE_NAMES, run_desktop_command
 from .export import BINARY, FORMAT_NAMES, FORMATS, export_bytes, format_for, write_export
+from .external_editor import ENCRYPTED, NO_EDITOR, UNSAVED, configured_editor, run_editor
 from .fuzzy import match as fuzzy_match
 from .importing import apply_import, preview_import
 from .limits import MAX_NOTE_BYTES
 from .links import connection_mark
-from .settings import Settings, action_dicts
-from .store import (OTHER_WORKSPACE, Vault, parse_calendar_date, read_regular_file, tagged_body,
+from .settings import SORT_ORDERS, Settings, action_dicts
+from .store import (OTHER_WORKSPACE, Note, Vault, parse_calendar_date, read_regular_file, tagged_body,
                     validate_workspace)
 from .tasks import due_limit, gather, parse_reference, set_done, short_ids
 
@@ -94,8 +95,35 @@ class NoMatchingNote(ValueError):
     """No note has this ID, prefix or title."""
 
 
-def resolve_note(vault: Vault, reference: str, workspace: str) -> str:
-    """Accept a full note ID, a unique ID prefix, an exact title, or `last`."""
+def _missing_note(reference: str) -> NoMatchingNote:
+    return NoMatchingNote(f"No note with ID or title {reference}; run jotline list to find IDs")
+
+
+def _ambiguous(reference: str, notes: list[Note]) -> ValueError:
+    """Several notes fit. The message names each candidate's ID and title."""
+    shown = notes[:5]
+    listed = "; ".join(f"{note.id} {terminal_text(note.title)}" for note in shown)
+    if len(notes) > len(shown):
+        listed += f"; and {len(notes) - len(shown)} more"
+    return ValueError(f"{reference} matches {len(notes)} notes ({listed}); use more of the ID")
+
+
+def _pick(reference: str, matches: list[Note], workspace: str) -> tuple[str | None, bool]:
+    """One note in this workspace, or a flag that matches exist only in another."""
+    here = [note for note in matches if note.workspace == workspace]
+    if len(here) > 1:
+        raise _ambiguous(reference, here)
+    if len(here) == 1:
+        return here[0].id, False
+    return None, bool(matches)
+
+
+def resolve_note(vault: Vault, reference: str, workspace: str, *, fuzzy: bool = True) -> str:
+    """ID prefix, then exact title, then the best title match.
+
+    `last` is the most recently updated note. A file whose ID is literally
+    `last` still wins. Trash is never matched by title or prefix.
+    """
     if re.fullmatch(r"[a-zA-Z0-9_-]+", reference) and os.path.lexists(vault.path / f"{reference}.md"):
         return reference
     notes = [note for note in vault.notes() if note.collection != "trash"]
@@ -104,41 +132,61 @@ def resolve_note(vault: Vault, reference: str, workspace: str) -> str:
         if not recent:
             raise ValueError(f"No notes in workspace {workspace} yet")
         return max(recent, key=lambda note: (note.updated, note.id)).id
+    other_workspace = False
+    if len(reference) >= MIN_ID_PREFIX:
+        chosen, elsewhere = _pick(reference, [note for note in notes if note.id.startswith(reference)], workspace)
+        other_workspace = elsewhere
+        if chosen:
+            return chosen
     folded = reference.strip().casefold()
-    matches = [note for note in notes
-               if (len(reference) >= MIN_ID_PREFIX and note.id.startswith(reference))
-               or folded in (note.heading.casefold(), note.title.casefold())]
-    here = [note for note in matches if note.workspace == workspace]
-    if matches and not here:
+    titled = [note for note in notes if folded in (note.heading.casefold(), note.title.casefold())]
+    chosen, elsewhere = _pick(reference, titled, workspace)
+    other_workspace = other_workspace or elsewhere
+    if chosen:
+        return chosen
+    if other_workspace:
         raise ValueError(OTHER_WORKSPACE)
-    if not here:
-        raise NoMatchingNote(f"No note with ID or title {reference}; run jotline list to find IDs")
-    if len(here) > 1:
-        shown = ", ".join(note.id for note in here[:5]) + (", …" if len(here) > 5 else "")
-        raise ValueError(f"{reference} matches {len(here)} notes ({shown}); use more of the ID")
-    return here[0].id
+    if not fuzzy:
+        raise _missing_note(reference)
+    return _best_title(vault, reference, workspace)
 
 
-# How far the best fuzzy title match must lead the next one to be opened unasked.
+# How far the best title match must lead the next one to be chosen unasked.
 CLEAR_LEAD = 1.5
 
 
-def fuzzy_note(vault: Vault, reference: str, workspace: str, missing: NoMatchingNote) -> str:
-    """The one note whose title clearly matches, or the top candidates on stderr."""
+def _best_title(vault: Vault, reference: str, workspace: str) -> str:
+    """The one title that clearly matches, or an ambiguity error naming the rest."""
     terms = reference.casefold().split()
     notes = [note for note in vault.notes()
              if note.collection != "trash" and note.workspace == workspace and not note.locked]
     scored = sorted(((score, note) for note in notes if (score := fuzzy_match(terms, note.title)[0])),
                     key=lambda item: (-item[0], item[1].title))
     if not scored:
-        raise missing
+        raise _missing_note(reference)
     if len(scored) == 1 or scored[0][0] >= scored[1][0] * CLEAR_LEAD:
         return scored[0][1].id
-    prefixes = short_ids(note.id for note in vault.notes())
-    for _, note in scored[:5]:
-        print(terminal_text(f"  {prefixes[note.id]}  {note.title}"), file=sys.stderr)
-    more = f" (showing 5 of {len(scored)})" if len(scored) > 5 else ""
-    raise ValueError(f"{reference} matches several titles{more}; run jotline open with one of these IDs")
+    raise _ambiguous(reference, [note for _, note in scored])
+
+
+def _can_unlock_for_titles(vault: Vault, passphrase_failed: bool) -> bool:
+    if passphrase_failed or vault.cipher is not None or not vault.has_key() or not can_ask_passphrase():
+        return False
+    return any(note.locked for note in vault.notes())
+
+
+def resolve_command_note(vault: Vault, reference: str, workspace: str, *, passphrase_failed: bool) -> str:
+    """The note a command named, unlocking when a locked title may be the match."""
+    try:
+        return resolve_note(vault, reference, workspace, fuzzy=False)
+    except NoMatchingNote:
+        if _can_unlock_for_titles(vault, passphrase_failed):
+            unlock_vault(vault)
+            try:
+                return resolve_note(vault, reference, workspace, fuzzy=False)
+            except NoMatchingNote:
+                pass
+        return resolve_note(vault, reference, workspace, fuzzy=True)
 
 
 PASSPHRASE_NEEDED = ("This needs the passphrase for encrypted notes; run it in a terminal, "
@@ -195,6 +243,12 @@ def due_argument(value: str) -> str:
         raise argparse.ArgumentTypeError(str(error)) from None
 
 
+def limit_count(value: str) -> int:
+    if not re.fullmatch(r"[1-9]\d*", value):
+        raise argparse.ArgumentTypeError("limit must be a positive whole number")
+    return int(value)
+
+
 def calendar_date_argument(value: str) -> date:
     try:
         return parse_calendar_date(value)
@@ -228,7 +282,8 @@ def missing_file_message(args: argparse.Namespace, error: FileNotFoundError) -> 
     return f"No such file or directory: {terminal_text(os.fsdecode(error.filename))}"
 
 
-NOTE_HELP = "Note ID, a unique ID prefix (4+ characters), an exact title, or last"
+NOTE_HELP = ("Note ID, a unique ID prefix (4+ characters), an exact title, "
+             "the best title match, or last")
 
 
 def add_encoding_options(command: argparse.ArgumentParser) -> None:
@@ -282,7 +337,7 @@ def encryption_in_help() -> bool:
 
 
 def command_epilog(*, encryption: bool) -> str:
-    notes = "tag, actions, run"
+    notes = "tag, edit, trash, rename, actions, run"
     vault = "backup, backups, recoveries, doctor, stats"
     if encryption:
         notes += ", encrypt, decrypt"
@@ -302,6 +357,7 @@ examples:
   echo "half an idea" | jotline capture --daily
   jotline search venue
   jotline open venue
+  jotline edit venue
   jotline tasks --due today
   jotline export last -o plan.html
 
@@ -357,6 +413,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_encoding_options(capture)
     listing = add_command("list", aliases=["search"], help="Find notes")
     listing.add_argument("query", nargs="?", default="")
+    listing.add_argument("--limit", type=limit_count, metavar="N", help="Show at most N notes")
+    listing.add_argument("--sort", choices=SORT_ORDERS, default="updated",
+                         help="Sort by updated (default, newest first), created, or title; starred notes stay first")
     listing.add_argument("--json", action="store_true", help="Print note metadata as JSON")
     for command in ('append', 'prepend'):
         update = add_command(command, help=f'{command.title()} text to an existing note')
@@ -367,6 +426,16 @@ def build_parser() -> argparse.ArgumentParser:
         add_encoding_options(update)
     opening = add_command('open', help='Open a note in the terminal editor')
     opening.add_argument('id', metavar='NOTE', help=NOTE_HELP)
+    editing = add_command("edit", help="Open a note in $EDITOR")
+    editing.add_argument("id", metavar="NOTE", help=NOTE_HELP)
+    editing.add_argument("--json", action="store_true", help="Print note metadata as JSON after the editor exits")
+    trashing = add_command("trash", help="Move a note to the trash collection")
+    trashing.add_argument("id", metavar="NOTE", help=NOTE_HELP)
+    trashing.add_argument("--json", action="store_true", help="Print note metadata as JSON")
+    renaming = add_command("rename", help="Change a note's title without changing its ID")
+    renaming.add_argument("id", metavar="NOTE", help=NOTE_HELP)
+    renaming.add_argument("title", nargs="+", help="New title; a leading Markdown heading mark on the note is kept")
+    renaming.add_argument("--json", action="store_true", help="Print note metadata as JSON")
     daily = add_command("daily", help="Open a daily log in the terminal editor")
     daily.add_argument("--date", type=calendar_date_argument, metavar="DATE",
                        help="Log date (YYYY-MM-DD, today, or yesterday); default today")
@@ -468,6 +537,7 @@ class Invocation:
     workspace: str
     encoding: str
     errors: str
+    passphrase_failed: bool = False
 
 
 REFUSED_CONTROLS = "Refusing to print terminal controls; redirect stdout or pass --raw"
@@ -619,6 +689,83 @@ def run_recoveries(run: Invocation) -> None:
     report_warnings(run.vault)
 
 
+_HEADING_PREFIX = re.compile(r"(#{1,6}[ \t]+)")
+
+
+def replace_title(body: str, title: str) -> str:
+    """Put title on the first line of text. A Markdown heading mark stays."""
+    lines = body.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        content = line.rstrip("\r\n")
+        if not content.strip():
+            continue
+        ending = line[len(content):]
+        prefix = ""
+        if not title.lstrip().startswith("#"):
+            if match := _HEADING_PREFIX.match(content):
+                prefix = match.group(1)
+        lines[index] = prefix + title + ending
+        return "".join(lines)
+    return title
+
+
+def note_record(note: Note) -> dict[str, object]:
+    return dict(id=note.id, title=note.title, collection=note.collection, workspace=note.workspace,
+                created=note.created, updated=note.updated, starred=note.starred)
+
+
+def print_note(note: Note, sentence: str, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(note_record(note), ensure_ascii=True))
+    elif sys.stdout.isatty():
+        print(terminal_text(sentence))
+    else:
+        print(note.id)
+
+
+def run_edit(run: Invocation) -> None:
+    note = read_note_here(run, run.args.id)
+    if note.encrypted or note.locked:
+        raise ValueError(ENCRYPTED)
+    command = configured_editor()
+    if not command:
+        raise ValueError(NO_EDITOR)
+    path = run.vault.file(note.id)
+    if not path.exists():
+        raise ValueError(UNSAVED)
+    try:
+        completed = run_editor(command, path)
+    except OSError as error:
+        raise ValueError(f"{command[0]} did not start: {error}") from error
+    if completed.returncode != 0:
+        raise ValueError(f"{command[0]} exited with status {completed.returncode}")
+    updated = read_note_here(run, note.id)
+    print_note(updated, f"Edited {updated.title} ({updated.id})", run.args.json)
+
+
+def run_trash(run: Invocation) -> None:
+    note = read_note_here(run, run.args.id)
+    if note.collection == "trash":
+        raise ValueError(f"{note.title} is already in the trash")
+    note.collection = "trash"
+    run.vault.save(note)
+    updated = run.vault.read(note.id, workspace=run.workspace)
+    print_note(updated, f"Moved to trash: {updated.title} ({updated.id})", run.args.json)
+
+
+def run_rename(run: Invocation) -> None:
+    title = " ".join(run.args.title).strip()
+    if not title:
+        run.parser.error("Provide a title")
+    if "\n" in title or "\r" in title:
+        raise ValueError("A title has to be one line")
+    note = read_note_here(run, run.args.id)
+    note.body = replace_title(note.body, title)
+    run.vault.save(note)
+    updated = run.vault.read(note.id, workspace=run.workspace)
+    print_note(updated, f"Renamed to {updated.title} ({updated.id})", run.args.json)
+
+
 def run_append(run: Invocation) -> None:
     args = run.args
     body = input_text(args, run.encoding, run.errors)
@@ -676,9 +823,22 @@ def run_action(run: Invocation) -> None:
         raise ValueError(f'Action stopped: {error}. Earlier completed steps remain applied.') from error
 
 
+def sort_notes(notes: list[Note], order: str) -> list[Note]:
+    """Starred notes stay first, then the chosen order, matching the app's list."""
+    if order == "title":
+        return sorted(notes, key=lambda note: (not note.starred, note.title.casefold(), note.id))
+    if order == "created":
+        return sorted(notes, key=lambda note: (note.starred, note.created, note.id), reverse=True)
+    if order == "updated":
+        return sorted(notes, key=lambda note: (note.starred, note.updated, note.id), reverse=True)
+    raise ValueError(f"Unknown sort {order}")
+
+
 def run_list(run: Invocation) -> None:
     args = run.args
-    notes = run.vault.search(args.query, workspace=run.workspace)
+    notes = sort_notes(run.vault.search(args.query, workspace=run.workspace), args.sort)
+    if args.limit is not None:
+        notes = notes[:args.limit]
     if args.json:
         print(json.dumps([dict(id=n.id, title=n.title, collection=n.collection, workspace=n.workspace,
                                created=n.created, updated=n.updated, starred=n.starred, tags=sorted(n.tags),
@@ -714,6 +874,9 @@ def run_export(run: Invocation) -> None:
     body = note.body if fmt == "markdown" else export_bytes(note.title, note.body, fmt, titles).decode("utf-8")
     if sys.stdout.isatty() and has_terminal_controls(body) and not args.raw:
         raise ValueError(REFUSED_CONTROLS)
+    # A missing final newline glues the next shell prompt onto the note.
+    if not body.endswith("\n"):
+        body += "\n"
     sys.stdout.write(body)
 
 
@@ -743,7 +906,7 @@ def run_tasks(run: Invocation) -> None:
 def run_done(run: Invocation) -> None:
     args, vault = run.args, run.vault
     reference, line = parse_reference(args.task)
-    note_id = resolve_note(vault, reference, run.workspace)
+    note_id = resolve_command_note(vault, reference, run.workspace, passphrase_failed=run.passphrase_failed)
     if vault.read(note_id).locked:
         unlock_vault(vault)
     checked = {}
@@ -883,7 +1046,7 @@ def run_without_vault(run: Invocation) -> None:
         else:
             print(terminal_text(no_vault_message(path)))
         return
-    if command in ("export", "backlinks"):
+    if command in ("export", "backlinks", "edit", "trash", "rename"):
         raise NoMatchingNote(f"No note with ID or title {args.id}; there is no vault yet at {path}")
     if command == "actions":
         run_actions(run)
@@ -902,6 +1065,9 @@ def run_without_vault(run: Invocation) -> None:
 
 
 def run_app(run: Invocation) -> None:
+    # A pipe is not a place to draw the app. open and daily used to hang there.
+    if run.args.command in ("open", "daily") and not can_open_editor():
+        raise ValueError(f"{run.args.command} needs a terminal")
     if run.args.command == "daily":
         when = run.args.date or date.today()
         note = run.vault.daily(run.settings.daily_template, run.workspace, when=when)
@@ -925,13 +1091,15 @@ COMMANDS = {
     "append": run_append, "prepend": run_append, "actions": run_actions, "run": run_action,
     "list": run_list, "tag": run_tag, "export": run_export, "backlinks": run_backlinks,
     "tasks": run_tasks, "done": run_done, "stats": run_stats, "daily": run_app,
+    "edit": run_edit, "trash": run_trash, "rename": run_rename,
     "encrypt": run_sealing, "decrypt": run_sealing, "encryption": run_encryption,
     "workspaces": run_workspaces, "tags": run_tags, "doctor": run_doctor,
     "open": run_app, None: run_app,
 }
-# Commands that only read must not turn a mistyped path into a new vault.
+# Commands that must not turn a mistyped path into a new vault. edit, trash and
+# rename change a note, but only one that already exists.
 READ_ONLY_COMMANDS = {"list", "actions", "export", "workspaces", "tags", "tasks", "doctor",
-                      "stats", "backlinks", "backups", "recoveries"}
+                      "stats", "backlinks", "backups", "recoveries", "edit", "trash", "rename"}
 # Commands that do not look inside a workspace, so --workspace is not checked for them.
 ANY_WORKSPACE_COMMANDS = {"actions", "backup", "backups", "doctor", "encryption"}
 
@@ -977,26 +1145,13 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Invoca
                 warning(f"JOTLINE_PASSPHRASE did not unlock the vault ({error}); encrypted notes stay locked")
     workspace = check_workspace(args, vault, settings)
     if getattr(args, "id", None) is not None:
-        reference = args.id
-        try:
-            try:
-                args.id = resolve_note(vault, reference, workspace)
-            except NoMatchingNote:
-                # Locked notes' titles are sealed; unlock and look again when that is possible.
-                if (passphrase_failed or vault.cipher is not None or not vault.has_key()
-                        or not can_ask_passphrase() or not any(note.locked for note in vault.notes())):
-                    raise
-                unlock_vault(vault)
-                args.id = resolve_note(vault, reference, workspace)
-        except NoMatchingNote as missing:
-            if args.command != "open":
-                raise
-            args.id = fuzzy_note(vault, reference, workspace, missing)
+        args.id = resolve_command_note(vault, args.id, workspace, passphrase_failed=passphrase_failed)
         if vault.read(args.id).locked:
             unlock_vault(vault)
     return Invocation(parser, args, vault, settings, settings_warning, workspace,
                       encoding=getattr(args, "encoding", "utf-8"),
-                      errors="replace" if getattr(args, "replace_invalid", False) else "strict")
+                      errors="replace" if getattr(args, "replace_invalid", False) else "strict",
+                      passphrase_failed=passphrase_failed)
 
 
 def main() -> None:

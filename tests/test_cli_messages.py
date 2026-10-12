@@ -104,16 +104,17 @@ def test_open_falls_back_to_one_clear_fuzzy_match(tmp_path, monkeypatch, capsys)
     assert main(monkeypatch, "--vault", tmp_path, "open", "milk") == 1
     err = capsys.readouterr().err
     assert "Buy milk" in err and "Milk prices" in err
-    assert "milk matches several titles; run jotline open with one of these IDs" in err
+    assert "milk matches 2 notes" in err and "use more of the ID" in err
     assert main(monkeypatch, "--vault", tmp_path, "open", "zzz") == 1
     assert "No note with ID or title zzz" in capsys.readouterr().err
     assert opened == [venue.id]
 
 
-def test_fuzzy_matching_is_only_for_open(tmp_path):
+def test_export_uses_the_same_title_match_as_open(tmp_path):
     saved(Vault(tmp_path), "Venue for the party")
     result = run_cli(tmp_path, "export", "venue party")
-    assert result.returncode == 1 and "No note with ID or title" in text(result)[1]
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == b"Venue for the party\n"
 
 
 def test_search_is_list(tmp_path):
@@ -241,7 +242,7 @@ def test_a_wrong_passphrase_only_fails_commands_that_need_it(tmp_path):
     listed = run_cli(tmp_path, "list", env=env)
     assert listed.returncode == 0 and plain.id in text(listed)[0]
     assert "JOTLINE_PASSPHRASE did not unlock the vault" in text(listed)[1]
-    assert run_cli(tmp_path, "export", plain.id, env=env).stdout == b"Plain note"
+    assert run_cli(tmp_path, "export", plain.id, env=env).stdout == b"Plain note\n"
     secret = run_cli(tmp_path, "export", locked.id, env=env)
     assert secret.returncode == 1 and "Wrong passphrase" in text(secret)[1]
 

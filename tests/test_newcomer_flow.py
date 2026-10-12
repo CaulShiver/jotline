@@ -1,9 +1,11 @@
 """Newcomer five-minute path: install is packaging; this is open-to-first-keystroke."""
 from dataclasses import replace
+import sys
 
 from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, TextArea
 
+from jotline import cli
 from jotline.app import Jotline
 from jotline.recovery_ui import RecoveryScreen
 from jotline.settings import Settings
@@ -143,13 +145,14 @@ async def test_guide_opens_read_only_and_review_saves_only_once_typed(tmp_path):
 
 
 def test_only_a_plain_launch_may_introduce_the_vault(tmp_path, monkeypatch):
-    import sys
-    from jotline import cli
     vault = Vault(tmp_path)
     note = vault.new("# Shell note")
     vault.save(note)
     launched = []
     monkeypatch.setattr(Jotline, "run", lambda self: launched.append(self.first_run))
+    # open and daily refuse a pipe; this test is about which launch is a first run.
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     for extra in ([], ["daily"], ["open", note.id]):
         monkeypatch.setattr(sys, "argv", ["jotline", "--vault", str(tmp_path), *extra])
         cli.main()

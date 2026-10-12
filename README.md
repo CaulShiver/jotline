@@ -98,7 +98,8 @@ jotline capture "A thought before I forget"     # Saved to inbox: A thought befo
 echo "half an idea" | jotline capture           # piped: prints only the note ID
 jotline capture --daily "- [ ] Send the outline"
 jotline list '#work'                            # or: jotline search '#work'
-jotline open milk                               # exact title or ID, else the best title match
+jotline open milk                               # ID, exact title, or the best title match
+jotline edit milk                               # open the note in $EDITOR
 jotline tasks --due today
 jotline done 3f9a8c21:4
 jotline export last --output plan.html
@@ -108,8 +109,8 @@ jotline export last --output plan.html
 to a hotkey with `jotline desktop install` on Linux ([quick capture](docs/quick-capture.md)).
 At a terminal it confirms in words; piped or redirected, it prints the bare ID.
 Wherever a command takes a note you can give a 4+ character ID prefix, the exact
-title, or `last`. Global options such as `--vault` and `--workspace` work before
-or after the command. See [Jotline from the shell](docs/shell.md) for every
+title, the best title match, or `last`. Global options such as `--vault` and
+`--workspace` work before or after the command. See [Jotline from the shell](docs/shell.md) for every
 command, `--json` output and environment variables.
 
 ## If something goes wrong
