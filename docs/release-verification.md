@@ -1,5 +1,22 @@
 # Release verification
 
+## 0.9.12
+
+- Package version `0.9.12`. Publication gates on Ubuntu and macOS × Python
+  3.11–3.13, as for 0.9.11.
+- Local locked suite on Linux / Python 3.12, with the encryption extra:
+  **1206 passed, 51 skipped**. `ruff check`, `uv lock --check` and
+  `git diff --check` passed.
+- `uv build --clear` produced the wheel and sdist; `release_metadata.py
+  --checksums` verified `v0.9.12` and wrote `SHA256SUMS`; `twine==7.0.0 check`
+  passed. `install.py --from-dir dist` installed the wheel into a clean venv,
+  `jotline --version` reported `0.9.12`, and the installed-wheel and POSIX PTY
+  smoke tests passed.
+- Notes stay plain Markdown until `jotline filenames migrate` is opted in.
+  A migrated vault is not understood by Jotline 0.9.11 or earlier. macOS was
+  not tested locally.
+- VoiceOver remains untested; issue #3 stays open.
+
 ## 0.9.11
 
 - Package version `0.9.11`. Publication gates on Ubuntu and macOS × Python

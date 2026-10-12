@@ -1,32 +1,40 @@
-Jotline 0.9.11 opens on a blank page. Linux and macOS remain the supported
-operating systems. Windows is out of scope. Publication gates on Ubuntu and
-macOS × Python 3.11–3.13.
+Jotline 0.9.12 adds shell edit, trash and rename, and optional readable
+filenames. Linux and macOS remain the supported operating systems. Windows
+is out of scope. Publication gates on Ubuntu and macOS × Python 3.11–3.13.
 
-The note list, formatting toolbar and hint start hidden. `Ctrl+F` brings the
-list back for search, `Ctrl+O` opens a note by title, and `F8` toggles that
-quiet layout. Focus mode moved from `Ctrl+B` (tmux's prefix) to `F8`. `F3`
-finds in the open note. `Ctrl+W` deletes the word to the left; Switch
-workspace is no longer on a key. Delete on a highlighted note asks `Move to
-Trash? Enter` before it moves the note. Any other key cancels.
+`export`, `append`, `tag`, `done`, `encrypt`, `decrypt`, `trash` and
+`rename` now fall back to the closest title match, the way `open` already
+did. A unique ID prefix or an exact title is used as named. When several
+notes fit, the error lists each candidate. `trash` and `rename` use that
+fallback only with confirmation: `--yes`, or a question at a terminal.
 
-`jotline sync` is gone. It only printed a recipe. `jotline doctor` points at
-`docs/sync.md`. `encrypt`, `decrypt` and `encryption` stay out of
-`jotline --help`, including the command list, until the cryptography extra
-is installed or the default vault has a key file. Typing the command still
-works. The full list is in the changelog.
+`jotline edit` opens the note in `$EDITOR`. `jotline trash` moves it to
+Trash and does not delete the file. `jotline rename` changes the title and
+keeps the ID. All three accept `--json`. `open` and `daily` refuse when
+there is no terminal. `export` to stdout ends with a newline. `list` takes
+`--limit` and `--sort`.
 
-`Start on a blank page` is on for a new vault. A vault that already saved
-that setting off keeps the list visible. If you already gave `F8` or `F3`
-to another command, yours wins. Notes stay plain Markdown. Run
-`jotline backup` before upgrading.
+Note files can be named with a title slug and a short ID. This stays off
+until `jotline filenames migrate`, which renames `a1b2c3….md` to
+`buy-milk--a1b2c3.md`, writes the full ID in the header, and turns the
+setting on. It asks first in a terminal and refuses without `--yes` when
+there is no terminal. A real run backs up first. `jotline filenames revert`
+puts the ID back in the filename, with the same confirmation. Links,
+history, backups, recovery and encryption keep using the note ID. Daily
+logs stay `daily-YYYY-MM-DD.md`. Encrypted notes stay `<id>.md`. Do not
+edit a migrated vault with Jotline 0.9.11 or earlier: it treats the
+filename as the ID. The full list is in the changelog.
+
+Notes stay plain Markdown until you opt in to readable filenames. Run
+`jotline backup` before upgrading, and again before migrating filenames.
 
 - Linux / macOS: `curl -fsSL https://github.com/CaulShiver/jotline/releases/latest/download/install.py | python3`
 - PyPI: `uv tool install jotline` or `pipx install jotline` after this tag
   publishes. Python 3.11+ is required; Git is not.
 
-Download `jotline-0.9.11-py3-none-any.whl` only if you want to verify
-`SHA256SUMS` by hand, then `uv tool install ./jotline-0.9.11-py3-none-any.whl`
-or `pipx install ./jotline-0.9.11-py3-none-any.whl`. For an existing
+Download `jotline-0.9.12-py3-none-any.whl` only if you want to verify
+`SHA256SUMS` by hand, then `uv tool install ./jotline-0.9.12-py3-none-any.whl`
+or `pipx install ./jotline-0.9.12-py3-none-any.whl`. For an existing
 installation add `--force`.
 
 See the README, changelog, install guide, and [supported platforms](platforms.md).
