@@ -3,12 +3,17 @@ import json
 import os
 from datetime import date
 from pathlib import Path
+import pty
+import select
 import subprocess
 import sys
+import time
 import zipfile
 
 import pytest
+from textual.widgets import Select, Switch
 
+from jotline.app import Jotline
 from jotline.filename_migration import migrate_filenames
 from jotline.filenames import set_header_id
 from jotline.history import DISPLACED_PREFIX
@@ -23,6 +28,53 @@ def run_cli(vault: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(
         [sys.executable, "-m", "jotline", "--vault", os.fsencode(vault), *args],
         capture_output=True, check=False, timeout=30)
+
+
+def run_filenames_at_terminal(vault: Path, *args: str, answer: str = "") -> tuple[int, str]:
+    """Run filenames with a real terminal. ``answer`` is typed when the prompt appears."""
+    master, slave = pty.openpty()
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "jotline", "--vault", str(vault), "filenames", *args],
+        stdin=slave, stdout=slave, stderr=slave, close_fds=True,
+        env={**os.environ, "PYTHONUNBUFFERED": "1"})
+    os.close(slave)
+    output = bytearray()
+    sent = not answer
+    deadline = time.monotonic() + 30
+    try:
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                while select.select([master], [], [], 0)[0]:
+                    try:
+                        chunk = os.read(master, 4096)
+                    except OSError:
+                        chunk = b""
+                    if not chunk:
+                        break
+                    output.extend(chunk)
+                break
+            ready, _, _ = select.select([master], [], [], 0.2)
+            if not ready:
+                continue
+            try:
+                chunk = os.read(master, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            output.extend(chunk)
+            if not sent and b"Proceed?" in output:
+                os.write(master, answer.encode())
+                sent = True
+        else:
+            proc.kill()
+            proc.wait(timeout=5)
+            raise AssertionError(f"filenames command timed out: {output!r}")
+    finally:
+        if proc.poll() is None:
+            proc.wait(timeout=5)
+        os.close(master)
+    return proc.returncode, output.decode(errors="replace")
 
 
 def saved(vault: Vault, body: str, note_id: str | None = None):
@@ -212,13 +264,137 @@ def test_cli_migrate_and_a_foreign_workspace_name(tmp_path):
     assert dry.returncode == 0, dry.stderr
     assert b"Dry run" in dry.stdout
     assert (tmp_path / f"{note.id}.md").is_file()
-    migrated = run_cli(tmp_path, "filenames", "migrate", "--json")
+    migrated = run_cli(tmp_path, "filenames", "migrate", "--json", "--yes")
     assert migrated.returncode == 0, migrated.stderr
     payload = json.loads(migrated.stdout)
     assert payload["ok"] is True and payload["readable_filenames"] is True
     assert (tmp_path / f"buy-milk--{note.id[:6]}.md").is_file()
     blocked = run_cli(tmp_path, "filenames", "migrate", "--dry-run", "--json")
     assert blocked.returncode == 0
+
+
+def test_filenames_outside_a_terminal_refuse_unless_yes(tmp_path):
+    vault = Vault(tmp_path)
+    note = saved(vault, "Buy milk")
+    opaque = tmp_path / f"{note.id}.md"
+    slug = tmp_path / f"buy-milk--{note.id[:6]}.md"
+
+    migrate = run_cli(tmp_path, "filenames", "migrate")
+    assert migrate.returncode == 1
+    assert b"Dry run" in migrate.stdout
+    assert b"buy-milk" in migrate.stdout
+    assert b"Refusing to rename note files without a terminal" in migrate.stderr
+    assert b"--yes" in migrate.stderr
+    assert opaque.is_file() and not slug.exists()
+    assert Settings.load(tmp_path / ".jotline-settings.json")[0].readable_filenames is False
+
+    forced = run_cli(tmp_path, "filenames", "migrate", "--yes")
+    assert forced.returncode == 0, forced.stderr
+    assert slug.is_file() and not opaque.exists()
+    assert Settings.load(tmp_path / ".jotline-settings.json")[0].readable_filenames is True
+
+    revert = run_cli(tmp_path, "filenames", "revert")
+    assert revert.returncode == 1
+    assert b"Dry run" in revert.stdout
+    assert b"Refusing to rename note files without a terminal" in revert.stderr
+    assert slug.is_file() and not opaque.exists()
+    assert Settings.load(tmp_path / ".jotline-settings.json")[0].readable_filenames is True
+
+    forced_back = run_cli(tmp_path, "filenames", "revert", "--yes")
+    assert forced_back.returncode == 0, forced_back.stderr
+    assert opaque.is_file() and not slug.exists()
+    assert Settings.load(tmp_path / ".jotline-settings.json")[0].readable_filenames is False
+
+
+def test_filenames_in_a_terminal_rename_only_after_yes(tmp_path):
+    vault = Vault(tmp_path)
+    note = saved(vault, "Buy milk")
+    opaque = tmp_path / f"{note.id}.md"
+    slug = tmp_path / f"buy-milk--{note.id[:6]}.md"
+
+    declined, declined_output = run_filenames_at_terminal(tmp_path, "migrate", answer="n\n")
+    assert declined == 0, declined_output
+    assert "Proceed? A backup is written first. [y/N]" in declined_output
+    assert "Nothing was changed." in declined_output
+    assert opaque.is_file() and not slug.exists()
+
+    accepted, accepted_output = run_filenames_at_terminal(tmp_path, "migrate", answer="y\n")
+    assert accepted == 0, accepted_output
+    assert "Readable filenames are on." in accepted_output
+    assert slug.is_file() and not opaque.exists()
+
+    declined_back, declined_back_output = run_filenames_at_terminal(tmp_path, "revert", answer="\n")
+    assert declined_back == 0, declined_back_output
+    assert "Nothing was changed." in declined_back_output
+    assert slug.is_file() and not opaque.exists()
+
+    accepted_back, accepted_back_output = run_filenames_at_terminal(tmp_path, "revert", answer="yes\n")
+    assert accepted_back == 0, accepted_back_output
+    assert "Readable filenames are off." in accepted_back_output
+    assert opaque.is_file() and not slug.exists()
+
+    again, again_output = run_filenames_at_terminal(tmp_path, "migrate", "--yes")
+    assert again == 0, again_output
+    assert "Proceed?" not in again_output
+    assert slug.is_file() and not opaque.exists()
+
+
+async def test_settings_switch_does_not_turn_on_readable_filenames(tmp_path):
+    vault = Vault(tmp_path)
+    note = saved(vault, "Buy milk")
+    opaque = tmp_path / f"{note.id}.md"
+    backups = {path.name for path in tmp_path.glob(".jotline-backups/*")}
+    app = Jotline(vault)
+    async with app.run_test(size=(110, 40)) as pilot:
+        app.command("settings")
+        await pilot.pause()
+        app.screen.query_one("#pref-readable_filenames", Switch).value = True
+        app.screen.query_one("#pref-theme", Select).value = "nord"
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert app.settings.readable_filenames is False
+        assert vault.readable_filenames is False
+        assert app.settings.theme == "nord"
+        messages = [item.message for item in app._notifications]
+        assert any("Nothing was renamed." in message and "jotline filenames migrate" in message
+                   for message in messages)
+    assert opaque.is_file()
+    assert not list(tmp_path.glob("buy-milk--*.md"))
+    assert {path.name for path in tmp_path.glob(".jotline-backups/*")} == backups
+    stored, _warning = Settings.load(tmp_path / ".jotline-settings.json")
+    assert stored.readable_filenames is False
+    assert stored.theme == "nord"
+
+
+async def test_settings_keeps_readable_filenames_that_migration_already_turned_on(tmp_path):
+    vault = Vault(tmp_path)
+    vault.readable_filenames = True
+    note = saved(vault, "Buy milk")
+    Settings(readable_filenames=True).save(tmp_path / ".jotline-settings.json")
+    slug = tmp_path / f"buy-milk--{note.id[:6]}.md"
+    assert slug.is_file()
+    app = Jotline(vault)
+    async with app.run_test(size=(110, 40)) as pilot:
+        assert app.settings.readable_filenames is True
+        app.command("settings")
+        await pilot.pause()
+        assert app.screen.query_one("#pref-readable_filenames", Switch).value is True
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert app.settings.readable_filenames is True
+        messages = [item.message for item in app._notifications]
+        assert any(message == "Settings saved. Startup choices apply next launch." for message in messages)
+        assert not any("jotline filenames migrate" in message for message in messages)
+        app.command("settings")
+        await pilot.pause()
+        app.screen.query_one("#pref-readable_filenames", Switch).value = False
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert app.settings.readable_filenames is False
+        assert vault.readable_filenames is False
+    assert slug.is_file()
+    stored, _warning = Settings.load(tmp_path / ".jotline-settings.json")
+    assert stored.readable_filenames is False
 
 
 def test_encrypted_notes_stay_opaque_and_round_trip(tmp_path):

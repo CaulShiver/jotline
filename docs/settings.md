@@ -16,11 +16,11 @@ form with the original settings; nothing changes until you save.
 - **Workflow:** open a blank thought or today's log at launch, choose the
   collection for new thoughts, and sort notes by last edit, creation date or
   title (stars stay first).
-- **Readable filenames:** off by default. When on, a new note and a later edit
-  are stored as a title slug plus a short ID (`buy-milk--a1b2c3.md`). Turning
-  the switch on does not rename notes already on disk; `jotline filenames
-  migrate` does, and `jotline filenames revert` puts the ID back in the
-  filename. See [your vault](vault.md#what-is-in-the-folder).
+- **Readable filenames:** the switch does not rename anything and does not turn
+  the feature on. Saving it while it was off leaves the setting off and points
+  you to `jotline filenames migrate`, which shows a plan, asks in a terminal,
+  and backs up before renaming. `jotline filenames revert` puts the ID back in
+  the filename. See [your vault](vault.md#what-is-in-the-folder).
 - **Autosave:** an interval from 0.2 to 5 seconds.
 - **Daily template:** your own Markdown structure for new daily logs. `{{date}}`
   inserts the date. Existing daily logs are never replaced when the template

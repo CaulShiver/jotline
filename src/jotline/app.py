@@ -350,6 +350,10 @@ class Jotline(App):
     def save_settings(self, settings: Settings | None) -> None:
         if settings is None:
             return
+        # The switch must not rename files. Migration is the path that backs up first.
+        asked_for_readable = settings.readable_filenames and not self.settings.readable_filenames
+        if asked_for_readable:
+            settings = replace(settings, readable_filenames=False)
         try:
             settings.save(self.settings_path)
         except (OSError, ValueError) as error:
@@ -364,6 +368,10 @@ class Jotline(App):
         self.refresh_notes()
         self.connections()
         self.editor().focus()
+        if asked_for_readable:
+            self.notify('Nothing was renamed. Run jotline filenames migrate to turn readable filenames on. '
+                        'It shows the plan and backs up first.', severity='warning', timeout=12)
+            return
         self.notify('Settings saved. Startup choices apply next launch.')
 
     @staticmethod

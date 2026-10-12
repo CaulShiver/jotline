@@ -45,10 +45,12 @@ encryption and recovery keep using that ID. Daily logs stay
 `daily-YYYY-MM-DD.md`. Encrypted notes stay `<id>.md`, so a title is not written
 next to ciphertext. A file you placed yourself, such as `todo.md`, keeps its
 name. With the setting on, renaming a note in Jotline renames the file to the
-new slug; an unchanged save does not. `jotline filenames revert` puts `<id>.md`
-back and removes the header ID. Run either command for real only after it has
-shown a dry run you accept: a real run writes a ZIP backup first and refuses to
-start if two copies of one note disagree. Do not open a migrated vault with
+new slug; an unchanged save does not. The Settings switch does not turn the
+setting on and does not rename files; it points you at the command. `jotline
+filenames revert` puts `<id>.md` back and removes the header ID. In a terminal,
+a real run prints the plan and waits for yes. Without a terminal it stops
+unless you pass `--yes`. It writes a ZIP backup first and refuses to start if
+two copies of one note disagree. Do not open a migrated vault with
 Jotline 0.9.x. That version treats the filename as the ID and would see
 `buy-milk--a1b2c3` as a different note.
 

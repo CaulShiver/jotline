@@ -68,8 +68,8 @@ class Preferences(Modal[Settings | None]):
                     with Horizontal(classes='pref-toggle'):
                         yield Label(title)
                         tooltip = (title if name != 'readable_filenames' else
-                                   'New and edited notes use a title slug plus a short ID. '
-                                   'Existing notes keep their names until jotline filenames migrate.')
+                                   'This switch does not rename files. '
+                                   'Run jotline filenames migrate to turn readable filenames on.')
                         yield Switch(getattr(s, name), id='pref-' + name, tooltip=tooltip)
                 yield Label('Sidebar width · 22–60 columns', classes='pref-label')
                 yield Input(str(s.sidebar_width), type='integer', id='pref-sidebar_width',

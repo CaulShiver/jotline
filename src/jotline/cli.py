@@ -584,6 +584,8 @@ def build_parser() -> argparse.ArgumentParser:
                            help="migrate turns readable filenames on; revert names files with the note ID again")
     filenames.add_argument("--dry-run", action="store_true",
                            help="Show what would change without writing a backup or renaming anything")
+    filenames.add_argument("--yes", action="store_true",
+                           help="Rename without a confirmation prompt. Required when not running in a terminal")
     filenames.add_argument("--json", action="store_true", help="Print the plan or result as JSON")
     importing = add_command("import", help="Import UTF-8 text, a folder, or a Drafts export")
     importing.add_argument("file", type=Path)
@@ -729,13 +731,51 @@ def run_import(run: Invocation) -> None:
         raise SystemExit(1)
 
 
-def run_filenames(run: Invocation) -> None:
-    report = migrate_filenames(
-        run.vault, run.settings, dry_run=run.args.dry_run, revert=run.args.action == "revert")
+def _print_filename_report(run: Invocation, report) -> None:
     if run.args.json:
         print(json.dumps(report.as_dict(), indent=2))
     else:
         print("\n".join(report.lines()))
+
+
+def _filenames_at_terminal() -> bool:
+    return sys.stdin is not None and sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _confirm_filenames() -> bool:
+    """Yes only for an explicit y or yes. EOF and anything else decline."""
+    print("Proceed? A backup is written first. [y/N] ", end="", flush=True, file=sys.stderr)
+    try:
+        answer = input()
+    except EOFError:
+        return False
+    return answer.strip().lower() in {"y", "yes"}
+
+
+def run_filenames(run: Invocation) -> None:
+    revert = run.args.action == "revert"
+    if run.args.dry_run:
+        report = migrate_filenames(run.vault, run.settings, dry_run=True, revert=revert)
+        _print_filename_report(run, report)
+        if not report.ok:
+            raise SystemExit(1)
+        return
+    preview = migrate_filenames(run.vault, run.settings, dry_run=True, revert=revert)
+    if not preview.ok:
+        _print_filename_report(run, preview)
+        raise SystemExit(1)
+    if not run.args.yes:
+        _print_filename_report(run, preview)
+        if _filenames_at_terminal():
+            if not _confirm_filenames():
+                print("Nothing was changed.", file=sys.stderr)
+                return
+        else:
+            print("jotline: Refusing to rename note files without a terminal. "
+                  "Run it in a terminal, or pass --yes.", file=sys.stderr)
+            raise SystemExit(1)
+    report = migrate_filenames(run.vault, run.settings, dry_run=False, revert=revert)
+    _print_filename_report(run, report)
     if not report.ok:
         raise SystemExit(1)
 
