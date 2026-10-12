@@ -738,18 +738,17 @@ def _print_filename_report(run: Invocation, report) -> None:
         print("\n".join(report.lines()))
 
 
-def _filenames_at_terminal() -> bool:
-    return sys.stdin is not None and sys.stdin.isatty() and sys.stdout.isatty()
-
-
 def _confirm_filenames() -> bool:
-    """Yes only for an explicit y or yes. EOF and anything else decline."""
-    print("Proceed? A backup is written first. [y/N] ", end="", flush=True, file=sys.stderr)
+    """Yes only for an explicit y or yes. EOF and anything else decline.
+
+    The question is read from the terminal itself, the same way trash and rename
+    confirm a closest title, so a pipe on stdin cannot answer it.
+    """
     try:
-        answer = input()
-    except EOFError:
+        answer = read_terminal_line("Proceed? A backup is written first. [y/N] ")
+    except (OSError, EOFError, KeyboardInterrupt):
         return False
-    return answer.strip().lower() in {"y", "yes"}
+    return answer.strip().casefold() in {"y", "yes"}
 
 
 def run_filenames(run: Invocation) -> None:
@@ -766,14 +765,12 @@ def run_filenames(run: Invocation) -> None:
         raise SystemExit(1)
     if not run.args.yes:
         _print_filename_report(run, preview)
-        if _filenames_at_terminal():
+        if terminal_available():
             if not _confirm_filenames():
-                print("Nothing was changed.", file=sys.stderr)
-                raise SystemExit(1)
+                raise ValueError("Nothing was changed")
         else:
-            print("jotline: Refusing to rename note files without a terminal. "
-                  "Run it in a terminal, or pass --yes.", file=sys.stderr)
-            raise SystemExit(1)
+            raise ValueError("Refusing to rename note files without a terminal. "
+                             "Run it in a terminal, or pass --yes.")
     report = migrate_filenames(run.vault, run.settings, dry_run=False, revert=revert)
     _print_filename_report(run, report)
     if not report.ok:

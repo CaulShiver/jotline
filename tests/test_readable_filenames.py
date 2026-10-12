@@ -3,16 +3,14 @@ import json
 import os
 from datetime import date
 from pathlib import Path
-import pty
-import select
 import subprocess
 import sys
-import time
 import zipfile
 
 import pytest
 from textual.widgets import Select, Switch
 
+from jotline import cli
 from jotline.app import Jotline
 from jotline.filename_migration import migrate_filenames
 from jotline.filenames import set_header_id
@@ -24,57 +22,12 @@ from jotline.store import ConflictError, Vault, wiki_link
 pytest.importorskip("cryptography")
 
 
-def run_cli(vault: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
+def run_cli(vault: Path, *args: str, detached: bool = False) -> subprocess.CompletedProcess[bytes]:
+    """Run the CLI. ``detached`` drops the controlling terminal, as trash and rename tests do."""
     return subprocess.run(
         [sys.executable, "-m", "jotline", "--vault", os.fsencode(vault), *args],
-        capture_output=True, check=False, timeout=30)
-
-
-def run_filenames_at_terminal(vault: Path, *args: str, answer: str = "") -> tuple[int, str]:
-    """Run filenames with a real terminal. ``answer`` is typed when the prompt appears."""
-    master, slave = pty.openpty()
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "jotline", "--vault", str(vault), "filenames", *args],
-        stdin=slave, stdout=slave, stderr=slave, close_fds=True,
-        env={**os.environ, "PYTHONUNBUFFERED": "1"})
-    os.close(slave)
-    output = bytearray()
-    sent = not answer
-    deadline = time.monotonic() + 30
-    try:
-        while time.monotonic() < deadline:
-            if proc.poll() is not None:
-                while select.select([master], [], [], 0)[0]:
-                    try:
-                        chunk = os.read(master, 4096)
-                    except OSError:
-                        chunk = b""
-                    if not chunk:
-                        break
-                    output.extend(chunk)
-                break
-            ready, _, _ = select.select([master], [], [], 0.2)
-            if not ready:
-                continue
-            try:
-                chunk = os.read(master, 4096)
-            except OSError:
-                break
-            if not chunk:
-                break
-            output.extend(chunk)
-            if not sent and b"Proceed?" in output:
-                os.write(master, answer.encode())
-                sent = True
-        else:
-            proc.kill()
-            proc.wait(timeout=5)
-            raise AssertionError(f"filenames command timed out: {output!r}")
-    finally:
-        if proc.poll() is None:
-            proc.wait(timeout=5)
-        os.close(master)
-    return proc.returncode, output.decode(errors="replace")
+        stdin=subprocess.DEVNULL if detached else None,
+        capture_output=True, check=False, timeout=30, start_new_session=detached)
 
 
 def saved(vault: Vault, body: str, note_id: str | None = None):
@@ -181,8 +134,13 @@ def test_links_and_cli_still_resolve_the_id(tmp_path):
         result = run_cli(tmp_path, "export", reference)
         assert result.returncode == 0, result.stderr
         assert result.stdout.startswith(b"Buy milk")
-    ambiguous = run_cli(tmp_path, "export", "a")
-    assert ambiguous.returncode == 1
+    missing = run_cli(tmp_path, "export", "xyz")
+    assert missing.returncode == 1
+    assert b"No note with ID or title xyz" in missing.stderr
+    trashed = run_cli(tmp_path, "trash", filename, "--json", detached=True)
+    assert trashed.returncode == 0, trashed.stderr
+    assert json.loads(trashed.stdout)["id"] == target.id
+    assert vault.read(target.id).collection == "trash"
 
 
 def test_short_prefix_is_refused_when_two_notes_share_it(tmp_path):
@@ -279,7 +237,7 @@ def test_filenames_outside_a_terminal_refuse_unless_yes(tmp_path):
     opaque = tmp_path / f"{note.id}.md"
     slug = tmp_path / f"buy-milk--{note.id[:6]}.md"
 
-    migrate = run_cli(tmp_path, "filenames", "migrate")
+    migrate = run_cli(tmp_path, "filenames", "migrate", detached=True)
     assert migrate.returncode == 1
     assert b"Dry run" in migrate.stdout
     assert b"buy-milk" in migrate.stdout
@@ -293,7 +251,7 @@ def test_filenames_outside_a_terminal_refuse_unless_yes(tmp_path):
     assert slug.is_file() and not opaque.exists()
     assert Settings.load(tmp_path / ".jotline-settings.json")[0].readable_filenames is True
 
-    revert = run_cli(tmp_path, "filenames", "revert")
+    revert = run_cli(tmp_path, "filenames", "revert", detached=True)
     assert revert.returncode == 1
     assert b"Dry run" in revert.stdout
     assert b"Refusing to rename note files without a terminal" in revert.stderr
@@ -306,37 +264,53 @@ def test_filenames_outside_a_terminal_refuse_unless_yes(tmp_path):
     assert Settings.load(tmp_path / ".jotline-settings.json")[0].readable_filenames is False
 
 
-def test_filenames_in_a_terminal_rename_only_after_yes(tmp_path):
+def test_filenames_in_a_terminal_rename_only_after_yes(tmp_path, monkeypatch, capsys):
     vault = Vault(tmp_path)
     note = saved(vault, "Buy milk")
     opaque = tmp_path / f"{note.id}.md"
     slug = tmp_path / f"buy-milk--{note.id[:6]}.md"
+    prompts = []
+    answers = iter(["n\n", "y\n", "\n", "yes\n"])
+    monkeypatch.setattr(cli, "terminal_available", lambda: True)
+    monkeypatch.setattr(cli, "read_terminal_line", lambda prompt: prompts.append(prompt) or next(answers))
 
-    declined, declined_output = run_filenames_at_terminal(tmp_path, "migrate", answer="n\n")
-    assert declined == 1, declined_output
-    assert "Proceed? A backup is written first. [y/N]" in declined_output
-    assert "Nothing was changed." in declined_output
+    monkeypatch.setattr(sys, "argv", ["jotline", "--vault", str(tmp_path), "filenames", "migrate"])
+    with pytest.raises(SystemExit) as declined:
+        cli.main()
+    assert declined.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.err == "jotline: Nothing was changed\n"
+    assert "Dry run" in captured.out
+    assert prompts == ["Proceed? A backup is written first. [y/N] "]
     assert opaque.is_file() and not slug.exists()
 
-    accepted, accepted_output = run_filenames_at_terminal(tmp_path, "migrate", answer="y\n")
-    assert accepted == 0, accepted_output
-    assert "Readable filenames are on." in accepted_output
+    monkeypatch.setattr(sys, "argv", ["jotline", "--vault", str(tmp_path), "filenames", "migrate"])
+    cli.main()
+    accepted = capsys.readouterr()
+    assert "Readable filenames are on." in accepted.out
+    assert len(prompts) == 2
     assert slug.is_file() and not opaque.exists()
 
-    declined_back, declined_back_output = run_filenames_at_terminal(tmp_path, "revert", answer="\n")
-    assert declined_back == 1, declined_back_output
-    assert "Nothing was changed." in declined_back_output
+    monkeypatch.setattr(sys, "argv", ["jotline", "--vault", str(tmp_path), "filenames", "revert"])
+    with pytest.raises(SystemExit) as declined_back:
+        cli.main()
+    assert declined_back.value.code == 1
+    assert capsys.readouterr().err == "jotline: Nothing was changed\n"
+    assert len(prompts) == 3
     assert slug.is_file() and not opaque.exists()
 
-    accepted_back, accepted_back_output = run_filenames_at_terminal(tmp_path, "revert", answer="yes\n")
-    assert accepted_back == 0, accepted_back_output
-    assert "Readable filenames are off." in accepted_back_output
+    monkeypatch.setattr(sys, "argv", ["jotline", "--vault", str(tmp_path), "filenames", "revert"])
+    cli.main()
+    assert "Readable filenames are off." in capsys.readouterr().out
+    assert len(prompts) == 4
     assert opaque.is_file() and not slug.exists()
 
-    again, again_output = run_filenames_at_terminal(tmp_path, "migrate", "--yes")
-    assert again == 0, again_output
-    assert "Proceed?" not in again_output
+    monkeypatch.setattr(sys, "argv", ["jotline", "--vault", str(tmp_path), "filenames", "migrate", "--yes"])
+    cli.main()
+    assert "Readable filenames are on." in capsys.readouterr().out
+    assert len(prompts) == 4
     assert slug.is_file() and not opaque.exists()
+    assert vault.read(note.id).title == "Buy milk"
 
 
 async def test_settings_switch_does_not_turn_on_readable_filenames(tmp_path):
