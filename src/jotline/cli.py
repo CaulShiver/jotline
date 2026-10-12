@@ -41,6 +41,7 @@ from .crypto import check_passphrase
 from .desktop import DESKTOP_ACTIONS, RECIPE_NAMES, run_desktop_command
 from .export import BINARY, FORMAT_NAMES, FORMATS, export_bytes, format_for, write_export
 from .external_editor import ENCRYPTED, NO_EDITOR, UNSAVED, configured_editor, run_editor
+from .filename_migration import migrate_filenames
 from .fuzzy import match as fuzzy_match
 from .importing import apply_import, preview_import
 from .limits import MAX_NOTE_BYTES
@@ -126,11 +127,18 @@ def _pick(reference: str, matches: list[Note], workspace: str) -> tuple[str | No
 def resolve_note(vault: Vault, reference: str, workspace: str, *, fuzzy: bool = True) -> str:
     """ID prefix, then exact title, then the best title match.
 
+    A file named ``reference.md``, including a readable name such as
+    ``buy-milk--a1b2c3.md``, resolves to the note ID stored in that file. The
+    short ID is a prefix of that note ID, so the prefix rule opens it too.
     `last` is the most recently updated note. A file whose ID is literally
     `last` still wins. Trash is never matched by title or prefix.
     """
     if re.fullmatch(r"[a-zA-Z0-9_-]+", reference) and os.path.lexists(vault.path / f"{reference}.md"):
-        return reference
+        try:
+            parsed = vault.parse_note(reference, read_regular_file(vault.path / f"{reference}.md"), vault.cipher)
+        except (OSError, ValueError):
+            return reference
+        return parsed.id
     notes = [note for note in vault.notes() if note.collection != "trash"]
     if reference == "last":
         recent = [note for note in notes if note.workspace == workspace]
@@ -353,7 +361,7 @@ def missing_file_message(args: argparse.Namespace, error: FileNotFoundError) -> 
     return f"No such file or directory: {terminal_text(os.fsdecode(error.filename))}"
 
 
-NOTE_HELP = ("Note ID, a unique ID prefix (4+ characters), an exact title, "
+NOTE_HELP = ("Note ID, a unique ID prefix (4+ characters), a filename, an exact title, "
              "the best title match, or last")
 
 
@@ -409,7 +417,7 @@ def encryption_in_help() -> bool:
 
 def command_epilog(*, encryption: bool) -> str:
     notes = "tag, edit, trash, rename, actions, run"
-    vault = "backup, backups, recoveries, doctor, stats"
+    vault = "backup, backups, recoveries, doctor, stats, filenames"
     if encryption:
         notes += ", encrypt, decrypt"
         vault += ", encryption"
@@ -569,6 +577,16 @@ def build_parser() -> argparse.ArgumentParser:
     add_command("path", help="Print the vault path")
     doctor = add_command("doctor", help="Check the vault, runtime and local Jotline state")
     doctor.add_argument("--json", action="store_true", help="Print machine-readable diagnostics")
+    filenames = add_command(
+        "filenames",
+        help="Name notes with a title slug and a short ID, or put the ID back in the filename")
+    filenames.add_argument("action", choices=("migrate", "revert"),
+                           help="migrate turns readable filenames on; revert names files with the note ID again")
+    filenames.add_argument("--dry-run", action="store_true",
+                           help="Show what would change without writing a backup or renaming anything")
+    filenames.add_argument("--yes", action="store_true",
+                           help="Rename without a confirmation prompt. Required when not running in a terminal")
+    filenames.add_argument("--json", action="store_true", help="Print the plan or result as JSON")
     importing = add_command("import", help="Import UTF-8 text, a folder, or a Drafts export")
     importing.add_argument("file", type=Path)
     import_mode = importing.add_mutually_exclusive_group()
@@ -710,6 +728,52 @@ def run_import(run: Invocation) -> None:
         warning(message)
     # Warnings alone are printed above; the import failed only if a write did or nothing could be imported.
     if result.errors or (plan.needs_review and not result.imported):
+        raise SystemExit(1)
+
+
+def _print_filename_report(run: Invocation, report) -> None:
+    if run.args.json:
+        print(json.dumps(report.as_dict(), indent=2))
+    else:
+        print("\n".join(report.lines()))
+
+
+def _confirm_filenames() -> bool:
+    """Yes only for an explicit y or yes. EOF and anything else decline.
+
+    The question is read from the terminal itself, the same way trash and rename
+    confirm a closest title, so a pipe on stdin cannot answer it.
+    """
+    try:
+        answer = read_terminal_line("Proceed? A backup is written first. [y/N] ")
+    except (OSError, EOFError, KeyboardInterrupt):
+        return False
+    return answer.strip().casefold() in {"y", "yes"}
+
+
+def run_filenames(run: Invocation) -> None:
+    revert = run.args.action == "revert"
+    if run.args.dry_run:
+        report = migrate_filenames(run.vault, run.settings, dry_run=True, revert=revert)
+        _print_filename_report(run, report)
+        if not report.ok:
+            raise SystemExit(1)
+        return
+    preview = migrate_filenames(run.vault, run.settings, dry_run=True, revert=revert)
+    if not preview.ok:
+        _print_filename_report(run, preview)
+        raise SystemExit(1)
+    if not run.args.yes:
+        _print_filename_report(run, preview)
+        if terminal_available():
+            if not _confirm_filenames():
+                raise ValueError("Nothing was changed")
+        else:
+            raise ValueError("Refusing to rename note files without a terminal. "
+                             "Run it in a terminal, or pass --yes.")
+    report = migrate_filenames(run.vault, run.settings, dry_run=False, revert=revert)
+    _print_filename_report(run, report)
+    if not report.ok:
         raise SystemExit(1)
 
 
@@ -1167,14 +1231,14 @@ COMMANDS = {
     "edit": run_edit, "trash": run_trash, "rename": run_rename,
     "encrypt": run_sealing, "decrypt": run_sealing, "encryption": run_encryption,
     "workspaces": run_workspaces, "tags": run_tags, "doctor": run_doctor,
-    "open": run_app, None: run_app,
+    "filenames": run_filenames, "open": run_app, None: run_app,
 }
 # Commands that must not turn a mistyped path into a new vault. edit, trash and
 # rename change a note, but only one that already exists.
 READ_ONLY_COMMANDS = {"list", "actions", "export", "workspaces", "tags", "tasks", "doctor",
                       "stats", "backlinks", "backups", "recoveries", "edit", "trash", "rename"}
 # Commands that do not look inside a workspace, so --workspace is not checked for them.
-ANY_WORKSPACE_COMMANDS = {"actions", "backup", "backups", "doctor", "encryption"}
+ANY_WORKSPACE_COMMANDS = {"actions", "backup", "backups", "doctor", "encryption", "filenames"}
 
 
 def check_workspace(args: argparse.Namespace, vault: Vault | None, settings: Settings) -> str:
@@ -1202,6 +1266,7 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Invoca
     # Shell captures can wait; only the interactive app needs a short lock timeout.
     vault.lock_timeout = 10.0
     settings, settings_warning = Settings.load(vault.path / ".jotline-settings.json")
+    vault.readable_filenames = settings.readable_filenames
     validate_workspace(settings.active_workspace if args.workspace is None else args.workspace)
     if settings_warning and args.command not in (None, "doctor"):
         warning(settings_warning)

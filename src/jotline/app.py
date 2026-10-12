@@ -143,6 +143,7 @@ class Jotline(App):
         self.first_run = first_run and initial_note is None
         self.settings_path = vault.path / '.jotline-settings.json'
         self.settings, self.settings_warning = Settings.load(self.settings_path)
+        self.vault.readable_filenames = self.settings.readable_filenames
         self.workspace = validate_workspace(self.settings.active_workspace if workspace is None else workspace)
         self.register_theme(JOTLINE_THEME)
         self.omarchy_sync = OmarchySync(self)
@@ -334,6 +335,7 @@ class Jotline(App):
         settings = replace(self.settings, **changes)
         settings.save(self.settings_path)
         self.settings = settings
+        self.vault.readable_filenames = settings.readable_filenames
         return settings
 
     def delete_config(self, field, name):
@@ -348,6 +350,10 @@ class Jotline(App):
     def save_settings(self, settings: Settings | None) -> None:
         if settings is None:
             return
+        # The switch must not rename files. Migration is the path that backs up first.
+        asked_for_readable = settings.readable_filenames and not self.settings.readable_filenames
+        if asked_for_readable:
+            settings = replace(settings, readable_filenames=False)
         try:
             settings.save(self.settings_path)
         except (OSError, ValueError) as error:
@@ -355,12 +361,17 @@ class Jotline(App):
                         severity='error', timeout=10)
             return
         self.settings = settings
+        self.vault.readable_filenames = settings.readable_filenames
         self.apply_settings()
         self.autosave_timer.stop()
         self.autosave_timer = self.set_interval(settings.autosave_seconds, self.autosave)
         self.refresh_notes()
         self.connections()
         self.editor().focus()
+        if asked_for_readable:
+            self.notify('Nothing was renamed. Run jotline filenames migrate to turn readable filenames on. '
+                        'It shows the plan and backs up first.', severity='warning', timeout=12)
+            return
         self.notify('Settings saved. Startup choices apply next launch.')
 
     @staticmethod

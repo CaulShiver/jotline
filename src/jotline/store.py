@@ -16,6 +16,7 @@ from .crypto import (FOREIGN_KEY, KEY_FILE, KEY_ID, LOCKED, SCRYPT_N, Encryption
                      is_sealed, key_id, new_note_key)
 # Several names below are re-exported: other modules and the tests import
 # them from jotline.store rather than reaching into jotline.filesystem.
+from .filenames import FilenameMode, filename_for, header_needs_id, is_generated_id, readable_parts
 from .filesystem import (
     FileSignature,
     create_private_temp,
@@ -25,7 +26,6 @@ from .filesystem import (
     pin_ancestors,  # noqa: F401
     publish_new,
     read_regular_at,
-    read_regular_fd,
     read_regular_file,  # noqa: F401
     replace_at,
     restore_displaced,
@@ -198,6 +198,8 @@ class Note:
     # The encrypted text while encrypted notes are locked; the body is empty then.
     sealed: str | None = field(default=None, repr=False)
     derived_warnings: list[str] = field(default_factory=list, repr=False, compare=False)
+    # Vault-relative name this note was read from. Not part of equality: a rename is not an edit.
+    filename: str | None = field(default=None, compare=False, repr=False)
 
     def _derived(self, pattern: re.Pattern, label: str) -> set[str]:
         values, warning = _derived_values(pattern, self.body, label)
@@ -280,6 +282,10 @@ class Vault:
         self.cipher: NoteCipher | None = None
         self._cache: dict[str, tuple[FileSignature, Note, int, float]] = {}
         self._recovered_displaced = False
+        # Set from settings. Off, new notes stay <id>.md. On, saves use a title slug.
+        self.readable_filenames = False
+        # Note ID to the filename chosen the last time the vault was scanned or saved.
+        self._locations: dict[str, str] = {}
         self.permission_warning = ("Vault is writable by other users; use chmod go-w to protect note replacement"
                                    if self.path.stat().st_mode & 0o022 else "")
         if self.permission_warning:
@@ -300,31 +306,168 @@ class Vault:
             self.warnings.append(message)
 
     def file(self, note_id: str) -> Path:
-        return self.path / f"{validate_note_id(note_id)}.md"
+        """Path of the note's file, or `<id>.md` when it has not been written yet."""
+        note_id = validate_note_id(note_id)
+        located = self._locations.get(note_id)
+        if located and (self.path / located).exists():
+            return self.path / located
+        exact = self.path / f"{note_id}.md"
+        if exact.exists() or not self.path.is_dir():
+            return exact
+        directory = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            found = self._find_filename(directory, note_id)
+        finally:
+            os.close(directory)
+        return self.path / found if found else exact
+
+    def _read_file(self, filename: str, *, directory: int, locked: bool = False) -> Note:
+        raw = read_regular_at(directory, filename, MAX_NOTE_BYTES)
+        stem = filename[:-3] if filename.endswith(".md") else filename
+        note = self.parse_note(stem, raw, None if locked else self.cipher)
+        note.filename = filename
+        return note
+
+    def _name_rank(self, note_id: str, filename: str, note: Note) -> tuple:
+        parts = readable_parts(filename)
+        aligned = bool(parts and note_id.startswith(parts[1]))
+        return (note.updated, filename == f"{note_id}.md", aligned, filename)
+
+    def _find_filename(self, directory: int, note_id: str) -> str | None:
+        """The file whose identity is `note_id`, preferring the newest copy."""
+        chosen: str | None = None
+        chosen_note: Note | None = None
+        with os.scandir(directory) as entries:
+            for index, entry in enumerate(entries):
+                if index >= MAX_SCAN_ENTRIES:
+                    break
+                if not entry.name.endswith(".md"):
+                    continue
+                try:
+                    note = self._read_file(entry.name, directory=directory, locked=True)
+                except (OSError, ValueError):
+                    continue
+                if note.id != note_id:
+                    continue
+                if chosen is None or chosen_note is None or self._name_rank(
+                        note_id, entry.name, note) > self._name_rank(note_id, chosen, chosen_note):
+                    chosen, chosen_note = entry.name, note
+        if chosen is not None:
+            self._locations[note_id] = chosen
+        return chosen
+
+    def _located_name(self, note: Note, directory: int) -> str | None:
+        """Where this note's bytes are, checked under the vault lock."""
+        for hint in (note.filename, self._locations.get(note.id)):
+            if not hint:
+                continue
+            try:
+                parsed = self._read_file(hint, directory=directory, locked=True)
+            except (OSError, ValueError):
+                continue
+            if parsed.id == note.id:
+                return hint
+        return self._find_filename(directory, note.id)
+
+    def _occupied_names(self, directory: int) -> set[str]:
+        names: set[str] = set()
+        with os.scandir(directory) as entries:
+            for index, entry in enumerate(entries):
+                if index >= MAX_SCAN_ENTRIES:
+                    break
+                names.add(entry.name)
+        return names
+
+    def _filename_mode(self, note: Note) -> FilenameMode:
+        if note.encrypted or is_daily_id(note.id) or not is_generated_id(note.id):
+            return "opaque"
+        if self.readable_filenames:
+            return "readable"
+        return "keep"
 
     def new(self, body: str = "", workspace: str = "default") -> Note:
         stamp = now()
         return Note(uuid4().hex, body, created=stamp, updated=stamp, workspace=validate_workspace(workspace))
 
+    def _prefix_names(self, directory: int, note_id: str) -> list[str]:
+        """Readable filenames whose short ID is a prefix of this note."""
+        found: list[str] = []
+        with os.scandir(directory) as entries:
+            for index, entry in enumerate(entries):
+                if index >= MAX_SCAN_ENTRIES:
+                    break
+                parts = readable_parts(entry.name)
+                if parts and note_id.startswith(parts[1]):
+                    found.append(entry.name)
+        return found
+
     def read(self, note_id: str, *, workspace: str | None = None, directory: int | None = None,
              locked: bool = False) -> Note:
-        filename = self.file(note_id).name
+        validate_note_id(note_id)
         own_directory = directory is None
         if own_directory:
             directory = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
-            fd = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            found: dict[str, Note] = {}
+            exact = f"{note_id}.md"
+            # The file named for this ID is authoritative when it is present.
+            # A size limit, a bad header, or a failed decrypt must surface as
+            # that error. Only a missing file means the note may live elsewhere.
             try:
-                raw = read_regular_fd(fd, filename, MAX_NOTE_BYTES)
-            finally:
-                os.close(fd)
+                parsed = self._read_file(exact, directory=directory, locked=locked)
+            except FileNotFoundError:
+                parsed = None
+            if parsed is not None and parsed.id == note_id:
+                found[exact] = parsed
+            located = self._locations.get(note_id)
+            if located and located != exact and located not in found:
+                try:
+                    parsed = self._read_file(located, directory=directory, locked=locked)
+                except (OSError, ValueError):
+                    # A remembered path is a hint. The file named for the ID
+                    # already reported its own error above, when it had one.
+                    self._locations.pop(note_id, None)
+                else:
+                    if parsed.id == note_id:
+                        found[located] = parsed
+                    else:
+                        self._locations.pop(note_id, None)
+            if not found:
+                found_name = self._find_filename(directory, note_id)
+                if found_name is None:
+                    raise FileNotFoundError(note_id)
+                parsed = self._read_file(found_name, directory=directory, locked=locked)
+                if parsed.id != note_id:
+                    raise FileNotFoundError(note_id)
+                found[found_name] = parsed
+            elif self.readable_filenames:
+                # A crash mid-rename can leave <id>.md beside a newer slug.
+                # A bad alternate must not hide the file that already opened.
+                for name in self._prefix_names(directory, note_id):
+                    if name in found:
+                        continue
+                    try:
+                        parsed = self._read_file(name, directory=directory, locked=locked)
+                    except (OSError, ValueError):
+                        continue
+                    if parsed.id == note_id:
+                        found[name] = parsed
+            best = max(found, key=lambda name: self._name_rank(note_id, name, found[name]))
+            self._locations[note_id] = best
+            note = found[best]
         finally:
             if own_directory:
                 os.close(directory)
-        note = self.parse_note(note_id, raw, None if locked else self.cipher)
         if workspace is not None and note.workspace != workspace:
             raise ValueError(OTHER_WORKSPACE)
         return note
+
+    def _read_named(self, filename: str, *, locked: bool = False) -> Note:
+        directory = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            return self._read_file(filename, directory=directory, locked=locked)
+        finally:
+            os.close(directory)
 
     def titles(self, workspace: str, *, notes: list[Note] | None = None) -> dict[str, str]:
         """Current titles for exports and previews, including external edits."""
@@ -344,7 +487,7 @@ class Vault:
             for line in header.splitlines():
                 key, sep, value = line.partition(": ")
                 if sep and key in {"collection", "created", "updated", "starred", "workspace",
-                                   "encrypted", "recovery_of", "key_id"}:
+                                   "encrypted", "recovery_of", "key_id", "id"}:
                     try:
                         meta[key] = json.loads(value)
                     except RecursionError:
@@ -366,6 +509,13 @@ class Vault:
                 raise ValueError("Invalid recovery source")
             validate_note_id(meta["recovery_of"])
         validate_workspace(meta.get("workspace", "default"))
+        header_id = meta.pop("id", None)
+        if header_id is not None:
+            if not isinstance(header_id, str):
+                raise ValueError("Invalid note ID")
+            note_id = validate_note_id(header_id)
+        else:
+            note_id = validate_note_id(note_id)
         if meta.get("encrypted"):
             if not is_sealed(body):
                 raise ValueError("Encrypted note is missing its encrypted text")
@@ -377,6 +527,7 @@ class Vault:
     def invalidate_cache(self) -> None:
         """Force the next scan to reread note bodies from disk."""
         self._cache.clear()
+        self._locations.clear()
 
     def recover_displaced(self) -> list[str]:
         """Put back displaced originals whose note file is missing.
@@ -409,7 +560,9 @@ class Vault:
                             # Read it first: a symlink or a directory under that
                             # name is not a note and must not be published as one.
                             read_regular_at(directory, name)
-                            restore_displaced(directory, name, self.file(note_id).name)
+                            if self._find_filename(directory, note_id):
+                                continue
+                            restore_displaced(directory, name, f"{note_id}.md")
                         except (OSError, ValueError):
                             continue
                         recovered.append(note_id)
@@ -454,7 +607,14 @@ class Vault:
                     # when a sync tool restores mtime. Bound stale cache reuse
                     # from the real read; cache hits must not extend this deadline.
                     expires = monotonic() + CACHE_TTL_SECONDS
-                    note = self.read(file.stem)
+                    # Legacy names go through read() so a cache test can count them.
+                    # Readable names, and every file once the setting is on, are
+                    # parsed as themselves: read() may prefer a newer copy of the
+                    # same ID, which would hide the file this scan is looking at.
+                    if readable_parts(file.name) or self.readable_filenames:
+                        note = self._read_named(file.name)
+                    else:
+                        note = self.read(file.stem)
                     # Include both body and original snapshot plus a conservative
                     # allowance for the small cache entry and note attributes.
                     cost = sum(sys.getsizeof(value) for value in vars(note).values()) + 1024
@@ -472,11 +632,41 @@ class Vault:
                     # when locked, rather than vanish as though deleted. It is not
                     # cached, so every scan reports it again.
                     try:
-                        notes.append(self.read(file.stem, locked=True))
+                        notes.append(self._read_named(file.name, locked=True))
                     except (ValueError, OSError):
                         pass
         self._cache = refreshed
-        return sorted(notes, key=lambda n: (n.starred, n.updated, n.id), reverse=True)
+        return sorted(self._one_file_each(notes), key=lambda n: (n.starred, n.updated, n.id), reverse=True)
+
+    def _one_file_each(self, notes: list[Note]) -> list[Note]:
+        """One note per ID. A crash mid-rename can leave the old name beside the new one."""
+        groups: dict[str, list[Note]] = {}
+        order: list[str] = []
+        for note in notes:
+            if note.id not in groups:
+                order.append(note.id)
+                groups[note.id] = []
+            groups[note.id].append(note)
+        chosen: list[Note] = []
+        for note_id in order:
+            group = groups[note_id]
+            best = max(group, key=lambda note: self._name_rank(
+                note_id, note.filename or f"{note_id}.md", note))
+            self._locations[note_id] = best.filename or f"{note_id}.md"
+            if len(group) > 1:
+                kept = best.filename or f"{note_id}.md"
+                others = ", ".join(sorted(
+                    (item.filename or f"{note_id}.md") for item in group if item is not best))
+                self.warnings.append(
+                    f"Note {note_id} is stored in more than one file ({others}); "
+                    f"Jotline is using {kept}. The other file was left in place.")
+            parts = readable_parts(best.filename or "")
+            if parts and not note_id.startswith(parts[1]):
+                self.warnings.append(
+                    f"{best.filename}: the short ID in the filename does not match note {note_id}; "
+                    "the ID in the file is the one Jotline uses")
+            chosen.append(best)
+        return chosen
 
     def save(self, note: Note, *, preserve_updated: bool = False) -> None:
         with self.write_lock() as directory:
@@ -498,7 +688,7 @@ class Vault:
             raise ValueError(LOCKED)
 
     def _serialized(self, note: Note, previous: Note | None, actual: str | None,
-                    *, preserve_updated: bool) -> tuple[str, dict, str, bool]:
+                    *, preserve_updated: bool, filename: str) -> tuple[str, dict, str, bool]:
         newly_encrypted = note.encrypted and previous is not None and not previous.encrypted
         if preserve_updated:
             if actual is not None:
@@ -514,6 +704,8 @@ class Vault:
         stamp = (note.updated if preserve_updated else "") or now()
         meta = {"collection": note.collection, "created": note.created or stamp,
                 "updated": stamp, "starred": note.starred, "workspace": note.workspace}
+        if header_needs_id(filename, note.id):
+            meta = {"id": note.id, **meta}
         if note.encrypted:
             meta["encrypted"] = True
             sealed_by = note.key_id if note.locked else self.cipher.key_id
@@ -557,9 +749,8 @@ class Vault:
 
     def _publish_replace(self, directory: int, temp: str, filename: str, note_id: str,
                          actual: str) -> None:
-        # The note ID is in the name because nothing else records it: the note
-        # file has no ID in its header, its name is the ID. Without it a
-        # displaced original cannot be put back by anything but a human.
+        # The displaced name carries the note ID. The live file may use a slug,
+        # and a crash puts the note back under <id>.md when that name is free.
         displaced = f"{history.DISPLACED_PREFIX}{note_id}.{uuid4().hex}"
         keep_displaced = False
         try:
@@ -618,13 +809,35 @@ class Vault:
             except OSError as error:
                 self.retain_warning(f"Unencrypted saved versions of {note.id} could not be removed: {error}")
 
+    def _retire_previous(self, directory: int, name: str, expected: str, note_id: str) -> None:
+        """Remove the old filename after the new one is published.
+
+        A change that landed in the old file during the rename is snapshotted
+        first. If that snapshot cannot be written, the old file stays.
+        """
+        try:
+            latest = read_regular_at(directory, name)
+        except FileNotFoundError:
+            return
+        if latest != expected:
+            before = len(self.sticky_warnings)
+            recorded = self._snapshot(note_id, latest, directory)
+            if recorded is None and len(self.sticky_warnings) > before:
+                self.retain_warning(
+                    f"The previous file {name} was kept because its contents changed during rename")
+                return
+            self.warnings.append(
+                "An external edit raced with renaming the note and was preserved in note history")
+        unlink_quietly(directory, name)
+
     def _save_locked(self, note: Note, directory: int, *, preserve_updated: bool = False) -> None:
         self._check_saveable(note)
-        path = self.file(note.id)
+        current = self._located_name(note, directory)
         try:
-            actual = read_regular_at(directory, path.name)
+            actual = read_regular_at(directory, current) if current is not None else None
         except FileNotFoundError:
             actual = None
+            current = None
         if actual != note.original:
             raise ConflictError(CONFLICT_MESSAGE)
         if note.encrypted:
@@ -634,7 +847,10 @@ class Vault:
             remove_state_locked(self.path / STATE_FILE, note.id, directory)
         previous = None
         if actual is not None:
-            previous = self.parse_note(note.id, actual, None if note.locked else self.cipher)
+            stem = current[:-3] if current.endswith(".md") else current
+            previous = self.parse_note(stem, actual, None if note.locked else self.cipher)
+            if previous.id != note.id:
+                raise ConflictError(CONFLICT_MESSAGE)
             # Sealed text is bound to its note ID, so it can be kept but never moved elsewhere.
             if note.locked and previous.sealed != note.sealed:
                 raise ValueError(LOCKED)
@@ -644,16 +860,25 @@ class Vault:
                 return
         elif note.locked:
             raise ValueError(LOCKED)
+        occupied = self._occupied_names(directory)
+        hint = current or f"{note.id}.md"
+        target = filename_for(
+            note.id, note.title, encrypted=note.encrypted, mode=self._filename_mode(note),
+            current=hint, occupied=occupied)
         stamp, meta, raw, newly_encrypted = self._serialized(
-            note, previous, actual, preserve_updated=preserve_updated)
+            note, previous, actual, preserve_updated=preserve_updated, filename=target)
         temp = self._write_temp(directory, raw)
         candidate = None
         try:
             try:
                 # The archive takes the sealed text of a note being encrypted in
                 # place of the plain text still on disk, as history does below.
+                # A rename stores that sealed text under the new name and omits
+                # the old path so the plaintext is not archived beside it.
+                skip = (current,) if current and newly_encrypted and current != target else ()
+                pending = (target, raw) if actual is None or newly_encrypted else None
                 history.backup(self, automatic=True, vault_directory=directory,
-                               pending=(path.name, raw) if actual is None or newly_encrypted else None)
+                               pending=pending, skip_names=skip)
             except OSError as error:
                 # A failed daily backup must never hold the note itself hostage;
                 # the overwritten text is still snapshotted to history below.
@@ -668,7 +893,7 @@ class Vault:
             # Revalidate as late as possible. For a brand-new note, publish with
             # an atomic hard link so an uncooperative creator can never be replaced.
             try:
-                latest = read_regular_at(directory, path.name)
+                latest = read_regular_at(directory, current) if current is not None and actual is not None else None
             except FileNotFoundError:
                 latest = None
             if latest != actual:
@@ -676,13 +901,25 @@ class Vault:
                     self._snapshot(note.id, latest, directory)
                 raise ConflictError(CONFLICT_MESSAGE)
             if actual is None:
-                self._publish_created(directory, temp, path.name, note.id)
+                self._publish_created(directory, temp, target, note.id)
+            elif target == current:
+                self._publish_replace(directory, temp, current, note.id, actual)
             else:
-                self._publish_replace(directory, temp, path.name, note.id, actual)
+                try:
+                    publish_new(directory, temp, target)
+                except FileExistsError:
+                    raise ConflictError(
+                        f"Could not name the note {target} because that file already exists. "
+                        f"{current} was left unchanged.") from None
+                self._retire_previous(directory, current, actual, note.id)
             # Replacement has committed even if the directory durability check fails.
             # Keep the baseline current so retrying does not invent an edit conflict.
             note.original, note.updated, note.created = raw, stamp, meta["created"]
-            self._cache.pop(note.id, None)
+            note.filename = target
+            self._locations[note.id] = target
+            for key in {note.id, target[:-3] if target.endswith(".md") else target,
+                        *((current[:-3],) if current and current.endswith(".md") else ())}:
+                self._cache.pop(key, None)
             os.fsync(directory)
         finally:
             if note.original != raw and candidate is not None:
@@ -1016,7 +1253,7 @@ class Vault:
         if note.locked:
             raise ValueError(LOCKED)
         recovered = replace(note, id=uuid4().hex, original=None, created=now(), collection="inbox",
-                            recovery_of=note.recovery_of or note.id)
+                            recovery_of=note.recovery_of or note.id, filename=None)
         self.save(recovered)
         return recovered
 

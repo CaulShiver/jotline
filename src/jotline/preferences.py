@@ -63,10 +63,14 @@ class Preferences(Modal[Settings | None]):
                                     ('smart_lists', 'Continue lists and quotes on Enter'),
                                     ('focus_on_start', 'Start on a blank page'),
                                     ('show_hints', 'Show writing hints'),
-                                    ('outliner_on_start', 'Open notes in outliner mode')):
+                                    ('outliner_on_start', 'Open notes in outliner mode'),
+                                    ('readable_filenames', 'Readable filenames')):
                     with Horizontal(classes='pref-toggle'):
                         yield Label(title)
-                        yield Switch(getattr(s, name), id='pref-' + name, tooltip=title)
+                        tooltip = (title if name != 'readable_filenames' else
+                                   'This switch does not rename files. '
+                                   'Run jotline filenames migrate to turn readable filenames on.')
+                        yield Switch(getattr(s, name), id='pref-' + name, tooltip=tooltip)
                 yield Label('Sidebar width · 22–60 columns', classes='pref-label')
                 yield Input(str(s.sidebar_width), type='integer', id='pref-sidebar_width',
                             tooltip='Sidebar width in columns')
