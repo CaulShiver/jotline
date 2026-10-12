@@ -123,7 +123,13 @@ def test_edit_opens_the_configured_editor_and_reads_the_file_back(tmp_path):
     assert result.returncode == 0, result.stderr
     assert result.stdout.decode().strip() == note.id
     assert vault.read(note.id).body == "Buy milk\nBrought back\n"
-    payload = json.loads(run_cli(tmp_path, "edit", note.id, "--json", env=editor_env("/bin/true")).stdout)
+    # /bin/true produced no JSON on the macOS CI runners. A shell no-op does.
+    noop = tmp_path / "noop.sh"
+    noop.write_text("#!/bin/sh\nexit 0\n")
+    noop.chmod(0o755)
+    second = run_cli(tmp_path, "edit", note.id, "--json", env=editor_env(str(noop)))
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
     assert payload["id"] == note.id and payload["title"] == "Buy milk"
 
 
