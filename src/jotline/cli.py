@@ -99,13 +99,18 @@ def _missing_note(reference: str) -> NoMatchingNote:
     return NoMatchingNote(f"No note with ID or title {reference}; run jotline list to find IDs")
 
 
-def _ambiguous(reference: str, notes: list[Note]) -> ValueError:
-    """Several notes fit. The message names each candidate's ID and title."""
+def _candidate_list(notes: list[Note]) -> str:
+    """Up to five `id title` pairs, then how many more were left out."""
     shown = notes[:5]
     listed = "; ".join(f"{note.id} {terminal_text(note.title)}" for note in shown)
     if len(notes) > len(shown):
         listed += f"; and {len(notes) - len(shown)} more"
-    return ValueError(f"{reference} matches {len(notes)} notes ({listed}); use more of the ID")
+    return listed
+
+
+def _ambiguous(reference: str, notes: list[Note]) -> ValueError:
+    """Several notes fit. The message names each candidate's ID and title."""
+    return ValueError(f"{reference} matches {len(notes)} notes ({_candidate_list(notes)}); use more of the ID")
 
 
 def _pick(reference: str, matches: list[Note], workspace: str) -> tuple[str | None, bool]:
@@ -155,17 +160,31 @@ def resolve_note(vault: Vault, reference: str, workspace: str, *, fuzzy: bool = 
 CLEAR_LEAD = 1.5
 
 
-def _best_title(vault: Vault, reference: str, workspace: str) -> str:
-    """The one title that clearly matches, or an ambiguity error naming the rest."""
+def _title_scores(vault: Vault, reference: str, workspace: str) -> list[tuple[float, Note]]:
+    """Title matches in this workspace, best first. Trash and locked notes stay out."""
     terms = reference.casefold().split()
     notes = [note for note in vault.notes()
              if note.collection != "trash" and note.workspace == workspace and not note.locked]
-    scored = sorted(((score, note) for note in notes if (score := fuzzy_match(terms, note.title)[0])),
-                    key=lambda item: (-item[0], item[1].title))
+    return sorted(((score, note) for note in notes if (score := fuzzy_match(terms, note.title)[0])),
+                  key=lambda item: (-item[0], item[1].title))
+
+
+def _clear_title(scored: list[tuple[float, Note]]) -> Note | None:
+    """The one title that leads the rest, or None when the scores are too close."""
+    if not scored:
+        return None
+    if len(scored) == 1 or scored[0][0] >= scored[1][0] * CLEAR_LEAD:
+        return scored[0][1]
+    return None
+
+
+def _best_title(vault: Vault, reference: str, workspace: str) -> str:
+    """The one title that clearly matches, or an ambiguity error naming the rest."""
+    scored = _title_scores(vault, reference, workspace)
     if not scored:
         raise _missing_note(reference)
-    if len(scored) == 1 or scored[0][0] >= scored[1][0] * CLEAR_LEAD:
-        return scored[0][1].id
+    if (chosen := _clear_title(scored)) is not None:
+        return chosen.id
     raise _ambiguous(reference, [note for _, note in scored])
 
 
@@ -175,8 +194,58 @@ def _can_unlock_for_titles(vault: Vault, passphrase_failed: bool) -> bool:
     return any(note.locked for note in vault.notes())
 
 
-def resolve_command_note(vault: Vault, reference: str, workspace: str, *, passphrase_failed: bool) -> str:
-    """The note a command named, unlocking when a locked title may be the match."""
+# Moving or retitling a note on a guess needs a yes. Other commands take the closest title.
+CLOSEST_NEEDS_CONFIRMATION = frozenset({"trash", "rename"})
+
+
+def read_terminal_line(prompt: str) -> str:
+    """Read one line from the terminal itself, never from piped stdin."""
+    with open("/dev/tty", encoding="utf-8") as tty:
+        print(prompt, end="", file=sys.stderr, flush=True)
+        return tty.readline()
+
+
+def confirm_closest_match(note: Note) -> bool:
+    """Ask before trash or rename uses a closest-title match."""
+    prompt = f"Closest title match is {terminal_text(note.title)} ({note.id}). Use it? [y/N] "
+    try:
+        answer = read_terminal_line(prompt)
+    except (OSError, EOFError, KeyboardInterrupt):
+        return False
+    return answer.strip().casefold() in {"y", "yes"}
+
+
+def _closest_refusal(reference: str, notes: list[Note]) -> ValueError:
+    """The fallback matched, and nobody confirmed it. Name every candidate."""
+    return ValueError(f"{reference} is a closest title match ({_candidate_list(notes)}); "
+                      f"pass --yes to use {notes[0].id}")
+
+
+def _confirmed_closest(vault: Vault, reference: str, workspace: str, *, accepted: bool) -> str:
+    """The closest title, after --yes or a yes at the terminal."""
+    scored = _title_scores(vault, reference, workspace)
+    if not scored:
+        raise _missing_note(reference)
+    notes = [note for _, note in scored]
+    chosen = _clear_title(scored)
+    if chosen is None:
+        raise _ambiguous(reference, notes)
+    if accepted:
+        return chosen.id
+    if terminal_available():
+        if confirm_closest_match(chosen):
+            return chosen.id
+        raise ValueError("Nothing was changed")
+    raise _closest_refusal(reference, notes)
+
+
+def resolve_command_note(vault: Vault, reference: str, workspace: str, *, passphrase_failed: bool,
+                         confirm_closest: bool = False, accepted: bool = False) -> str:
+    """The note a command named, unlocking when a locked title may be the match.
+
+    An ID, a unique prefix and an exact title are used as named. The closest
+    title is used too, except `trash` and `rename` ask first (or take `--yes`).
+    """
     try:
         return resolve_note(vault, reference, workspace, fuzzy=False)
     except NoMatchingNote:
@@ -186,6 +255,8 @@ def resolve_command_note(vault: Vault, reference: str, workspace: str, *, passph
                 return resolve_note(vault, reference, workspace, fuzzy=False)
             except NoMatchingNote:
                 pass
+        if confirm_closest:
+            return _confirmed_closest(vault, reference, workspace, accepted=accepted)
         return resolve_note(vault, reference, workspace, fuzzy=True)
 
 
@@ -431,10 +502,12 @@ def build_parser() -> argparse.ArgumentParser:
     editing.add_argument("--json", action="store_true", help="Print note metadata as JSON after the editor exits")
     trashing = add_command("trash", help="Move a note to the trash collection")
     trashing.add_argument("id", metavar="NOTE", help=NOTE_HELP)
+    trashing.add_argument("--yes", action="store_true", help="Use the closest title match without asking")
     trashing.add_argument("--json", action="store_true", help="Print note metadata as JSON")
     renaming = add_command("rename", help="Change a note's title without changing its ID")
     renaming.add_argument("id", metavar="NOTE", help=NOTE_HELP)
     renaming.add_argument("title", nargs="+", help="New title; a leading Markdown heading mark on the note is kept")
+    renaming.add_argument("--yes", action="store_true", help="Use the closest title match without asking")
     renaming.add_argument("--json", action="store_true", help="Print note metadata as JSON")
     daily = add_command("daily", help="Open a daily log in the terminal editor")
     daily.add_argument("--date", type=calendar_date_argument, metavar="DATE",
@@ -1145,7 +1218,10 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Invoca
                 warning(f"JOTLINE_PASSPHRASE did not unlock the vault ({error}); encrypted notes stay locked")
     workspace = check_workspace(args, vault, settings)
     if getattr(args, "id", None) is not None:
-        args.id = resolve_command_note(vault, args.id, workspace, passphrase_failed=passphrase_failed)
+        args.id = resolve_command_note(
+            vault, args.id, workspace, passphrase_failed=passphrase_failed,
+            confirm_closest=args.command in CLOSEST_NEEDS_CONFIRMATION,
+            accepted=bool(getattr(args, "yes", False)))
         if vault.read(args.id).locked:
             unlock_vault(vault)
     return Invocation(parser, args, vault, settings, settings_warning, workspace,

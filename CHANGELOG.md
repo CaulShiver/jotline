@@ -2,10 +2,12 @@
 
 ## 0.9.11 — 2026-10-12
 
-- **Every command that names a note follows one rule.** A unique ID prefix,
-  then an exact title, then the best title match. `jotline export milk` and
-  `jotline append milk` find the same note as `jotline open milk`. When several
-  notes fit, the error lists each candidate's ID and title.
+- **`export`, `append`, `tag`, `done`, `encrypt`, `decrypt`, `trash` and
+  `rename` now fall back to the closest title match.** A unique ID prefix or an
+  exact title is used as named. When several notes fit, the error lists each
+  candidate's ID and title. `trash` and `rename` use that fallback only with
+  confirmation: `--yes`, or a question at a terminal. Outside a terminal
+  without `--yes` they refuse and list the candidates.
 - **`edit`, `trash` and `rename` work from the shell.** `jotline edit` opens
   the note in `$EDITOR`. `jotline trash` moves it to the trash collection and
   does not delete the file. `jotline rename` changes the title and keeps the
@@ -13,6 +15,9 @@
 - **`open` and `daily` need a terminal.** Piped or redirected, they exit with
   an error instead of drawing the app. `export` to stdout ends with a newline.
   `list` takes `--limit N` and `--sort updated`, `created` or `title`.
+
+## Unreleased
+
 - **The app opens on a blank page.** The note list, formatting toolbar and hint
   start hidden. `Ctrl+F` and `Ctrl+O` bring the list back; `F8` toggles that
   quiet layout. `Start on a blank page` in Settings is on for a new vault.

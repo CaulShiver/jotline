@@ -109,7 +109,8 @@ jotline export last --output plan.html
 to a hotkey with `jotline desktop install` on Linux ([quick capture](docs/quick-capture.md)).
 At a terminal it confirms in words; piped or redirected, it prints the bare ID.
 Wherever a command takes a note you can give a 4+ character ID prefix, the exact
-title, the best title match, or `last`. Global options such as `--vault` and
+title, the best title match, or `last`. `trash` and `rename` ask before a
+closest-title match, or take `--yes`. Global options such as `--vault` and
 `--workspace` work before or after the command. See [Jotline from the shell](docs/shell.md) for every
 command, `--json` output and environment variables.
 

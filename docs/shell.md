@@ -34,7 +34,8 @@ jotline list '#work'
 jotline search 'tag:work -blocked' --json
 jotline open milk
 jotline edit milk
-jotline trash milk
+jotline trash "Buy milk"
+jotline trash milk --yes
 jotline rename milk "Oat milk"
 jotline backlinks last
 jotline tag NOTE_ID ideas project/topic
@@ -96,6 +97,12 @@ Every command that takes a note uses the same rule: `open`, `export`, `append`,
    including a title written with Markdown markers, such as `- [ ] buy milk`,
 3. the one title that clearly matches best (`jotline export milk`).
 
+`export`, `append`, `prepend`, `tag`, `backlinks`, `done`, `run`, `edit`,
+`encrypt` and `decrypt` take that closest title on their own. `trash` and
+`rename` do not. At a terminal they ask first. Pass `--yes` to accept it
+without asking. Outside a terminal, without `--yes`, they refuse and list the
+candidates. An ID, a unique prefix, or an exact title is used immediately.
+
 `last` is the most recently updated note in the workspace. A note whose full ID
 is literally `last` still wins, and it is checked before the prefix rule.
 
@@ -135,15 +142,19 @@ update uses the normal locking, history and conflict detection.
 ```sh
 jotline edit milk                 # open the note in $EDITOR
 jotline edit last --json
-jotline trash milk                # move it to the trash collection
-jotline rename milk "Oat milk"    # new title, same ID
+jotline trash "Buy milk"          # exact title: move it, no question
+jotline trash milk --yes          # closest title, for a script
+jotline rename milk "Oat milk"    # asks at a terminal; new title, same ID
 ```
 
 `edit` uses the same editor as the app: `$JOTLINE_EDITOR`, then `$VISUAL`, then
 `$EDITOR`. The editor is given the note file and, after it exits, Jotline reads
 that file back. An encrypted note stays in Jotline, because the file on disk
 holds sealed text. There is no permanent delete. `trash` moves the note to the
-trash collection and leaves the file in place; restore it from the app. `rename`
+trash collection and leaves the file in place; restore it from the app. A closest
+title match is not enough on its own: `trash` and `rename` ask at a terminal, or
+take `--yes`. Outside a terminal without `--yes` they refuse and list the
+candidates. An exact title or ID prefix still runs immediately. `rename`
 changes the title and keeps the ID, so a `[[id]]` link still points at the note.
 A note that starts with a Markdown heading keeps that heading mark. All three
 accept `--json`.

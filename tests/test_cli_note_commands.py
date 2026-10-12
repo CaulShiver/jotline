@@ -14,9 +14,15 @@ from jotline.store import Vault
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX shells")
 
 
-def run_cli(vault: Path, *args, input: bytes | None = None, env=None) -> subprocess.CompletedProcess[bytes]:
+def run_cli(vault: Path, *args, input: bytes | None = None, env=None,
+            detached: bool = False) -> subprocess.CompletedProcess[bytes]:
+    """Run the CLI. `detached` drops the controlling terminal, so a closest-title
+    question cannot wait on /dev/tty."""
     return subprocess.run([sys.executable, "-m", "jotline", "--vault", os.fsencode(vault), *args],
-                          input=input, capture_output=True, check=False, timeout=30, env=env)
+                          input=None if detached else input,
+                          stdin=subprocess.DEVNULL if detached else None,
+                          capture_output=True, check=False, timeout=30, env=env,
+                          start_new_session=detached)
 
 
 def saved(vault: Vault, body: str, note_id: str | None = None, **fields):
@@ -78,7 +84,8 @@ def test_an_ambiguous_title_lists_id_and_title_and_changes_nothing(tmp_path):
     buy = saved(vault, "Buy milk")
     prices = saved(vault, "Milk prices")
     for command in (("export", "milk"), ("append", "milk", "x"), ("tag", "milk", "home"),
-                    ("backlinks", "milk"), ("trash", "milk"), ("rename", "milk", "Oat")):
+                    ("backlinks", "milk"), ("trash", "milk"), ("trash", "milk", "--yes"),
+                    ("rename", "milk", "Oat"), ("rename", "milk", "Oat", "--yes")):
         result = run_cli(tmp_path, *command)
         message = error(result)
         assert result.returncode == 1 and result.stdout == b""
@@ -152,7 +159,7 @@ def test_trash_moves_the_note_and_leaves_the_file(tmp_path):
     note = saved(vault, "Buy milk")
     path = vault.file(note.id)
     before = path.read_bytes()
-    result = run_cli(tmp_path, "trash", "milk", "--json")
+    result = run_cli(tmp_path, "trash", "Buy milk", "--json")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["id"] == note.id and payload["collection"] == "trash" and payload["title"] == "Buy milk"
@@ -167,7 +174,7 @@ def test_trash_moves_the_note_and_leaves_the_file(tmp_path):
 def test_rename_changes_the_title_and_keeps_the_id(tmp_path):
     vault = Vault(tmp_path)
     note = saved(vault, "# Buy milk\n\n- [ ] later")
-    result = run_cli(tmp_path, "rename", "milk", "Oat", "milk", "--json")
+    result = run_cli(tmp_path, "rename", "Buy milk", "Oat", "milk", "--json")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["id"] == note.id and payload["title"] == "Oat milk"
@@ -180,11 +187,87 @@ def test_rename_changes_the_title_and_keeps_the_id(tmp_path):
 
 def test_rename_sentences_at_a_terminal(tmp_path, monkeypatch, capsys):
     saved(Vault(tmp_path), "Buy milk")
-    monkeypatch.setattr(sys, "argv", ["jotline", "--vault", str(tmp_path), "rename", "milk", "Oat milk"])
+    monkeypatch.setattr(sys, "argv", ["jotline", "--vault", str(tmp_path), "rename", "Buy milk", "Oat milk"])
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     cli.main()
     note = Vault(tmp_path).notes()[0]
     assert capsys.readouterr().out == f"Renamed to Oat milk ({note.id})\n"
+
+
+def test_trash_and_rename_refuse_a_closest_title_without_confirmation(tmp_path):
+    vault = Vault(tmp_path)
+    note = saved(vault, "Buy milk")
+    other = saved(vault, "remind me later ok")
+    for command in (("trash", "milk", "--json"), ("rename", "milk", "Oat milk")):
+        result = run_cli(tmp_path, *command, detached=True)
+        message = error(result)
+        assert result.returncode == 1 and result.stdout == b"", message
+        assert "closest title match" in message and "--yes" in message
+        assert note.id in message and "Buy milk" in message
+        assert other.id in message and "remind me later ok" in message
+    assert vault.read(note.id).collection == "inbox" and vault.read(note.id).body == "Buy milk"
+    assert vault.read(other.id).body == "remind me later ok"
+    exported = run_cli(tmp_path, "export", "milk", detached=True)
+    assert exported.returncode == 0 and exported.stdout == b"Buy milk\n"
+
+
+def test_yes_accepts_the_closest_title_for_trash_and_rename(tmp_path):
+    vault = Vault(tmp_path)
+    note = saved(vault, "Buy milk")
+    other = saved(vault, "remind me later ok")
+    trashed = run_cli(tmp_path, "trash", "milk", "--yes", "--json", detached=True)
+    assert trashed.returncode == 0, trashed.stderr
+    assert json.loads(trashed.stdout)["id"] == note.id
+    assert vault.read(note.id).collection == "trash"
+    assert vault.read(other.id).collection == "inbox"
+    fresh = saved(vault, "Buy oat milk")
+    renamed = run_cli(tmp_path, "rename", "oat", "Warm oats", "--yes", "--json", detached=True)
+    assert renamed.returncode == 0, renamed.stderr
+    assert json.loads(renamed.stdout)["id"] == fresh.id
+    assert vault.read(fresh.id).title == "Warm oats"
+
+
+def test_exact_title_and_id_prefix_skip_confirmation(tmp_path):
+    vault = Vault(tmp_path)
+    note = saved(vault, "Buy milk", "abcd1234")
+    by_prefix = run_cli(tmp_path, "rename", "abcd", "Oat milk", "--json", detached=True)
+    assert by_prefix.returncode == 0, by_prefix.stderr
+    assert json.loads(by_prefix.stdout)["title"] == "Oat milk"
+    saved(vault, "Buy milk again")
+    by_title = run_cli(tmp_path, "trash", "Buy milk again", "--json", detached=True)
+    assert by_title.returncode == 0, by_title.stderr
+    assert json.loads(by_title.stdout)["collection"] == "trash"
+    assert vault.read(note.id).title == "Oat milk" and vault.read(note.id).collection == "inbox"
+
+
+def test_a_terminal_asks_before_the_closest_title(tmp_path, monkeypatch, capsys):
+    vault = Vault(tmp_path)
+    note = saved(vault, "Buy milk")
+    prompts = []
+    answers = iter(["n\n", "y\n"])
+    monkeypatch.setattr(cli, "terminal_available", lambda: True)
+    monkeypatch.setattr(cli, "read_terminal_line", lambda prompt: prompts.append(prompt) or next(answers))
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+
+    monkeypatch.setattr(sys, "argv", ["jotline", "--vault", str(tmp_path), "trash", "milk"])
+    with pytest.raises(SystemExit) as declined:
+        cli.main()
+    assert declined.value.code == 1
+    assert capsys.readouterr().err == "jotline: Nothing was changed\n"
+    assert vault.read(note.id).collection == "inbox"
+    assert note.id in prompts[0] and "Buy milk" in prompts[0] and "Use it?" in prompts[0]
+
+    monkeypatch.setattr(sys, "argv", ["jotline", "--vault", str(tmp_path), "trash", "milk", "--yes"])
+    cli.main()
+    assert "Moved to trash" in capsys.readouterr().out
+    assert len(prompts) == 1
+    assert vault.read(note.id).collection == "trash"
+
+    other = saved(vault, "Buy bread")
+    monkeypatch.setattr(sys, "argv", ["jotline", "--vault", str(tmp_path), "rename", "bread", "Rye"])
+    cli.main()
+    assert vault.read(other.id).title == "Rye"
+    assert len(prompts) == 2 and other.id in prompts[1]
 
 
 def test_replace_title_keeps_a_heading_and_the_note_newline(tmp_path):
