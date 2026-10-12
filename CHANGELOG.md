@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.12 — 2026-10-12
 
 - **`export`, `append`, `tag`, `done`, `encrypt`, `decrypt`, `trash` and
   `rename` now fall back to the closest title match.** A unique ID prefix or an
