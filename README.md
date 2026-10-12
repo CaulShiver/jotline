@@ -78,7 +78,9 @@ enough to start. See [writing and review](docs/writing.md).
 
 ## Where your notes live
 
-Notes are plain `.md` files in one folder, the vault:
+Notes are plain `.md` files in one folder, the vault. The filename is the note
+ID unless you turn on readable filenames (`buy-milk--a1b2c3.md`); the ID inside
+the file stays what links and history use. See [your vault](docs/vault.md).
 
 | Platform | Default vault |
 | --- | --- |

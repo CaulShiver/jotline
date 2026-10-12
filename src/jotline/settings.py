@@ -29,7 +29,7 @@ SORT_ORDERS = ('updated', 'created', 'title')
 VIEW_COLLECTIONS = ('all', 'starred', *COLLECTIONS)
 DEFAULT_COLLECTIONS = ('inbox', 'projects', 'areas', 'resources')
 BOOLEAN_SETTINGS = ('line_numbers', 'soft_wrap', 'highlight_line', 'markdown_highlighting', 'smart_lists',
-                    'focus_on_start', 'show_hints', 'outliner_on_start')
+                    'focus_on_start', 'show_hints', 'outliner_on_start', 'readable_filenames')
 
 
 HOTKEY_ACTIONS = {
@@ -174,6 +174,9 @@ class Settings:
     default_collection: str = 'inbox'
     daily_template: str = '# {{date}}\n\n'
     walkthrough_shown: bool = False
+    # Off by default, and turning it on does not rename files by itself.
+    # On, the next real save of a plaintext generated note uses a title slug.
+    readable_filenames: bool = False
 
     active_workspace: str = "default"
     workspace_names: list[str] = field(default_factory=lambda: ["default"])
@@ -360,49 +363,56 @@ class Settings:
             settings._baseline = None
             return settings, f'Could not load settings from {path}; using defaults. {error}'
 
-    def save(self, path: Path):
+    def save(self, path: Path, *, directory: int | None = None):
+        """Write settings. Pass ``directory`` when the caller already holds the vault lock."""
         self.validate()
-        with vault_lock(path.parent) as directory:
-            current = None
-            unreadable = False
-            try:
-                raw = read_regular_at(directory, path.name, MAX_SETTINGS_BYTES)
-                current = json.loads(raw)
-                if not isinstance(current, dict):
-                    current = None
-                    unreadable = True
-            except FileNotFoundError:
-                pass
-            except (UnicodeError, ValueError, json.JSONDecodeError, RecursionError):
-                # The bounded reader has already established that the target is
-                # a regular file. Explicit save may repair malformed or oversized
-                # regular settings, while links and special files still fail.
+        if directory is None:
+            with vault_lock(path.parent) as directory:
+                self._publish(path, directory)
+        else:
+            self._publish(path, directory)
+
+    def _publish(self, path: Path, directory: int) -> None:
+        current = None
+        unreadable = False
+        try:
+            raw = read_regular_at(directory, path.name, MAX_SETTINGS_BYTES)
+            current = json.loads(raw)
+            if not isinstance(current, dict):
+                current = None
                 unreadable = True
-            if unreadable:
-                # Never overwrite bytes that could not be understood; keep them
-                # next to the fresh file so nothing hand-written is lost.
-                replace_at(directory, path.name, f'{path.name}.invalid-{stamp()}.json')
-            desired = self.values()
-            baseline = self._baseline
-            if current is not None and baseline is not None:
-                merged = dict(current)
-                defaults = Settings().values()
-                # Values that failed validation on disk are replaced, never merged.
-                _, rejected = Settings._partial(current)
-                for key, value in desired.items():
-                    old = baseline.get(key, defaults[key])
-                    if value != old or key in rejected:
-                        merged[key] = value
-                # Validate the effective known settings before publication.
-                known = {item.name for item in fields(Settings) if item.name != "_baseline"}
-                effective = Settings(**{key: value for key, value in merged.items() if key in known})
-                effective.validate()
-                desired = effective.values()
-                output = {**merged, **desired}
-            else:
-                output = desired
-            self._save_locked(path, output, directory)
-            self._baseline = {key: output[key] for key in desired}
+        except FileNotFoundError:
+            pass
+        except (UnicodeError, ValueError, json.JSONDecodeError, RecursionError):
+            # The bounded reader has already established that the target is
+            # a regular file. Explicit save may repair malformed or oversized
+            # regular settings, while links and special files still fail.
+            unreadable = True
+        if unreadable:
+            # Never overwrite bytes that could not be understood; keep them
+            # next to the fresh file so nothing hand-written is lost.
+            replace_at(directory, path.name, f'{path.name}.invalid-{stamp()}.json')
+        desired = self.values()
+        baseline = self._baseline
+        if current is not None and baseline is not None:
+            merged = dict(current)
+            defaults = Settings().values()
+            # Values that failed validation on disk are replaced, never merged.
+            _, rejected = Settings._partial(current)
+            for key, value in desired.items():
+                old = baseline.get(key, defaults[key])
+                if value != old or key in rejected:
+                    merged[key] = value
+            # Validate the effective known settings before publication.
+            known = {item.name for item in fields(Settings) if item.name != "_baseline"}
+            effective = Settings(**{key: value for key, value in merged.items() if key in known})
+            effective.validate()
+            desired = effective.values()
+            output = {**merged, **desired}
+        else:
+            output = desired
+        self._save_locked(path, output, directory)
+        self._baseline = {key: output[key] for key in desired}
 
     def _save_locked(self, path: Path, data: dict | None = None, directory: int | None = None):
         output = json.dumps(self.values() if data is None else data, indent=2, ensure_ascii=False) + '\n'

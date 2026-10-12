@@ -504,7 +504,7 @@ def _prune_backups(vault, folder: int, keep_name: str) -> None:
 
 
 def backup(vault, *, automatic: bool = False, vault_directory: int | None = None,
-           pending: tuple[str, str] | None = None) -> Path:
+           pending: tuple[str, str] | None = None, skip_names: tuple[str, ...] = ()) -> Path:
     with _vault_directory(vault, vault_directory) as root:
         with _managed_directory(root, ".jotline-backups", create=True) as folder:
             name = f"daily-{date.today().isoformat()}.zip" if automatic else f"manual-{stamp()}.zip"
@@ -538,12 +538,17 @@ def backup(vault, *, automatic: bool = False, vault_directory: int | None = None
                 sources.append((source_fd, source_name, archive_name, limit))
 
             pending_name = pending[0] if pending else None
+            # skip_names drops a file the pending bytes replace under a different name,
+            # so a rename does not archive the pre-rename plaintext beside the new file.
+            omitted = set(skip_names)
+            if pending_name is not None:
+                omitted.add(pending_name)
             with os.scandir(root) as entries:
                 for index, entry in enumerate(entries):
                     if index >= MAX_BACKUP_ENTRIES:
                         skipped.append({"path": "vault", "reason": "backup scan budget reached"})
                         break
-                    if entry.name.endswith(".md") and entry.name != pending_name:
+                    if entry.name.endswith(".md") and entry.name not in omitted:
                         add_source(root, entry.name, entry.name, MAX_NOTE_BYTES)
             if pending is not None:
                 pending_size = len(pending[1].encode("utf-8"))

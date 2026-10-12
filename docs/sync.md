@@ -13,7 +13,8 @@ prints the vault path and points here. In the app, type in **Ctrl+P** to reach
 
 1. `jotline backup` (or **Back up vault now**).
 2. Prefer one writer at a time. Quit with `Ctrl+Q` so the last autosave is on
-   disk before a large inbound sync.
+   disk before a large inbound sync. Quit before `jotline filenames migrate`
+   too: a rename looks like a delete plus an add to Git and Syncthing.
 3. Do not put `.jotline-key.json` on a public Git host or an untrusted Syncthing
    peer. Encrypted notes are sealed without it.
 

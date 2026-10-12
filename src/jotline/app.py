@@ -143,6 +143,7 @@ class Jotline(App):
         self.first_run = first_run and initial_note is None
         self.settings_path = vault.path / '.jotline-settings.json'
         self.settings, self.settings_warning = Settings.load(self.settings_path)
+        self.vault.readable_filenames = self.settings.readable_filenames
         self.workspace = validate_workspace(self.settings.active_workspace if workspace is None else workspace)
         self.register_theme(JOTLINE_THEME)
         self.omarchy_sync = OmarchySync(self)
@@ -334,6 +335,7 @@ class Jotline(App):
         settings = replace(self.settings, **changes)
         settings.save(self.settings_path)
         self.settings = settings
+        self.vault.readable_filenames = settings.readable_filenames
         return settings
 
     def delete_config(self, field, name):
@@ -355,6 +357,7 @@ class Jotline(App):
                         severity='error', timeout=10)
             return
         self.settings = settings
+        self.vault.readable_filenames = settings.readable_filenames
         self.apply_settings()
         self.autosave_timer.stop()
         self.autosave_timer = self.set_interval(settings.autosave_seconds, self.autosave)

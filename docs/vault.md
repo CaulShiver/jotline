@@ -24,6 +24,7 @@ capture or launch; read commands never create it.
 | Path | Contents |
 | --- | --- |
 | `<id>.md` | One note each: small Jotline front matter, then your Markdown |
+| `<slug>--<short-id>.md` | The same note after readable filenames are turned on. The ID in the header is the note; the name is only a label |
 | `.jotline-settings.json` | Preferences, hotkeys, saved views, action recipes, known workspaces |
 | `.jotline-templates/` | Your saved templates |
 | `.jotline-history/` | Saved revisions of each note |
@@ -36,6 +37,20 @@ capture or launch; read commands never create it.
 
 The front matter holds JSON-valued fields for collection, workspace, timestamps
 and starred state. Note files are readable only by your user account.
+
+Readable filenames are off until you opt in. `jotline filenames migrate` renames
+a generated note from `<id>.md` to a title slug plus a short ID, such as
+`buy-milk--a1b2c3.md`, and records the full ID in the header. Links, history,
+encryption and recovery keep using that ID. Daily logs stay
+`daily-YYYY-MM-DD.md`. Encrypted notes stay `<id>.md`, so a title is not written
+next to ciphertext. A file you placed yourself, such as `todo.md`, keeps its
+name. With the setting on, renaming a note in Jotline renames the file to the
+new slug; an unchanged save does not. `jotline filenames revert` puts `<id>.md`
+back and removes the header ID. Run either command for real only after it has
+shown a dry run you accept: a real run writes a ZIP backup first and refuses to
+start if two copies of one note disagree. Do not open a migrated vault with
+Jotline 0.9.x. That version treats the filename as the ID and would see
+`buy-milk--a1b2c3` as a different note.
 
 Workspaces are organization, not access control: all notes stay directly in the
 vault folder, with workspace membership recorded in their front matter. Moving a

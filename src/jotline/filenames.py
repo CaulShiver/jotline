@@ -122,8 +122,10 @@ def set_header_id(raw: str, note_id: str | None) -> str:
     if boundary is None:
         raise ValueError("Incomplete Jotline metadata header")
     newline = "\r\n" if "\r\n" in body[:boundary.end()] else "\n"
+    # The first header line is the version marker, which is written again below.
     header = body[body.index("\n") + 1:boundary.start()]
-    kept = [line for line in header.splitlines() if not line.startswith("id: ")]
+    kept = [line for line in header.splitlines()
+            if not line.startswith("id: ") and not line.startswith("jotline:")]
     if note_id is not None:
         kept.insert(0, "id: " + json.dumps(note_id))
     rebuilt = "---" + newline + "jotline: 1" + newline

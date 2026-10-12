@@ -39,7 +39,6 @@ def test_short_id_grows_until_the_filename_is_free():
     first = allocate_filename(NOTE, "Buy milk", set())
     assert first == f"buy-milk--{NOTE[:SHORT_ID_MIN]}.md"
     taken = {first}
-    second_id = NOTE[:SHORT_ID_MIN] + "ff" + NOTE[SHORT_ID_MIN + 2:]
     # A different note whose 6-character prefix collides.
     other = "a1b2c3ffffffffffffffffffffffffff"
     assert other[:6] == NOTE[:6]

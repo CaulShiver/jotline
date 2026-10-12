@@ -15,6 +15,19 @@
 - **`open` and `daily` need a terminal.** Piped or redirected, they exit with
   an error instead of drawing the app. `export` to stdout ends with a newline.
   `list` takes `--limit N` and `--sort updated`, `created` or `title`.
+- **Note files can be named with a title slug and a short ID.** This is off
+  until you opt in. `jotline filenames migrate` renames `a1b2c3….md` to
+  `buy-milk--a1b2c3.md`, writes the full ID in the header, and turns
+  **Readable filenames** on. In a terminal it prints the plan and waits for
+  yes. Declining changes nothing and exits nonzero. Without a terminal it
+  refuses unless you pass `--yes`. A real run backs up first and refuses to
+  start when two copies of one note disagree. The Settings switch does not
+  rename files and does not turn the feature on; it points at that command.
+  Links, `jotline open`, history, backups, recovery and encryption keep using
+  the note ID. Daily logs stay `daily-YYYY-MM-DD.md`. Encrypted notes stay
+  `<id>.md`. `jotline filenames revert` puts the ID back in the filename, with
+  the same confirmation. Do not edit a migrated vault with Jotline 0.9.x: it
+  treats the filename as the ID.
 
 ## 0.9.11 — 2026-10-12
 

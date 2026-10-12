@@ -13,7 +13,7 @@ with examples, and `jotline COMMAND --help` shows one command's options.
 | Tasks | `tasks`, `done` |
 | Notes | `tag`, `edit`, `trash`, `rename`, `actions`, `run`, and `encrypt` / `decrypt` when encryption is available |
 | Export and import | `export`, `import` |
-| Vault care | `backup`, `backups`, `recoveries`, `doctor`, `stats`, and `encryption` when a key or the extra is present |
+| Vault care | `backup`, `backups`, `recoveries`, `doctor`, `stats`, `filenames`, and `encryption` when a key or the extra is present |
 | Setup | `path`, `completion`, `desktop` |
 
 `encrypt`, `decrypt` and `encryption` stay off this list until the
@@ -50,6 +50,9 @@ jotline doctor
 jotline backup
 jotline backups
 jotline recoveries
+jotline filenames migrate --dry-run
+jotline filenames migrate
+jotline filenames revert --dry-run
 jotline path
 jotline desktop install
 ```
@@ -72,9 +75,9 @@ A `--workspace` that names no existing workspace is refused rather than quietly
 starting a new one. Read commands report `No workspace named X`; captures,
 imports and other writes ask you to add `--new-workspace` to create it.
 Workspaces created in the app, and `default`, always count. `actions`, `backup`,
-`backups`, `doctor` and `encryption` cover the whole vault and do not check the
-name. A desktop capture launcher bound to a workspace adds `--new-workspace` for
-you, so its first capture can create it.
+`backups`, `doctor`, `encryption` and `filenames` cover the whole vault and do
+not check the name. A desktop capture launcher bound to a workspace adds
+`--new-workspace` for you, so its first capture can create it.
 
 ```sh
 jotline workspaces
@@ -91,11 +94,13 @@ Every command that takes a note uses the same rule: `open`, `export`, `append`,
 `prepend`, `tag`, `backlinks`, `done`, `run`, `edit`, `trash`, `rename`, and
 `encrypt` / `decrypt`. In order:
 
-1. a unique prefix of at least four characters (`jotline append 3f9a 'Next step'`),
-   or the full ID,
-2. the note's exact title in any letter case (`jotline export 'Weekly review'`),
+1. a file named exactly that, without `.md` (`jotline export buy-milk--a1b2c3`),
+   which opens the note ID stored in the file,
+2. a unique prefix of at least four characters (`jotline append 3f9a 'Next step'`),
+   including the short ID in a readable filename, or the full ID,
+3. the note's exact title in any letter case (`jotline export 'Weekly review'`),
    including a title written with Markdown markers, such as `- [ ] buy milk`,
-3. the one title that clearly matches best (`jotline export milk`).
+4. the one title that clearly matches best (`jotline export milk`).
 
 `export`, `append`, `prepend`, `tag`, `backlinks`, `done`, `run`, `edit`,
 `encrypt` and `decrypt` take that closest title on their own. `trash` and
@@ -254,14 +259,19 @@ counts. It prints diagnostics rather than note bodies and exits nonzero when it
 finds a problem. It warns when the vault folder is not writable. `backup`
 writes a ZIP now, `backups` lists the archives and checks they open (quarantined
 daily archives print as `quarantined`), and `recoveries` lists inbox copies
-saved after an external change. `stats` prints workspace counts (notes, inbox
+saved after an external change. `filenames migrate` names notes with a title
+slug and a short ID; `filenames revert` names them with the note ID again.
+`--dry-run` changes nothing and writes no backup. A real run writes a ZIP
+first, then renames, and turns the setting on or off only when every planned
+rename succeeds. It exits nonzero when two copies of a note disagree, and then
+nothing is renamed. `stats` prints workspace counts (notes, inbox
 captures, open tasks, tags) without note bodies. See
 [your vault](vault.md#history-and-backups).
 
 ## Scripts and empty results
 
 `list`, `tags`, `workspaces`, `actions`, `tasks`, `stats`, `backlinks`,
-`doctor`, `backups`, `recoveries`, `edit`, `trash` and `rename` accept
+`doctor`, `backups`, `recoveries`, `edit`, `trash`, `rename` and `filenames` accept
 `--json`. Warnings go to stderr, so stdout stays valid JSON. `list --json`
 returns metadata and tags, not note bodies. `edit`, `trash` and `rename` print
 the note's id, title, collection, workspace, dates and star.
