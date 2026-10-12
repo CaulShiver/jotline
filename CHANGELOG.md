@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.11 — 2026-10-12
+## Unreleased
 
 - **`export`, `append`, `tag`, `done`, `encrypt`, `decrypt`, `trash` and
   `rename` now fall back to the closest title match.** A unique ID prefix or an
@@ -16,7 +16,7 @@
   an error instead of drawing the app. `export` to stdout ends with a newline.
   `list` takes `--limit N` and `--sort updated`, `created` or `title`.
 
-## Unreleased
+## 0.9.11 — 2026-10-12
 
 - **The app opens on a blank page.** The note list, formatting toolbar and hint
   start hidden. `Ctrl+F` and `Ctrl+O` bring the list back; `F8` toggles that
