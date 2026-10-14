@@ -148,5 +148,7 @@ async def test_current_line_is_a_visible_band(tmp_path):
 
         app.theme = 'ansi-dark'
         await pilot.pause()
-        assert _row_fill(editor, 1).underline
-        assert not _row_fill(editor, 0).underline
+        ansi_band = editor._theme.cursor_line_style.bgcolor
+        assert ansi_band is not None
+        assert _row_fill(editor, 1).bgcolor == ansi_band
+        assert _row_fill(editor, 0).bgcolor != ansi_band

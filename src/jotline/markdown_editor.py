@@ -496,12 +496,13 @@ def _muted(theme, factor: float = 0.45):
 def reading_line_style(theme, background: Color) -> Style:
     """Mark the row being edited so it is visible against the page.
 
-    ``$boost`` is transparent in these palettes, and Textual's default current-line
-    colour is ``$boost``, so the row used to match the page. ANSI themes cannot
-    carry an RGB band; they get a rule instead.
+    ``$boost`` is transparent in these palettes, and on the ANSI themes it is
+    ``ansi_default``, the same colour as the page. Textual paints the current
+    line with ``$boost``, so the row used to disappear. ANSI themes have no RGB
+    blend; colour 8 is the gray bar a 16-colour terminal can draw.
     """
     if theme.ansi:
-        return Style(underline=True)
+        return Style(bgcolor=Color.parse("ansi_bright_black").rich_color)
     lighter = background.lighten(0.24)
     darker = background.darken(0.18)
 

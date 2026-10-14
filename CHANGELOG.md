@@ -41,7 +41,8 @@
   Command. Tab and Shift+Tab are unchanged.
 - **The line you are editing is marked.** Current-line highlighting followed
   Textual's `$boost` colour, which is transparent here, so the row matched the
-  page. The row now steps off the background. ANSI themes draw an underline.
+  page. The row now steps off the background. ANSI themes, whose page colour
+  is the terminal default, draw a gray bar.
   Settings → Editor still turns it off.
 - **The writing page keeps fewer rows of chrome.** The connections bar stays
   hidden until a note has a link.
