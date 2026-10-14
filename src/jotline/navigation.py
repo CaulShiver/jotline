@@ -115,7 +115,9 @@ KEY_GROUPS = (
                'outliner')),
     ('App', ('commands', 'keys', 'quit')),
 )
-EDITOR_KEYS = (('Tab / Shift+Tab', 'Indent / outdent a list item'), ('[[', 'Link to a note'),
+EDITOR_KEYS = (('Tab / Shift+Tab', 'Indent / outdent a list item'),
+               ('Cmd+] / Cmd+[', 'Indent or outdent the current line'),
+               ('[[', 'Link to a note'),
                (';;', 'Insert a snippet'), ('Ctrl+click', 'Follow the link under the pointer'),
                ('Esc', 'Back to the editor from the sidebar'))
 SEARCH_KEYS = (('Enter', 'Open the top result'), ('Down', 'Move into the note list'),

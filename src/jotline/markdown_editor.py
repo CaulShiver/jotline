@@ -493,6 +493,25 @@ def _muted(theme, factor: float = 0.45):
     return foreground.blend(background, factor).rich_color
 
 
+def reading_line_style(theme, background: Color) -> Style:
+    """Mark the row being edited so it is visible against the page.
+
+    ``$boost`` is transparent in these palettes, and Textual's default current-line
+    colour is ``$boost``, so the row used to match the page. ANSI themes cannot
+    carry an RGB band; they get a rule instead.
+    """
+    if theme.ansi:
+        return Style(underline=True)
+    lighter = background.lighten(0.24)
+    darker = background.darken(0.18)
+
+    def distance(color: Color) -> int:
+        return sum(abs(left - right) for left, right in zip(color.rgb, background.rgb))
+
+    band = lighter if distance(lighter) >= distance(darker) else darker
+    return Style(bgcolor=band.rich_color)
+
+
 def syntax_styles(theme) -> dict[str, Style]:
     """Markdown colours derived from the active app theme."""
     accent = _rich_color(theme.accent or theme.primary, "#a8d5a2")
@@ -573,6 +592,10 @@ class MarkdownEditor(TextArea):
     BINDINGS = [
         Binding("ctrl+tab", "app.focus_next", "Next control", show=False),
         Binding("ctrl+shift+tab", "app.focus_previous", "Previous control", show=False),
+        # Command is the kitty "super" modifier. The bracket names are the full
+        # Unicode key names; "super+[" does not match the event. Ctrl+[ is Escape.
+        Binding("super+left_square_bracket", "outdent_line", "Outdent", show=False),
+        Binding("super+right_square_bracket", "indent_line", "Indent", show=False),
     ]
     # Class-level defaults: TextArea.__init__ builds the highlight map before a
     # subclass __init__ could run, so these must exist on the class.
@@ -589,6 +612,14 @@ class MarkdownEditor(TextArea):
         self._register_markdown_theme()
         self.theme = self.THEME_NAME
 
+    def watch_highlight_cursor_line(self, _highlighted: bool) -> None:
+        # Textual's line cache key omits this flag, so a settings toggle would
+        # keep painting the previous row until the next edit.
+        cache = getattr(self, "_line_cache", None)
+        if cache is not None:
+            cache.clear()
+            self.refresh()
+
     def _register_markdown_theme(self) -> None:
         theme = self.app.current_theme
         background = Color.parse(self.app.get_css_variables()["background"])
@@ -603,9 +634,15 @@ class MarkdownEditor(TextArea):
             selection = Style(bgcolor=Color.parse(theme.variables['jotline-selection-background']).rich_color)
         if 'jotline-cursor-background' in theme.variables:
             cursor = Color.parse(theme.variables['jotline-cursor-background'])
+        line = reading_line_style(theme, background)
+        gutter = line + Style(bold=True)
+        if not theme.ansi:
+            gutter += Style(color=Color.parse(self.app.get_css_variables()["foreground"]).rich_color)
         self.register_theme(TextAreaTheme(
             self.THEME_NAME,
             cursor_style=Style(color=background.rich_color, bgcolor=cursor.rich_color),
+            cursor_line_style=line,
+            cursor_line_gutter_style=gutter,
             selection_style=selection,
             syntax_styles=syntax_styles(theme),
         ))
@@ -864,6 +901,14 @@ class MarkdownEditor(TextArea):
     BLOCK_STYLES = {"heading": "h2", "list": "bullet", "numbered": "numbered", "task": "task", "quote": "quote",
                     **{f"h{level}": f"h{level}" for level in range(1, 7)}}
     WRAP_MARKERS = {"bold": "**", "italic": "*", "strike": "~~", "code": "`"}
+
+    def action_indent_line(self) -> None:
+        if not self.read_only:
+            self.apply_format("indent")
+
+    def action_outdent_line(self) -> None:
+        if not self.read_only:
+            self.apply_format("outdent")
 
     def apply_format(self, style: str) -> str | None:
         start, end = sorted((self.selection.start, self.selection.end))

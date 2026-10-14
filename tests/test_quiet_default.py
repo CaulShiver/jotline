@@ -2,6 +2,7 @@
 import re
 
 from textual.widgets import TextArea
+from textual.widgets._footer import FooterKey
 
 from jotline.app import Jotline
 from jotline.cli import build_parser
@@ -35,6 +36,11 @@ async def test_a_new_vault_opens_on_a_blank_page(tmp_path):
         for selector in ("#sidebar", "#markdown-toolbar", "#hint"):
             assert app.query_one(selector).has_class("hidden"), selector
         assert not app.query("#md-outliner")
+        assert app.query_one("#brand").region.height == 1
+        assert not app.query("#note-heading")
+        assert app.query_one("#status").region.height == 1
+        assert app.query_one("#connections").has_class("hidden")
+        assert {key.description for key in app.query(FooterKey)} == {"New", "Search", "Commands", "Keys", "Quit"}
         editor = app.query_one("#editor", TextArea)
         editor.insert("one two")
         await pilot.press("ctrl+w")

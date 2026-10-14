@@ -86,6 +86,10 @@ class OutlinerScreen(Modal[None]):
         Binding('escape', 'back', 'Back', priority=True),
         Binding('tab', 'indent', 'Indent', priority=True),
         Binding('shift+tab', 'outdent', 'Outdent', priority=True),
+        # Same Command keys as the Markdown editor. Priority so they nest the
+        # branch while a block is focused, matching Tab and Shift+Tab.
+        Binding('super+right_square_bracket', 'indent', 'Indent', priority=True, show=False),
+        Binding('super+left_square_bracket', 'outdent', 'Outdent', priority=True, show=False),
         # Alt+arrows need Option-as-Meta on macOS; Ctrl+arrows are the fallback.
         Binding('alt+shift+up,ctrl+up,ctrl+shift+up', 'move_up', 'Move up', priority=True),
         Binding('alt+shift+down,ctrl+down,ctrl+shift+down', 'move_down', 'Move down', priority=True),

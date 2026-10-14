@@ -91,6 +91,42 @@ async def test_editor_still_allows_keyboard_navigation(tmp_path):
         assert editor.text == ""
 
 
+async def test_command_brackets_indent_the_line_and_undo(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test() as pilot:
+        editor = app.editor()
+        editor.load_text("hello\n  there")
+        editor.move_cursor((0, 3))
+        await pilot.press("super+right_square_bracket")
+        assert editor.text == "  hello\n  there"
+        assert editor.cursor_location == (0, 5)
+        await pilot.press("super+left_square_bracket")
+        assert editor.text == "hello\n  there"
+        assert editor.cursor_location == (0, 3)
+        editor.move_cursor((1, 4))
+        await pilot.press("super+left_square_bracket")
+        assert editor.text == "hello\nthere"
+        await pilot.press("ctrl+z")
+        assert editor.text == "hello\n  there"
+        # Tab at a plain cursor still inserts up to the next stop.
+        editor.move_cursor((0, 3))
+        await pilot.press("tab")
+        assert editor.text == "hel lo\n  there"
+
+
+async def test_command_brackets_indent_a_selection(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test() as pilot:
+        editor = app.editor()
+        editor.load_text("first\nsecond\nthird")
+        editor.move_cursor((2, 0))
+        editor.move_cursor((0, 0), select=True)
+        await pilot.press("super+right_square_bracket")
+        assert editor.text == "  first\n  second\nthird"
+        await pilot.press("super+left_square_bracket")
+        assert editor.text == "first\nsecond\nthird"
+
+
 async def test_read_only_editor_cannot_be_indented(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test() as pilot:
@@ -99,7 +135,7 @@ async def test_read_only_editor_cannot_be_indented(tmp_path):
         editor.read_only = True
         await pilot.press("enter", "shift+tab")
         editor.focus()
-        await pilot.press("tab")
+        await pilot.press("tab", "super+right_square_bracket", "super+left_square_bracket")
         assert editor.text == "  unchanged"
 
 

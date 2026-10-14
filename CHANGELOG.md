@@ -31,6 +31,22 @@
 
 ## 0.9.11 — 2026-10-12
 
+- **The writing page stops repeating the note.** The brand is the name and the
+  workspace. The title row is gone; the first line of the note is the title.
+  The status line keeps the save state, the word count, waiting inbox captures,
+  the collection when the note is not in the inbox, and an encrypted mark.
+- **Cmd+] indents and Cmd+[ outdents.** In the editor that moves the current
+  line or the selection by two spaces. In the outliner it nests or unnests the
+  selected branches, the same as Tab and Shift+Tab. The terminal has to forward
+  Command. Tab and Shift+Tab are unchanged.
+- **The line you are editing is marked.** Current-line highlighting followed
+  Textual's `$boost` colour, which is transparent here, so the row matched the
+  page. The row now steps off the background. ANSI themes draw an underline.
+  Settings → Editor still turns it off.
+- **The writing page keeps fewer rows of chrome.** The connections bar stays
+  hidden until a note has a link.
+  The footer shows New, Search, Commands, Keys and Quit. The other keys still
+  work; F1 lists them.
 - **The app opens on a blank page.** The note list, formatting toolbar and hint
   start hidden. `Ctrl+F` and `Ctrl+O` bring the list back; `F8` toggles that
   quiet layout. `Start on a blank page` in Settings is on for a new vault.

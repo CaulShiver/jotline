@@ -68,6 +68,7 @@ match, not a second copy of the command.
 | --- | --- |
 | `Enter` | Continue a bullet, numbered, task or quote line; on an empty nested item, move it up a level; on an empty top-level item, end the list |
 | `Tab` / `Shift+Tab` | Indent at the cursor; on a list item or selected lines, indent or outdent the whole line |
+| `Cmd+]` / `Cmd+[` | Indent or outdent the current line, or the selected lines |
 | `Shift+arrows` | Select text |
 | `Ctrl+Z` | Undo, including after switching away from the note and back |
 | `[[` | Pick a note to link (not inside code) |
@@ -89,6 +90,7 @@ notes. See [Markdown editing](markdown.md) for formatting commands.
 | `Enter` / `F2` | Edit the selected block |
 | `Ctrl+Tab`, `Ctrl+Shift+Tab` or `F6` | Switch between the tree and the block being edited |
 | `Tab` / `Shift+Tab` | Indent / outdent the selected branches |
+| `Cmd+]` / `Cmd+[` | Same as Tab / Shift+Tab |
 | `Alt+Shift+Up/Down`, `Ctrl+Up/Down` or `Ctrl+Shift+Up/Down` | Move branches among their siblings |
 | `Ctrl+Space` | Fold or expand the branch |
 | `Alt+Right` / `Alt+Left` | Focus the branch / go toward the whole note |
@@ -153,6 +155,10 @@ of them keeps a key, use the palette or assign another key.
   Mission Control takes Ctrl+Up/Down, use the Ctrl+Shift form.
 - **tmux**: Ctrl+B is tmux's default prefix. Focus mode is F8, which default
   tmux does not capture. Ctrl+B is not a Jotline key.
+- **Command**: Cmd+] indents and Cmd+[ outdents, in the editor and the outliner.
+  The terminal has to forward Command. Ghostty, Kitty, and WezTerm can send it
+  (the kitty keyboard protocol reports it as Super). Terminal.app and iTerm2
+  usually keep Command, so Tab and Shift+Tab are the keys that always arrive.
 - **Ctrl+Tab**: most terminals send it as plain Tab. In the outliner use F6 to
   switch between tree and block; in the editor, Ctrl+F reaches the search box.
 - **Shift+Enter**: some terminals send it as Enter. In the outliner use

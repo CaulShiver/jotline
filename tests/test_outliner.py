@@ -80,6 +80,19 @@ async def test_enter_splits_block_and_shift_enter_stays_inside_block(tmp_path):
         assert len(screen.outline.roots) == 3
 
 
+async def test_command_brackets_indent_the_branch_while_editing(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    original = '- First\n- Parent\n  - Child\n- Last'
+    async with app.run_test(size=(110, 35)) as pilot:
+        screen = await open_outline(app, pilot, original)
+        await pilot.press('down', 'f2', 'super+right_square_bracket')
+        assert app.editor().text == '- First\n  - Parent\n    - Child\n- Last'
+        assert screen.block_editor().text == 'Parent'
+        await pilot.press('super+left_square_bracket')
+        assert app.editor().text == original
+        assert screen.block_editor().text == 'Parent'
+
+
 async def test_keyboard_branch_operations_and_global_undo(tmp_path):
     app = Jotline(Vault(tmp_path))
     original = '- First\n- Parent\n  - Child\n- Last'

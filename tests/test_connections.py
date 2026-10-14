@@ -146,8 +146,9 @@ async def test_show_connections_and_cursor_follow(tmp_path):
     async with app.run_test(size=(100, 35)) as pilot:
         app.load(source)
         await pilot.pause()
-        bar = str(app.query_one("#connections", Static).render())
-        assert "→ 1" in bar
+        bar = app.query_one("#connections", Static)
+        assert "→ 1" in str(bar.render())
+        assert not bar.has_class("hidden")
         editor = app.query_one("#editor", TextArea)
         editor.move_cursor((2, 6))
         app.action_follow()
@@ -234,6 +235,7 @@ async def test_empty_connections_bar_points_at_link_insertion(tmp_path):
     async with app.run_test(size=(100, 35)) as pilot:
         await pilot.pause()
         app.connections()
-        bar = str(app.query_one("#connections", Static).render())
-        assert "Type [[" in bar and "Insert note link" in bar
-        assert "alt+k" not in bar
+        bar = app.query_one("#connections", Static)
+        assert "Type [[" in str(bar.render()) and "Insert note link" in str(bar.render())
+        assert "alt+k" not in str(bar.render())
+        assert bar.has_class("hidden")

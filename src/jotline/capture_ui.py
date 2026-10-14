@@ -19,8 +19,9 @@ class QuickCapture(App[str | None]):
     CSS = """
     Screen { background: $background; color: $foreground; }
     Tooltip { visibility: hidden; }
-    #capture-title { height: 2; padding: 1 2 0 2; color: $accent; text-style: bold; }
+    #capture-title { height: 1; padding: 0 2; color: $accent; text-style: bold; }
     #capture-editor { height: 1fr; border: none; background: $background; margin: 0 1; }
+    TextArea .text-area--cursor-line { background: $foreground 18%; }
     #capture-hint { height: 1; padding: 0 2; color: $text-muted; }
     """
     BINDINGS = [Binding("ctrl+s", "save", "Save", priority=True),

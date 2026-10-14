@@ -22,8 +22,9 @@ def test_failure_wording_keeps_the_os_reason_and_names_the_next_step():
         'Backup failed: Permission denied: /vault/.jotline-backups. Try again.'
     assert failed('Tags were not added', ValueError('Enter tags separated by spaces.')) == \
         'Tags were not added: Enter tags separated by spaces.'
-    assert [key_name(key) for key in ('ctrl+n', 'alt+k', 'f1', 'ctrl+shift+up', '')] == \
-        ['Ctrl+N', 'Alt+K', 'F1', 'Ctrl+Shift+Up', '']
+    assert [key_name(key) for key in ('ctrl+n', 'alt+k', 'f1', 'ctrl+shift+up', '',
+                                       'super+left_square_bracket', 'super+right_square_bracket')] == \
+        ['Ctrl+N', 'Alt+K', 'F1', 'Ctrl+Shift+Up', '', 'Cmd+[', 'Cmd+]']
 
 
 async def test_view_names_get_their_own_rule(tmp_path):
@@ -169,7 +170,8 @@ async def test_shortcut_text_uses_one_key_style_everywhere(tmp_path):
         await pilot.pause()
         assert 'Ctrl+P commands · Ctrl+D daily log' in str(app.query_one('#hint', Static).render())
         brand = str(app.query_one('#brand', Static).render())
-        assert 'Ctrl+T tags' in brand
+        assert 'Ctrl+T' not in brand
+        assert 'jotline' in brand
         assert 'workspaces' not in brand
         app.connections()
         assert 'Alt+K connections' in str(app.query_one('#connections', Static).render())

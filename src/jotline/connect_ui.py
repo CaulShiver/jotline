@@ -101,7 +101,9 @@ class Connections:
                 line += f"  ·  {len(broken)} broken"
             backlinks_key = self.settings.effective_hotkeys.get("backlinks") or "alt+k"
             line += f"  ·  {key_name(backlinks_key)} connections"
+        self._connections_quiet = not (self.current.locked or incoming or outgoing)
         self.query_one("#connections", Static).update(line)
+        self.query_one("#connections").set_class(self.size.height <= 24 or self._connections_quiet, "hidden")
         if self.compact_layout:
             self.status("Saving…" if self.dirty else ("Saved" if self.current.original else "Ready"))
 

@@ -1,10 +1,11 @@
 """Wording shared by in-app messages: key names, sizes, and what failed."""
 from .limits import MAX_NOTE_BYTES
 
-KEY_NAMES = {'ctrl': 'Ctrl', 'alt': 'Alt', 'shift': 'Shift', 'comma': ',', 'escape': 'Esc', 'enter': 'Enter',
-             'tab': 'Tab', 'space': 'Space', 'backspace': 'Backspace', 'delete': 'Delete', 'up': 'Up',
-             'down': 'Down', 'left': 'Left', 'right': 'Right', 'home': 'Home', 'end': 'End',
-             'pageup': 'PgUp', 'pagedown': 'PgDn', 'insert': 'Insert'}
+KEY_NAMES = {'ctrl': 'Ctrl', 'alt': 'Alt', 'shift': 'Shift', 'super': 'Cmd', 'comma': ',', 'escape': 'Esc',
+             'enter': 'Enter', 'tab': 'Tab', 'space': 'Space', 'backspace': 'Backspace', 'delete': 'Delete',
+             'up': 'Up', 'down': 'Down', 'left': 'Left', 'right': 'Right', 'home': 'Home', 'end': 'End',
+             'pageup': 'PgUp', 'pagedown': 'PgDn', 'insert': 'Insert',
+             'left_square_bracket': '[', 'right_square_bracket': ']'}
 
 
 def key_name(key: str) -> str:

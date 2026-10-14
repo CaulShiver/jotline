@@ -108,3 +108,45 @@ async def test_rendered_selection_keeps_markdown_colours_across_all_themes(tmp_p
             if 'jotline-cursor-background' in app.current_theme.variables:
                 accent = Color.parse(app.current_theme.variables['jotline-cursor-background'])
             assert editor._theme.cursor_style.bgcolor == accent.rich_color, name
+
+
+def _row_fill(editor, row):
+    spaces = [segment for segment in editor.render_line(row) if segment.text and not segment.text.strip()]
+    return spaces[-1].style
+
+
+async def test_current_line_is_a_visible_band(tmp_path):
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(80, 28)) as pilot:
+        editor = app.query_one('#editor', TextArea)
+        editor.load_text('# Heading\nplain text\n')
+        editor.move_cursor((0, 3))
+        await pilot.pause()
+        page = Color.parse(app.get_css_variables()['background']).rich_color
+        band = editor._theme.cursor_line_style.bgcolor
+        row = list(editor.render_line(0))
+        assert 'Heading' in ''.join(segment.text for segment in row)
+        heading = [segment for segment in row if segment.text in {'H', 'ading'}]
+        assert heading
+        assert all(segment.style.bgcolor == band and segment.style.bgcolor != page for segment in heading)
+        assert all(segment.style.color == editor._theme.syntax_styles['heading'].color for segment in heading)
+        assert _row_fill(editor, 0).bgcolor == band
+        assert _row_fill(editor, 1).bgcolor == page
+        editor.move_cursor((1, 1))
+        await pilot.pause()
+        assert _row_fill(editor, 1).bgcolor != page
+        assert _row_fill(editor, 0).bgcolor == page
+        editor.highlight_cursor_line = False
+        await pilot.pause()
+        assert _row_fill(editor, 1).bgcolor == page
+
+        app.theme = 'textual-light'
+        editor.highlight_cursor_line = True
+        await pilot.pause()
+        light_page = Color.parse(app.get_css_variables()['background']).rich_color
+        assert _row_fill(editor, 1).bgcolor not in (None, light_page)
+
+        app.theme = 'ansi-dark'
+        await pilot.pause()
+        assert _row_fill(editor, 1).underline
+        assert not _row_fill(editor, 0).underline

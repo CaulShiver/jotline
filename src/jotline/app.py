@@ -70,6 +70,14 @@ STATUS_SUMMARY_SECONDS = 0.25
 # measures the height of every row, so a burst of keys pays for one pass, not one per key.
 SEARCH_DEBOUNCE_SECONDS = 0.2
 REFRESH_HINT = "Use Ctrl+P → Refresh vault from disk to update the list."
+# One footer row. These are the ways off the page; F1 lists every other key.
+FOOTER_LABELS = {
+    "new": "New",
+    "search": "Search",
+    "commands": "Commands",
+    "keys": "Keys",
+    "quit": "Quit",
+}
 
 
 class SearchBox(Input):
@@ -100,7 +108,7 @@ class Jotline(App):
     CSS = """
     Screen { background: $background; color: $foreground; }
     Tooltip { visibility: hidden; }
-    #brand { height: 3; padding: 1 2 0 2; color: $accent; text-style: bold; }
+    #brand { height: 1; padding: 0 2; color: $accent; text-style: bold; }
     #workspace { height: 1fr; }
     #sidebar { width: 32; min-width: 22; border-right: solid $primary-muted; padding: 0 1; }
     #collection { height: 2; padding-left: 1; color: $text-muted; }
@@ -111,15 +119,16 @@ class Jotline(App):
     #notes { border: none; background: $background; height: 1fr; }
     #notes > .option-list--option-highlighted { background: $primary-muted; color: $foreground; }
     #writing { width: 1fr; padding: 0 2; }
-    #note-heading { height: 2; color: $accent; }
     #markdown-toolbar { height: 2; scrollbar-size-horizontal: 1; background: $surface; }
     #markdown-toolbar Button { height: 1; min-height: 1; min-width: 0; width: auto;
                                padding: 0 1; border: none; background: $surface; color: $foreground; }
     #markdown-toolbar Button:hover, #markdown-toolbar Button:focus { background: $primary-muted; color: $accent; text-style: bold; }
     #editor { height: 1fr; border: none; background: $background; }
+    TextArea .text-area--cursor-line { background: $foreground 18%; }
+    TextArea .text-area--cursor-gutter { background: $foreground 18%; text-style: bold; }
     #live-preview { width: 1fr; border-left: solid $primary-muted; padding: 0 2; }
-    #status { height: 2; padding-top: 1; color: $text-muted; }
-    #connections { height: auto; max-height: 5; padding-top: 1; color: $text-muted; }
+    #status { height: 1; color: $text-muted; }
+    #connections { height: auto; max-height: 4; color: $text-muted; }
     #hint { height: 2; padding: 0 2; color: $text-muted; }
     Footer { background: $surface; }
     .hidden { display: none; }
@@ -127,10 +136,11 @@ class Jotline(App):
     """
     BINDINGS = [Binding(key or "jotline_" + action + "_unassigned",
                         "format_markdown(" + repr(action[7:]) + ")" if action.startswith("format_") else action,
-                        label, priority=True, show=bool(key) and action not in {"recent", "follow_link", "toggle_task"},
+                        FOOTER_LABELS.get(action, label), priority=True,
+                        show=action in FOOTER_LABELS and bool(key),
                         id="jotline." + action)
                 for action, (key, label) in HOTKEY_ACTIONS.items()] + [
-        Binding("ctrl+comma", "settings", "Settings", priority=True),
+        Binding("ctrl+comma", "settings", "Settings", priority=True, show=False),
         Binding("escape", "editor_focus", "Write", show=False),
     ]
 
@@ -152,6 +162,7 @@ class Jotline(App):
         self.dirty = False
         self.last_error = ""
         self.focused_writing = False
+        self._connections_quiet = True
         self.compact_layout = False
         self.compact_navigation = False
         self._shown_storage_warnings: set[str] = set()
@@ -208,8 +219,6 @@ class Jotline(App):
                 notes.tooltip = "Notes in the current collection"
                 yield notes
             with Vertical(id="writing"):
-                yield Static(terminal_text(self.current.title) + " / " + self.current.collection,
-                             id="note-heading")
                 with HorizontalScroll(id="markdown-toolbar"):
                     for style, label, hint in (
                         ("bold", "Bold", "Toggle **bold** on selected text"),
@@ -273,7 +282,7 @@ class Jotline(App):
         connections = self.query_one("#connections", Static)
         sidebar.set_class(self.focused_writing or (self.compact_layout and not self.compact_navigation), "hidden")
         hint.set_class(self.focused_writing or self.compact_layout or not self.settings.show_hints, "hidden")
-        connections.set_class(very_short, "hidden")
+        connections.set_class(very_short or self._connections_quiet, "hidden")
         self.query_one("#markdown-toolbar").set_class(self.focused_writing, "hidden")
         preview = self.query_one("#live-preview")
         was_visible = not preview.has_class("hidden")
@@ -464,8 +473,6 @@ class Jotline(App):
         empty.set_class(bool(notes), "hidden")
         empty.update(self.empty_notes_message())
         brand = f"›_ jotline / {self.workspace}"
-        if not self.compact_layout:
-            brand += "     ·     ctrl+t tags"
         self.query_one("#brand", Static).update(self.shortcut_text(brand))
         self.connections(notes=snapshot)
         self.notify_storage_warnings()
@@ -740,20 +747,19 @@ class Jotline(App):
 
     def status(self, message: str) -> None:
         self._status_message = message
-        words, tags = self.note_summary()
+        words, _tags = self.note_summary()
         details = f"{message}  ·  {words} words"
         if self.inbox_capture_count:
             details += f"  ·  {self.inbox_capture_count} inbox"
         if self.compact_layout:
             details += f"  ·  {self.connection_counts()}"
         else:
-            details += f"  ·  {self.current.collection}  ·  {self.workspace}"
-            details += "  ·  encrypted" if self.current.encrypted else ""
-            details += "  ·  " + " ".join("#" + tag for tag in tags) if tags else ""
+            if self.current.collection != "inbox":
+                details += f"  ·  {self.current.collection}"
+            if self.current.encrypted:
+                details += "  ·  encrypted"
 
         self.query_one("#status", Static).update(details)
-        self.query_one("#note-heading", Static).update(
-            Text(terminal_text(self.current.title) + " / " + self.current.collection))
 
     def save_current(self, *, explicit: bool = False) -> bool:
         # An inline Changed message may still be queued when a navigation or

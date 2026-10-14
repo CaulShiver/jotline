@@ -16,7 +16,10 @@ quiet.
 
 **Tab** inserts indentation at the cursor. On a list item or selected lines it
 indents the whole line or selection by two spaces; **Shift+Tab** removes one
-level. Enter keeps the current indentation, including in plain text and code
+level. **Cmd+]** indents the current line or the selected lines by two spaces,
+and **Cmd+[** removes one level, including plain text that is not a list. The
+terminal has to send Command; see [keyboard](keyboard.md#terminal-caveats).
+Enter keeps the current indentation, including in plain text and code
 blocks. Use **Ctrl+Tab** / **Ctrl+Shift+Tab** to move focus out of the editor,
 or **Ctrl+F** to search notes (many terminals send Ctrl+Tab as plain Tab; see
 [keyboard](keyboard.md#terminal-caveats)). Hover descriptions stay hidden.
@@ -89,7 +92,7 @@ operation by name with its keys.
 | Shift+Enter / Commands → Insert continuation line | Insert a line within the block |
 | Backspace at the start / Merge block | Join with the previous sibling when safe; preserve descendants |
 | Up / Down while editing | Move within wrapped text, then to the neighboring visible block at the boundary |
-| Tab / Shift+Tab | Indent / outdent the selected branches |
+| Tab / Shift+Tab, Cmd+] / Cmd+[ | Indent / outdent the selected branches |
 | Alt+Shift+↑ / ↓, Ctrl+↑ / ↓, Ctrl+Shift+↑ / ↓ | Move selected branches among their siblings (the Ctrl forms need no Alt, for macOS without Option-as-Meta) |
 | Ctrl+Space / Fold / disclosure arrow | Collapse or expand the branch |
 | Left / Right while navigating | Collapse or go to parent; expand or go to first child |

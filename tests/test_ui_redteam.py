@@ -43,7 +43,8 @@ async def test_default_collection_is_visible_and_labeled(tmp_path):
         await pilot.pause()
         assert app.collection == 'projects'
         assert str(app.query_one('#collection', Static).render()).startswith('PROJECTS')
-        assert str(app.query_one('#note-heading', Static).render()).endswith('/ projects')
+        assert 'projects' in str(app.query_one('#status', Static).render())
+        assert not app.query('#note-heading')
 
         await pilot.press('x', 'ctrl+s')
         await pilot.pause()
