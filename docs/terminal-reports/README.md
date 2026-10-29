@@ -5,7 +5,9 @@ a terminal clipboard. Those reports are a **1.0 ship criterion**, not
 help-wanted afterthoughts. Issues
 [#2](https://github.com/CaulShiver/jotline/issues/2) (native terminal) and
 [#3](https://github.com/CaulShiver/jotline/issues/3) (screen reader) stay open
-until a human fills a report from this folder.
+until a human fills the required reports from this folder. The writing upgrade
+also needs find, table-of-contents and footnote checks; historical reports do not
+automatically qualify newly added behavior.
 
 ## Filled reports
 
@@ -36,3 +38,9 @@ arrange, bulk select), Unicode round-trip (stand-in for IME), and honest OSC 52
 copy wording. That is **toward** 1.0, not a substitute for the two native
 reports. Ctrl+P → **Clipboard, IME, and screen-reader notes** repeats those limits
 in the app. Windows is out of scope.
+
+The additional writing checks are defined in
+[terminal-testing.md](../terminal-testing.md#automated-writing-qualification).
+Their automated labels, keyboard and small-window assertions do not certify
+screen-reader announcements, contrast, native IME composition or clipboard
+policy. The current native VoiceOver and Orca gates remain open.

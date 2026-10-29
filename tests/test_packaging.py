@@ -23,7 +23,8 @@ def test_build_backend_and_runtime_dependency_bounds_are_explicit():
     data = tomllib.loads((ROOT / "pyproject.toml").read_text())
 
     assert data["build-system"]["requires"] == ["hatchling==1.32.0"]
-    assert data["project"]["dependencies"] == ["textual>=8.2.8,<9", "markdown-it-py>=4,<5"]
+    assert data["project"]["dependencies"] == ["textual>=8.2.8,<9", "markdown-it-py>=4,<5",
+                                               "mdit-py-plugins>=0.6.1,<0.7"]
     assert data["project"]["optional-dependencies"]["dev"] == ["pytest>=8.2", "pytest-asyncio>=0.24",
                                                                "ruff>=0.14,<0.15"]
     assert data["project"]["urls"]["Repository"] == "https://github.com/CaulShiver/jotline"

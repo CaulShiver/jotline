@@ -81,6 +81,16 @@ def printable_markdown(body: str, titles: dict[str, str] | None = None,
     """
     titles = titles or {}
 
+    # Heading IDs must not change when a linked note is renamed, or when an
+    # export has a different title lookup than the editor. Explicit wiki labels
+    # are retained; bare targets in headings stay stable rather than expanding.
+    heading_rows: set[int] = set()
+    if "[[" in body:
+        from .rendering import markdown_parser
+        for token in markdown_parser().parse(body):
+            if token.type == "heading_open" and token.map:
+                heading_rows.update(range(*token.map))
+
     pairs, fenced = fenced_pairs(body)
     result = []
     for row, (content, ending) in enumerate(pairs):
@@ -92,7 +102,10 @@ def printable_markdown(body: str, titles: dict[str, str] | None = None,
     rendered = "".join(result)
 
     def replace(link, match):
-        label = link.label or titles.get(link.target, link.target)
+        label = link.label or (link.target if link.line - 1 in heading_rows else titles.get(link.target, link.target))
+        # Wiki labels are literal text, not a second Markdown document. Escape
+        # them so an alias cannot inject another destination or heading format.
+        label = re.sub(r'([\\`*{}\[\]()#+.!_<>~|&])', r'\\\1', label)
         if followable:
             return f"[{label}]({wiki_href(link.target)})"
         return label
@@ -102,18 +115,9 @@ def printable_markdown(body: str, titles: dict[str, str] | None = None,
 
 def render_html(title: str, body: str, titles: dict[str, str] | None = None) -> str:
     """A self-contained page. Raw HTML in the note is shown as text and nothing is loaded from elsewhere."""
-    from markdown_it import MarkdownIt
+    from .rendering import markdown_parser
 
-    renderer = MarkdownIt("commonmark", {"html": False}).enable(["table", "strikethrough"])
-
-    def image(self, tokens, index, options, env):
-        # Images become links: an export must not read local files or contact servers.
-        token = tokens[index]
-        source = token.attrGet("src") or ""
-        label = self.renderInlineAsText(token.children or [], options, env) or source
-        return f'<a href="{html.escape(source)}">{html.escape(label)}</a>'
-
-    renderer.add_render_rule("image", image)
+    renderer = markdown_parser()
     content = renderer.render(printable_markdown(body, titles))
     return ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
             "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'\">\n"

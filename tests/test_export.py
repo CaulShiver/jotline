@@ -113,7 +113,7 @@ def test_cli_exports_html_to_stdout_or_a_file(tmp_path):
     saved(vault, "# Plan\n\n- [ ] call", "abcdef0123456789")
     page = run_cli(vault.path, "export", "abcd", "--format", "html")
     assert page.returncode == 0, page.stderr
-    assert b"<h1>Plan</h1>" in page.stdout
+    assert b'<h1 id="plan">Plan</h1>' in page.stdout
 
     target = tmp_path / "plan.html"
     written = run_cli(vault.path, "export", "abcd", "-o", str(target))
@@ -216,7 +216,7 @@ async def test_app_suggests_a_file_name_and_exports_in_the_background(tmp_path):
         app.export_current("html", str(target))
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert "<h1>Weekly plan: Sam/Alex</h1>" in target.read_text(encoding="utf-8")
+        assert '<h1 id="weekly-plan-samalex">Weekly plan: Sam/Alex</h1>' in target.read_text(encoding="utf-8")
 
 
 def test_an_export_is_created_as_private_as_the_note_it_came_from(tmp_path, monkeypatch):

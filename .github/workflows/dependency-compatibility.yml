@@ -1,0 +1,77 @@
+name: Latest allowed dependencies
+on:
+  # Catch upstream releases without multiplying the locked OS/Python matrix.
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/dependency-compatibility.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/dependency-compatibility.yml'
+permissions:
+  contents: read
+concurrency:
+  group: latest-dependencies-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  latest:
+    name: Latest allowed / Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        python: ['3.11', '3.13']
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install uv
+        timeout-minutes: 2
+        run: python -m pip install uv==0.12.10
+      - name: Resolve and install newest allowed dependencies
+        timeout-minutes: 5
+        # This checkout is disposable. Upgrade the lock, then run exactly that
+        # installed resolution; never commit this job's generated lockfile.
+        run: uv sync --upgrade --extra dev --extra encryption --python '${{ matrix.python }}'
+      - name: Record tested dependency versions
+        run: |
+          uv pip freeze --python .venv/bin/python | tee latest-dependencies.txt
+          git diff -- uv.lock > latest-lock.diff
+      - name: Run the complete suite against the upgraded environment
+        timeout-minutes: 16
+        run: uv run --locked pytest -q -o faulthandler_timeout=60
+      - name: Build and smoke-test the installed wheel with newest allowed dependencies
+        timeout-minutes: 5
+        run: |
+          uv build --clear
+          uv venv .smoke-venv --python '${{ matrix.python }}'
+          uv pip install --python .smoke-venv/bin/python --upgrade --strict dist/*.whl
+          .smoke-venv/bin/python -I scripts/smoke_install.py
+      - name: Keep the tested resolution for diagnosis
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: latest-dependencies-python-${{ matrix.python }}
+          path: |
+            latest-dependencies.txt
+            latest-lock.diff
+            uv.lock
+          retention-days: 14
+          if-no-files-found: warn

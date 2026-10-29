@@ -11,11 +11,18 @@ Install with `uv sync --extra dev`. Before opening a pull request, run the locke
 suite with `uv run --locked pytest -q` and the linter with `uv run --locked ruff
 check .`. Ruff is configured for defects rather than style: pyflakes and bugbear
 only. The style rule sets are deliberately off, so a finding it does report is
-worth reading rather than silencing. CI also checks an unlocked latest resolve
-with `uv lock --upgrade --dry-run`, a direct lower-bound environment, and a clean
-installed-wheel smoke run. For local release checks, build with `uv build --clear`
-and run `python scripts/install.py --from-dir dist --installer pip` into a fresh
-venv, then `python -I scripts/smoke_install.py` from that environment.
+worth reading rather than silencing. CI also checks a direct lower-bound
+environment and a clean installed-wheel smoke run. The **Latest allowed dependencies** workflow installs an upgraded
+resolution and executes the complete suite plus an installed-wheel smoke test
+on Linux/Python 3.11 and 3.13. It runs weekly, manually, and on dependency-change
+PRs and main pushes; the regular Linux/macOS matrix remains locked. Its retained
+version list and generated lockfile identify what actually ran. A successful
+resolver dry-run is not a compatibility test. To reproduce, use a disposable
+checkout and run `uv sync --upgrade --extra dev --extra encryption`, then
+`uv run --locked pytest -q`; do not accidentally commit that generated lockfile.
+
+For local release checks, build with `uv build --clear` and run
+`python scripts/install.py --from-dir dist --installer pip` into a fresh venv, then `python -I scripts/smoke_install.py` from that environment.
 
 CI runs the complete suite and installed-wheel CLI/TUI smoke checks on Linux
 and macOS with Python 3.11–3.13. POSIX-only filesystem cases are marked

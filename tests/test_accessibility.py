@@ -1,7 +1,8 @@
+import pytest
 from textual.app import App
-from textual.widgets import TextArea
+from textual.widgets import Button, Input, OptionList, Select, SelectionList, Switch, TextArea
 
-from jotline.accessibility import COPY_REQUEST, unlabeled_controls
+from jotline.accessibility import COPY_REQUEST, control_name, unlabeled_controls
 from jotline.action_ui import ActionEditor, ActionReport
 from jotline.app import Jotline
 from jotline.capture_ui import QuickCapture
@@ -161,3 +162,27 @@ async def test_accessibility_notes_command_is_honest(tmp_path):
         assert "confirms a copy only after that tool succeeds" in app.screen.body
         await pilot.press("escape")
         assert app.editor().has_focus
+
+
+@pytest.mark.parametrize("factory", [
+    lambda: Input("user-entered text", id="internal-input-id"),
+    lambda: TextArea("private note body", id="internal-editor-id"),
+    lambda: Switch(id="internal-switch-id"),
+    lambda: Select([("One", 1)], id="internal-select-id"),
+    lambda: SelectionList(("One", 1), id="internal-selection-id"),
+    lambda: OptionList("One", id="internal-options-id"),
+    lambda: Button("", id="internal-button-id"),
+])
+async def test_widget_ids_and_user_values_are_not_accessible_names(factory):
+    async with App().run_test():
+        widget = factory()
+        assert control_name(widget) == ""
+        widget.tooltip = "A descriptive control name"
+        assert control_name(widget) == "A descriptive control name"
+
+
+async def test_control_name_accepts_explicit_labels_without_claiming_announcements():
+    async with App().run_test():
+        assert control_name(Button("Save note")) == "Save note"
+        assert control_name(Input(placeholder="Find within this note")) == "Find within this note"
+        assert control_name(Input("user text", placeholder="  ", id="search")) == ""
