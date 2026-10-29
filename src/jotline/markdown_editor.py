@@ -11,8 +11,9 @@ from __future__ import annotations
 from bisect import bisect_right
 from dataclasses import replace as fresh
 from collections import OrderedDict, defaultdict
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 import re
+import unicodedata
 
 from rich.cells import cell_len
 from rich.style import Style
@@ -71,6 +72,94 @@ BARE_URL = re.compile(r"<?(?:https?|mailto):[^\s<>()]+>?")
 UNWRAP_RUNS = {"bold": {"**", "__", "***", "___"}, "italic": {"*", "_", "***", "___"}, "strike": {"~~"}}
 
 Highlight = tuple[int, int | None, str]
+
+
+def literal_pattern(query: str, *, case_sensitive: bool = False) -> re.Pattern[str]:
+    """The same literal, optionally case-insensitive query for find and replace."""
+    return re.compile(re.escape(query), 0 if case_sensitive else re.IGNORECASE)
+
+
+def _word_character(char: str) -> bool:
+    return char.isalnum() or char == "_" or unicodedata.category(char).startswith("M")
+
+
+def _whole_word_span(text: str, start: int, end: int) -> bool:
+    return ((start == 0 or not _word_character(text[start - 1]))
+            and (end == len(text) or not _word_character(text[end])))
+
+
+def whole_word_match(match: re.Match[str]) -> bool:
+    r"""Keep letters, numbers, underscores and combining marks within a word.
+
+    Python's Unicode ``\w`` omits combining marks. Treating them as a boundary
+    would let replacing ``cafe`` remove just part of decomposed ``café``.
+    Surrounding punctuation is allowed, including for literal queries like C++.
+    """
+    return _whole_word_span(match.string, match.start(), match.end())
+
+
+def literal_matches(pattern: re.Pattern[str], text: str, *, whole_word: bool = False,
+                    start: int = 0) -> Iterator[re.Match[str]]:
+    """Yield document-aware matches for a pattern created by ``literal_pattern``.
+
+    Whole-word candidates may overlap when their boundaries are rejected. A
+    repeated regex search would rescan a long phrase at every rejected start,
+    taking quadratic time. A KMP prefix table visits each character a bounded
+    number of times, including for overlapping candidates and near misses.
+    """
+    if not whole_word:
+        yield from pattern.finditer(text, start)
+        return
+
+    # Undo re.escape, not general regex syntax: every backslash here escapes
+    # exactly one literal character (including a backslash or a newline).
+    query = re.sub(r"\\(.)", r"\1", pattern.pattern, flags=re.DOTALL)
+    start = max(start, 0)
+    if start > len(text) or len(query) > len(text) - start:
+        return
+    if not query:
+        for match in pattern.finditer(text, start):
+            if whole_word_match(match):
+                yield match
+        return
+
+    # Match individual characters with the regex engine rather than applying
+    # str.casefold to the text. Full casefold can expand characters, changing
+    # offsets and semantics; re.IGNORECASE also equates i, I, İ and ı. These
+    # constant-size patterns preserve the engine's actual Unicode equivalence.
+    ignore_case = bool(pattern.flags & re.IGNORECASE)
+    characters = ({char: re.compile(re.escape(char), pattern.flags).fullmatch
+                   for char in set(query)} if ignore_case else {})
+
+    def equal(left: str, right: str) -> bool:
+        return left == right or (ignore_case and characters[left](right) is not None)
+
+    prefix = [0] * len(query)
+    matched = 0
+    for index in range(1, len(query)):
+        while matched and not equal(query[matched], query[index]):
+            matched = prefix[matched - 1]
+        if equal(query[matched], query[index]):
+            matched += 1
+        prefix[index] = matched
+
+    matched = 0
+    for index in range(start, len(text)):
+        while matched and not equal(query[matched], text[index]):
+            matched = prefix[matched - 1]
+        if equal(query[matched], text[index]):
+            matched += 1
+        if matched == len(query):
+            begin, end = index + 1 - len(query), index + 1
+            if _whole_word_span(text, begin, end):
+                # Materialize a real Match only for accepted, nonoverlapping
+                # spans. Their total regex work is bounded by the text length.
+                match = pattern.match(text, begin)
+                assert match is not None
+                yield match
+                matched = 0
+            else:
+                matched = prefix[matched - 1]
 
 
 def list_item(line: str, pos: int = 0) -> re.Match | None:
@@ -856,7 +945,8 @@ class MarkdownEditor(TextArea):
         return True
 
     def select_match(self, query: str, *, reverse: bool = False,
-                     anchor: int | None = None, case_sensitive: bool = False) -> tuple[int, int] | None:
+                     anchor: int | None = None, case_sensitive: bool = False,
+                     whole_word: bool = False) -> tuple[int, int] | None:
         text = self.text
         if not query:
             return None
@@ -867,7 +957,8 @@ class MarkdownEditor(TextArea):
         first = last = candidate = None
         first_ordinal = last_ordinal = candidate_ordinal = 0
         total = 0
-        for total, match in enumerate(re.finditer(re.escape(query), text, 0 if case_sensitive else re.IGNORECASE), start=1):
+        pattern = literal_pattern(query, case_sensitive=case_sensitive)
+        for total, match in enumerate(literal_matches(pattern, text, whole_word=whole_word), start=1):
             if first is None:
                 first, first_ordinal = match, total
             last, last_ordinal = match, total

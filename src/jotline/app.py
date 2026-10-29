@@ -38,6 +38,7 @@ from .omarchy import OmarchySync
 from .outliner_ui import OutlinerScreen
 from .preferences import Preferences
 from .recovery_ui import HealthScreen
+from .rendering import PreviewMarkdown
 from .review_ui import Review
 from .screens import FindInNote, MarkdownPreview, RevisionPreview
 from .search import Match, parse_query, rank, sought
@@ -243,7 +244,7 @@ class Jotline(App):
                 status.tooltip = "Save status, word count, and collection"
                 yield status
             with VerticalScroll(id="live-preview", classes="hidden"):
-                yield Markdown("", open_links=False, id="live-markdown")
+                yield PreviewMarkdown("", id="live-markdown")
         yield Static("Capture first. Make sense of it later.   ctrl+p commands · ctrl+d daily log", id="hint")
         yield Footer()
 
@@ -310,7 +311,7 @@ class Jotline(App):
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if action in YIELDING_HOTKEYS and not self.settings.effective_hotkeys.get(action):
             return False
-        if isinstance(self.screen, OutlinerScreen) and action in {'commands', 'open_note', 'daily', 'daily_previous', 'daily_next', 'new', 'quit', 'settings', 'format_markdown', 'save', 'keys'}:
+        if isinstance(self.screen, OutlinerScreen) and action in {'commands', 'open_note', 'daily', 'daily_previous', 'daily_next', 'new', 'quit', 'settings', 'format_markdown', 'toggle_task', 'save', 'keys'}:
             return True
         if isinstance(self.screen, ModalScreen) and action not in {'focus_next', 'focus_previous'}:
             return False
@@ -1288,7 +1289,7 @@ class Jotline(App):
             Command("recoveries", "Open a recovery copy", self.action_recoveries, group="everyday"),
             Command("preview", "Preview rendered Markdown", self.action_preview, "preview", group="everyday"),
             Command("live-preview", "Toggle side-by-side Markdown preview", self.action_live_preview, "live_preview"),
-            Command("outline", "Jump to heading", self.action_outline, "outline"),
+            Command("outline", "Table of contents · jump to heading", self.action_outline, "outline"),
             Command("tags", "Browse tags", self.action_tags, "tags", group="everyday"),
             Command("add-tags", "Add tags to this note", self.prompt_add_tags),
             Command("workspaces", "Switch workspace", self.action_workspaces, "workspaces", group="everyday"),
@@ -1420,6 +1421,9 @@ class Jotline(App):
         self.copy_note_text(self.editor().text)
 
     def toggle_task(self) -> None:
+        if isinstance(self.screen, OutlinerScreen):
+            self.screen.action_task()
+            return
         self.editor().toggle_task_line()
         self.capture_current_buffer()
 
@@ -1468,7 +1472,11 @@ class Jotline(App):
     @on(Markdown.LinkClicked, "#live-markdown")
     def follow_live_preview_link(self, event: Markdown.LinkClicked) -> None:
         event.stop()
-        if target := wiki_target_from_href(event.href):
+        if event.href.startswith("#"):
+            # Markdown.LinkClicked has already URL-decoded its href once.
+            if not self.query_one("#live-markdown", PreviewMarkdown).goto_anchor(event.href[1:]):
+                self.notify("That heading or footnote was not found.", severity="warning")
+        elif target := wiki_target_from_href(event.href, decoded=True):
             self.follow_wiki_target(target)
 
     @on(events.Click, "#editor")

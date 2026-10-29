@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from io import StringIO
 
 from textual import on
 from textual.app import ComposeResult
@@ -10,21 +11,25 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Input, Label, Markdown, Static, Switch, TextArea
 from rich.text import Text
 
+from .headings import heading_choices, heading_index
 from .links import wiki_target_from_href
 from .limits import EDIT_LIMIT_BYTES
-from .markdown_editor import MarkdownEditor
+from .markdown_editor import MarkdownEditor, literal_matches, literal_pattern
 from .messages import NOTE_LIMIT, TOO_LARGE, plural
-from .modal import Modal
+from .modal import Modal, Palette
+from .rendering import PreviewMarkdown, footnote_choices
 from .store import Note
 
 
 class MarkdownPreview(Modal[None]):
-    BINDINGS = [Binding("escape", "done", "Back to writing")]
+    BINDINGS = [Binding("escape", "done", "Back to writing"), Binding("ctrl+t", "contents", "Contents")]
     CSS = """
     MarkdownPreview { align: center middle; background: $background 80%; }
     #markdown-panel { width: 100; max-width: 96%; height: 94%;
         border: round $accent; padding: 1 2; background: $surface; }
     #markdown-scroll { height: 1fr; }
+    #preview-buttons { height: 3; }
+    #preview-buttons Button { min-width: 0; width: 1fr; }
     """
 
     def __init__(self, body: str):
@@ -38,8 +43,10 @@ class MarkdownPreview(Modal[None]):
             with VerticalScroll(id="markdown-scroll"):
                 # Let Markdown own its initial render during its mount lifecycle.
                 # A second update from the parent mount can race its empty render.
-                yield Markdown(self.body, open_links=False)
-            yield Button("Back to writing", id="close-preview")
+                yield PreviewMarkdown(self.body)
+            with Horizontal(id="preview-buttons"):
+                yield Button("Contents", id="preview-contents", tooltip="Table of contents · Ctrl+T")
+                yield Button("Back to writing", id="close-preview")
 
     def on_mount(self) -> None:
         self.query_one(VerticalScroll).focus()
@@ -47,9 +54,28 @@ class MarkdownPreview(Modal[None]):
     @on(Markdown.LinkClicked)
     def follow_preview_link(self, event: Markdown.LinkClicked) -> None:
         event.stop()
-        if target := wiki_target_from_href(event.href):
+        if event.href.startswith("#"):
+            # Markdown.LinkClicked has already URL-decoded its href once.
+            if not self.query_one(PreviewMarkdown).goto_anchor(event.href[1:]):
+                self.notify("That heading or footnote was not found.", severity="warning")
+        elif target := wiki_target_from_href(event.href, decoded=True):
             self.dismiss(None)
             self.app.follow_wiki_target(target)
+
+    @on(Button.Pressed, "#preview-contents")
+    def action_contents(self) -> None:
+        found = heading_index(self.body)
+        choices = heading_choices(found) + footnote_choices(self.body)
+        if not choices:
+            self.notify("No headings or footnotes yet. Start a line with # to add a heading.")
+            return
+
+        def picked(slug: str | None) -> None:
+            if slug:
+                self.query_one(PreviewMarkdown).goto_anchor(slug)
+            self.query_one("#markdown-scroll", VerticalScroll).focus()
+
+        self.app.push_screen(Palette(choices, "Table of contents"), picked)
 
     @on(Button.Pressed, "#close-preview")
     def action_done(self) -> None:
@@ -101,21 +127,27 @@ class FindInNote(Modal[None]):
     #find-context { height: auto; max-height: 3; color: $foreground; background: $background;
         padding: 0 1; }
     #find-buttons, #replace-buttons { height: 3; margin-top: 1; }
-    #find-buttons Button { margin-right: 1; }
+    #find-buttons Button { margin-right: 1; min-width: 0; width: 1fr; }
+    #find-options { height: 3; }
+    #find-options Label { width: auto; height: 3; content-align: left middle; }
     """
 
     def __init__(self) -> None:
         super().__init__()
         self.anchor = 0
         self.case_sensitive = False
+        self.whole_word = False
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="find-panel"):
             yield Label("Find within this note", id="find-title")
             yield Input(placeholder="Type text to find…", id="find-query", tooltip="Find text in this note")
             yield Input(placeholder="Replace with…", id="replace-value", tooltip="Replacement text")
-            yield Label("Match case")
-            yield Switch(False, id="find-case", tooltip="Match case")
+            with Horizontal(id="find-options"):
+                yield Label("Match case")
+                yield Switch(False, id="find-case", tooltip="Match case")
+                yield Label("Whole word")
+                yield Switch(False, id="find-word", tooltip="Match whole words only")
             with Horizontal(id="replace-buttons"):
                 yield Button("Replace", id="replace-one")
                 yield Button("Replace all", id="replace-all")
@@ -147,7 +179,7 @@ class FindInNote(Modal[None]):
             return
         result = self.editor().select_match(
             query, reverse=reverse, anchor=self.anchor if initial else None,
-            case_sensitive=self.case_sensitive)
+            case_sensitive=self.case_sensitive, whole_word=self.whole_word)
         if result is None:
             status.update("No matches · keep typing or Esc to return")
             self.query_one("#find-context", Static).update("")
@@ -191,31 +223,56 @@ class FindInNote(Modal[None]):
         self.case_sensitive = event.value
         self.show_match(initial=True)
 
+    @on(Switch.Changed, "#find-word")
+    def word_changed(self, event: Switch.Changed) -> None:
+        self.whole_word = event.value
+        self.show_match(initial=True)
+
     def replace_matches(self, *, all_matches: bool = False) -> None:
         query = self.query_one("#find-query", Input).value
         if not query:
             return
         editor = self.editor()
+        text = editor.text
         status = self.query_one("#find-status", Static)
-        pattern = re.compile(re.escape(query), 0 if self.case_sensitive else re.IGNORECASE)
+        pattern = literal_pattern(query, case_sensitive=self.case_sensitive)
         replacement = self.query_one("#replace-value", Input).value
         if all_matches:
             replacement_bytes = len(replacement.encode("utf-8"))
-            output_bytes = len(editor.text.encode("utf-8")) + sum(
+            output_bytes = len(text.encode("utf-8")) + sum(
                 replacement_bytes - len(match[0].encode("utf-8"))
-                for match in pattern.finditer(editor.text))
+                for match in literal_matches(pattern, text, whole_word=self.whole_word))
             if output_bytes > EDIT_LIMIT_BYTES:
                 self.app.notify(TOO_LARGE, severity="error")
                 status.update(f"Not replaced · the note would be over the {NOTE_LIMIT} limit")
                 return
-            body, count = pattern.subn(lambda match: replacement, editor.text)
+            if self.whole_word:
+                # Use the same eligible spans as navigation and size checking.
+                # Filtering re.sub's matches would skip valid overlapping phrases.
+                output = StringIO()
+                last = count = 0
+                for match in literal_matches(pattern, text, whole_word=True):
+                    output.write(text[last:match.start()])
+                    output.write(replacement)
+                    last = match.end()
+                    count += 1
+                output.write(text[last:])
+                body = output.getvalue()
+            else:
+                body, count = pattern.subn(lambda match: replacement, text)
             if count and not editor.replace_checked(body, limit=EDIT_LIMIT_BYTES):
                 status.update(f"Not replaced · the note would be over the {NOTE_LIMIT} limit")
                 return
         else:
-            if not pattern.fullmatch(editor.selected_text):
+            def selection_matches() -> bool:
+                start, end = sorted((editor.selection.start, editor.selection.end))
+                begin, finish = editor.char_offset(start), editor.char_offset(end)
+                match = next(literal_matches(pattern, editor.text, whole_word=self.whole_word, start=begin), None)
+                return match is not None and match.span() == (begin, finish)
+
+            if not selection_matches():
                 self.show_match(initial=True)
-            if not pattern.fullmatch(editor.selected_text):
+            if not selection_matches():
                 return
             if not editor.insert_checked(replacement, limit=EDIT_LIMIT_BYTES):
                 status.update(f"Not replaced · the note would be over the {NOTE_LIMIT} limit")

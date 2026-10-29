@@ -42,7 +42,7 @@ class Palette(Modal[str | None]):
         border: round $accent; padding: 1 2; background: $surface; }
     #palette-title { color: $accent; margin-bottom: 1; }
     #palette-help, #command-count { color: $text-muted; }
-    #commands { height: 1fr; min-height: 3; border: none; }
+    #commands { height: 1fr; min-height: 1; border: none; }
     """
 
     def __init__(self, choices: list[tuple[str, str]], title: str = "Run a command",

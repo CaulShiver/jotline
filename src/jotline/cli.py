@@ -1067,6 +1067,7 @@ def run_sealing(run: Invocation) -> None:
     elif encrypting:
         warning("Its unencrypted saved versions were removed; backups made before now still "
                 "contain the old text")
+    report_warnings(run.vault)
 
 
 def run_encryption(run: Invocation) -> None:

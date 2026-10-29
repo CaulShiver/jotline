@@ -169,6 +169,11 @@ Encrypted notes stay unlocked until you lock them or quit.
 - Encrypting a note deletes its unencrypted saved versions from note history.
   Backup ZIPs made before then (including today's automatic one) still contain
   the old text; delete those you no longer need from `.jotline-backups`.
+  If another program changes the note during encryption, Jotline keeps that
+  distinct edit in a `.jotline-displaced-*` recovery file rather than discard
+  it. A warning explicitly identifies this **unencrypted** file, and
+  `jotline doctor` lists it. Copy it out and reconcile the edit before removing
+  the plaintext recovery file. Avoid concurrent external edits when encrypting.
 - Scripts can set `JOTLINE_PASSPHRASE`, but anything that can read your
   environment can read it too. A wrong value only fails commands that need the
   key; others warn and leave encrypted notes locked. Otherwise commands ask on

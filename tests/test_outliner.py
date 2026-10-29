@@ -218,8 +218,13 @@ async def test_non_alt_move_switch_pane_and_keys_in_outliner_palette(tmp_path):
         assert screen.block_editor().has_focus
         await pilot.press('f6')
         assert screen.view().has_focus
-        await pilot.press('ctrl+r', 'ctrl+g', 'ctrl+l')
+        await pilot.press('ctrl+r', 'ctrl+g')
         assert app.screen is screen and app.editor().text == '- First\n- Second'
+        # The application task shortcut acts on the visible outline selection.
+        await pilot.press('ctrl+l')
+        assert app.screen is screen and app.editor().text == '- First\n- [ ] Second'
+        await pilot.press('ctrl+z')
+        assert app.editor().text == '- First\n- Second'
         await pilot.press('f1')
         assert isinstance(app.screen, KeySheet)
         await pilot.press('escape', 'ctrl+p')

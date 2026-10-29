@@ -39,28 +39,24 @@ def named(widget: WidgetT, tooltip: str) -> WidgetT:
     return widget
 
 
-def id_name(widget: Widget) -> str:
-    return (widget.id or "").replace("-", " ").strip()
-
-
 def control_name(widget: Widget) -> str:
-    """Visible or tooltip name a screen reader could use. Empty means unlabeled."""
+    """Explicit UI text, not a widget ID or the user's current input.
+
+    A name existing in the widget model is not evidence that a native screen
+    reader announces it. That still requires a real terminal report.
+    """
     tooltip = getattr(widget, "tooltip", None)
-    if tooltip:
-        return str(tooltip).strip()
+    if tooltip and (name := str(tooltip).strip()):
+        return name
     if isinstance(widget, Button):
         return str(widget.label).strip()
     if isinstance(widget, Input):
-        return (widget.placeholder or widget.value or "").strip() or id_name(widget)
-    if isinstance(widget, TextArea):
-        return id_name(widget)
-    if isinstance(widget, (OptionList, Select, SelectionList, Switch)):
-        return id_name(widget)
-    return id_name(widget)
+        return (widget.placeholder or "").strip()
+    return ""
 
 
 def unlabeled_controls(root: Widget) -> list[Widget]:
-    """Interactive widgets with no tooltip, label, placeholder, or id-derived name."""
+    """Interactive widgets with no explicit tooltip, button label, or placeholder."""
     found = []
     for widget in root.query(Widget):
         if isinstance(widget, Footer):

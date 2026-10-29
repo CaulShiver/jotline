@@ -341,14 +341,18 @@ class Workflows:
         if not self.save_current():
             return
         success, failures, merge = 0, [], []
+        merge_encrypted = False
         titles = {note.id: note.title for note in self.vault.search(workspace=self.workspace)}
         for key in dict.fromkeys(ids):
             try:
                 note = self.read_in_workspace(key)
                 if operation == 'merge':
+                    if note.locked:
+                        raise ValueError('unlock encrypted notes before merging them')
                     if sum(len(body.encode('utf-8')) + 7 for body in merge) + len(note.body.encode('utf-8')) > EDIT_LIMIT_BYTES:
                         raise ValueError(f'the merged note would be over the {NOTE_LIMIT} size limit')
                     merge.append(note.body)
+                    merge_encrypted = merge_encrypted or note.encrypted
                 else:
                     if operation == 'tag':
                         note.body = tagged_body(note.body, tags)
@@ -365,6 +369,9 @@ class Workflows:
         if operation == 'merge' and not failures:
             try:
                 note = self.vault.new('\n\n---\n\n'.join(merge), workspace=self.workspace)
+                # A merge is not consent to decrypt: protect mixed selections
+                # before the first write, including saved versions and backups.
+                note.encrypted = merge_encrypted
                 self.vault.save(note)
                 self.load(note)
             except (ValueError, OSError) as error:

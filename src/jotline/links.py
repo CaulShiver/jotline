@@ -95,10 +95,12 @@ def wiki_href(target: str) -> str:
     return WIKI_HREF_PREFIX + quote(target, safe="")
 
 
-def wiki_target_from_href(href: str) -> str | None:
+def wiki_target_from_href(href: str, *, decoded: bool = False) -> str | None:
+    """Read a local link, decoding once (Textual LinkClicked already did so)."""
     if not href.startswith(WIKI_HREF_PREFIX):
         return None
-    return unquote(href.removeprefix(WIKI_HREF_PREFIX))
+    target = href.removeprefix(WIKI_HREF_PREFIX)
+    return target if decoded else unquote(target)
 
 
 def _overlaps_code(start: int, end: int, spans: list[tuple[int, int]]) -> bool:
@@ -194,11 +196,15 @@ def stabilize_wiki_target(body: str, target: str, note: LinkedNote) -> str:
 
 
 def note_matches_target(note: LinkedNote, token: str) -> bool:
-    return token.split('#^', 1)[0] in {note.id, note.title, note.heading}
+    return token in {note.id, note.title, note.heading} or token.split('#', 1)[0] in {
+        note.id, note.title, note.heading}
 
 
 def resolve_link_targets(notes: list[LinkedNote], token: str) -> list[LinkedNote]:
-    return [note for note in notes if note_matches_target(note, token)]
+    # Preserve exact titles containing a hash (for example, "C#") before
+    # interpreting a suffix as a heading or permanent block reference.
+    exact = [note for note in notes if token in {note.id, note.title, note.heading}]
+    return exact or [note for note in notes if note_matches_target(note, token)]
 
 
 def index_link_targets(notes: list[LinkedNote]) -> dict[str, list[LinkedNote]]:
@@ -222,7 +228,10 @@ def outgoing_refs(body: str, notes: list[LinkedNote], *,
     refs: list[LinkRef] = []
     seen: set[tuple[str, str, str | None]] = set()
     for link in chain((first,), links):
-        matches = target_index.get(link.target.split('#^', 1)[0], ())
+        if link.target.startswith('#'):
+            # A local heading/block is not a connection to another note.
+            continue
+        matches = target_index.get(link.target) or target_index.get(link.target.split('#', 1)[0], ())
         if not matches:
             key = ("outgoing", link.target, None)
             if key not in seen:
@@ -242,6 +251,7 @@ def outgoing_refs(body: str, notes: list[LinkedNote], *,
 def incoming_refs(target: LinkedNote, notes: list[LinkedNote]) -> list[LinkRef]:
     """Notes that point at ``target`` by id, title, or heading."""
     keys = {target.id, target.title, target.heading}
+    aliases = {alias for note in notes for alias in (note.id, note.title, note.heading)}
     refs: list[LinkRef] = []
     for note in notes:
         if note.id == target.id:
@@ -251,7 +261,11 @@ def incoming_refs(target: LinkedNote, notes: list[LinkedNote]) -> list[LinkRef]:
         if not any(key in note.body for key in keys):
             continue
         for link in iter_wiki_links(note.body):
-            if link.target.split('#^', 1)[0] not in keys:
+            if link.target not in keys and link.target in aliases:
+                # The complete target is another note's exact title, not a
+                # heading on a note whose title happens to be its prefix.
+                continue
+            if not note_matches_target(target, link.target):
                 continue
             refs.append(LinkRef("incoming", link.target, link.snippet, "ok", note.id, note.title))
             break

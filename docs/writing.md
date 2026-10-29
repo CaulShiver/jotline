@@ -71,8 +71,10 @@ returns to writing.
 Navigation moves past the selected match whether you selected its text forwards
 or backwards, and clearing the search leaves the editor selection in place.
 
-Enter replacement text and choose Replace or Replace all. Match case is
-optional, replacements are literal, and Undo reverses one replacement. If a
+Enter replacement text and choose Replace or Replace all. Match case and
+Whole word are optional; Whole word leaves `cat` inside `catalog` alone.
+Letters, numbers, underscores and combining marks stay within a word.
+Replacements are literal, and Undo reverses one replacement. If a
 replacement would exceed the note size limit, the text stays unchanged and the
 dialog shows **Not replaced**; a rejected single replacement keeps the match
 selected so you can shorten the replacement and retry.
@@ -132,3 +134,10 @@ a starter and save it under a new name.
 Inserted context is literal, and unknown placeholders stay unchanged. Includes
 are limited to eight levels and 64 expansions, with a 10 MiB output limit. The
 daily template in Settings accepts `{{date}}`.
+
+## Markdown preview and export
+
+Preview and HTML export share one offline Markdown dialect, including tables,
+tasks, strikethrough, reference links, and named footnotes. See the
+[Markdown dialect guide](markdown.md) for footnote syntax, navigation,
+duplicate/undefined-reference behavior, and safety boundaries.

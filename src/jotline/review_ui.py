@@ -8,7 +8,8 @@ from textual.containers import VerticalScroll
 from textual.widgets import Markdown
 
 from .export import FORMAT_NAMES, ExportError, export_bytes, printable_markdown, suggested_name, write_export
-from .markdown_editor import MarkdownEditor, headings
+from .headings import heading_choices, heading_index
+from .markdown_editor import MarkdownEditor
 from .messages import failed
 from .modal import Palette, TextPrompt
 from .screens import MarkdownPreview
@@ -260,13 +261,22 @@ class Review:
                 y=pane.max_scroll_y * (self._live_preview_ratio or 0.0), animate=False))
 
     def action_outline(self) -> None:
+        from .outliner_ui import OutlinerScreen
+        if isinstance(self.screen, OutlinerScreen) and not self.screen.flush():
+            return
         editor = self.query_one("#editor", MarkdownEditor)
-        found = headings(editor.document.lines)
+        found = heading_index(editor.text)
         if not found:
             self.notify("No headings yet. Start a line with # to add one.")
             return
-        self.push_screen(Palette([(str(row), "  " * (level - 1) + title + f" · line {row + 1}")
-                                  for row, level, title in found], "Jump to heading"), self.jump_to_row)
+        def picked(slug: str | None) -> None:
+            heading = next((heading for heading in found if heading.slug == slug), None)
+            if heading:
+                self.jump_to_heading_row(heading.row)
+            else:
+                editor.focus()
+
+        self.push_screen(Palette(heading_choices(found), "Table of contents · jump to heading"), picked)
 
     def jump_to_row(self, key: str | None) -> None:
         editor = self.query_one("#editor", MarkdownEditor)

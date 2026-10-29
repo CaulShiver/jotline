@@ -748,7 +748,7 @@ class Vault:
         unlink_quietly(directory, temp)
 
     def _publish_replace(self, directory: int, temp: str, filename: str, note_id: str,
-                         actual: str) -> None:
+                         actual: str, *, newly_encrypted: bool = False) -> None:
         # The displaced name carries the note ID. The live file may use a slug,
         # and a crash puts the note back under <id>.md when that name is free.
         displaced = f"{history.DISPLACED_PREFIX}{note_id}.{uuid4().hex}"
@@ -786,9 +786,16 @@ class Vault:
             try:
                 displaced_raw = read_regular_at(directory, displaced)
                 if displaced_raw != actual:
-                    history.snapshot(self, note_id, displaced_raw, vault_directory=directory)
-                    self.warnings.append(
-                        "An external edit raced with save and was preserved in note history")
+                    if newly_encrypted:
+                        # Post-commit cleanup removes plaintext history. Keep
+                        # these distinct external bytes instead of recording
+                        # a revision that cleanup would immediately destroy.
+                        keep_displaced = True
+                        self._warn_unencrypted_conflict(displaced)
+                    else:
+                        history.snapshot(self, note_id, displaced_raw, vault_directory=directory)
+                        self.warnings.append(
+                            "An external edit raced with save and was preserved in note history")
             except (OSError, ValueError) as error:
                 keep_displaced = True
                 self.retain_warning(
@@ -796,6 +803,11 @@ class Vault:
         finally:
             if not keep_displaced:
                 unlink_quietly(directory, displaced)
+
+    def _warn_unencrypted_conflict(self, displaced: str) -> None:
+        self.retain_warning(
+            f"An external edit during encryption was retained unencrypted as {displaced}; "
+            "copy it out and reconcile it before removing this plaintext file")
 
     def _post_commit(self, note: Note, directory: int, *, newly_encrypted: bool) -> None:
         try:
@@ -809,26 +821,49 @@ class Vault:
             except OSError as error:
                 self.retain_warning(f"Unencrypted saved versions of {note.id} could not be removed: {error}")
 
-    def _retire_previous(self, directory: int, name: str, expected: str, note_id: str) -> None:
+    def _retire_previous(self, directory: int, name: str, expected: str, note_id: str,
+                         *, newly_encrypted: bool = False) -> None:
         """Remove the old filename after the new one is published.
 
-        A change that landed in the old file during the rename is snapshotted
-        first. If that snapshot cannot be written, the old file stays.
+        Move precisely the old inode aside before inspecting it. A writer
+        creating another file at the old path afterwards must keep that file.
+        Changed text is snapshotted first; if that fails, the displaced file
+        stays recoverable under the same convention as a failed replacement.
         """
+        displaced = f"{history.DISPLACED_PREFIX}{note_id}.{uuid4().hex}"
         try:
-            latest = read_regular_at(directory, name)
+            replace_at(directory, name, displaced)
         except FileNotFoundError:
             return
+        except OSError as error:
+            self.retain_warning(f"The previous file {name} could not be retired and was kept: {error}")
+            return
+        try:
+            latest = read_regular_at(directory, displaced)
+        except (OSError, ValueError) as error:
+            self.retain_warning(f"The previous file {name} was retained as {displaced}: {error}")
+            return
         if latest != expected:
-            before = len(self.sticky_warnings)
-            recorded = self._snapshot(note_id, latest, directory)
-            if recorded is None and len(self.sticky_warnings) > before:
+            if newly_encrypted:
+                self._warn_unencrypted_conflict(displaced)
+                return
+            try:
+                # None means this text is already the newest revision, not
+                # failure. Handle failure directly: retained warnings are
+                # deduplicated, so their count cannot tell us whether this
+                # particular external edit was safely recorded.
+                history.snapshot(self, note_id, latest, vault_directory=directory)
+            except OSError as error:
+                self.retain_warning(f"Note history is not being kept: {error}")
                 self.retain_warning(
-                    f"The previous file {name} was kept because its contents changed during rename")
+                    f"The previous file {name} was retained as {displaced} because its contents changed during rename")
                 return
             self.warnings.append(
                 "An external edit raced with renaming the note and was preserved in note history")
-        unlink_quietly(directory, name)
+        try:
+            unlink_quietly(directory, displaced)
+        except OSError as error:
+            self.retain_warning(f"The previous file {name} was retained as {displaced}: {error}")
 
     def _save_locked(self, note: Note, directory: int, *, preserve_updated: bool = False) -> None:
         self._check_saveable(note)
@@ -903,7 +938,8 @@ class Vault:
             if actual is None:
                 self._publish_created(directory, temp, target, note.id)
             elif target == current:
-                self._publish_replace(directory, temp, current, note.id, actual)
+                self._publish_replace(directory, temp, current, note.id, actual,
+                                      newly_encrypted=newly_encrypted)
             else:
                 try:
                     publish_new(directory, temp, target)
@@ -911,7 +947,8 @@ class Vault:
                     raise ConflictError(
                         f"Could not name the note {target} because that file already exists. "
                         f"{current} was left unchanged.") from None
-                self._retire_previous(directory, current, actual, note.id)
+                self._retire_previous(directory, current, actual, note.id,
+                                      newly_encrypted=newly_encrypted)
             # Replacement has committed even if the directory durability check fails.
             # Keep the baseline current so retrying does not invent an edit conflict.
             note.original, note.updated, note.created = raw, stamp, meta["created"]

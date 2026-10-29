@@ -1,167 +1,105 @@
-# Markdown editing
+# Markdown dialect and offline rendering
 
-The editor colours Markdown as you type: headings, bold, italic, strikethrough,
-inline and fenced code, links, `[[note links]]`, tags, lists, tasks, quotes,
-rules and tables. Code inside a fence is shown as code, not formatted. Notes stay
-plain `.md` files.
+Jotline keeps your note as plain Markdown. Full preview, side-by-side preview,
+and HTML export use the same parser and footnote numbering. Word and PDF
+exports start from that HTML; the installed converter controls their final
+layout. Exporting Markdown leaves the source unchanged.
 
-Enter continues a bullet (`- `), numbered (`1. ` becomes `2. `), task (`- [ ] `)
-or quote (`> `) line. Enter on an empty nested item (`  - `, `    - [ ] `,
-`  1. `) moves it up to its parent's indentation, with tabs or spaces as the list
-uses them; Enter on an empty top-level item ends the list.
+## Supported syntax
 
-Type `[[` to pick a note to link, or `;;` to pick a template snippet. Neither
-opens inside a fenced code block or an inline code span, so `for(;;)` stays
-quiet.
+The base dialect is **CommonMark**, with these extensions:
 
-**Tab** inserts indentation at the cursor. On a list item or selected lines it
-indents the whole line or selection by two spaces; **Shift+Tab** removes one
-level. **Cmd+]** indents the current line or the selected lines by two spaces,
-and **Cmd+[** removes one level, including plain text that is not a list. The
-terminal has to send Command; see [keyboard](keyboard.md#terminal-caveats).
-Enter keeps the current indentation, including in plain text and code
-blocks. Use **Ctrl+Tab** / **Ctrl+Shift+Tab** to move focus out of the editor,
-or **Ctrl+F** to search notes (many terminals send Ctrl+Tab as plain Tab; see
-[keyboard](keyboard.md#terminal-caveats)). Hover descriptions stay hidden.
+- Pipe tables and `~~strikethrough~~`.
+- Tasks written as `- [ ]` or `- [x]`, displayed as text checkboxes.
+- Jotline `[[note links]]`, clickable in preview and printed as labels in
+  exports. See [links and connections](writing.md#links-and-connections).
+- Named footnotes, using `[^label]` and `[^label]: Definition`.
+- Stable heading fragments and a keyboard **Jump to heading** table of
+  contents. Duplicate headings receive distinct fragment IDs.
 
-**Ctrl+Z** undoes edits, formatting and replacements. Each of the last eight
-notes you left keeps its undo history, so going back to one and pressing Ctrl+Z
-picks up where you were. The history is dropped when the note's text changed in
-between (another program, `$EDITOR`, a task ticked from the palette, a sync), and
-is never kept for encrypted or trashed notes.
+Normal Markdown links, reference-style links (`[label][reference]`), explicit
+autolinks (`<https://example.com>`), fenced and indented code, and inline code
+are supported. Bare URLs are not automatically turned into links. Task and
+note-link examples inside fenced code remain literal.
 
-Select text with the mouse or Shift + arrow keys, then click **Bold**, **Italic**,
-**H**, **List**, **Task**, **Link**, or **Code** above the editor. **More** opens
-all formats, and **Preview** shows the rendered note. The toolbar scrolls in
-narrow windows and hides in focus mode. Selections keep Markdown's theme colours
-over a tinted background; the cursor also uses the active theme's accent.
+## Footnotes
 
-You can also open **Format** in the sidebar for the Markdown menu, or type
-**format** in Ctrl+P. With no selection, inline formats insert a selected `text`
-placeholder; line formats apply to the current or selected lines. Each command
-toggles, so running it again removes the formatting:
+```markdown
+A claim[^source], followed by the same reference[^source].
 
-| Command | Result |
-| --- | --- |
-| Format bold / italic / strikethrough / inline code | `**text**`, `*text*`, `~~text~~`, `` `text` `` around the selection, or a selected placeholder |
-| Format heading, heading level 1–6 | `#` to `######` on the current or selected lines; a different level replaces the old one |
-| Format bullet / numbered / task list, blockquote | `- `, `1. 2. 3.`, `- [ ] `, `> ` on each selected line |
-| Format indent lines / outdent lines | Two spaces in or out, for nested lists |
-| Format code block | Wraps the selected lines in a fence long enough for any backticks inside |
-| Format link / image | `[text](url)` or `![alt text](path)`; a selected URL becomes the target |
-| Format table · insert or tidy | Inserts a table, or lines up the columns of the table under the cursor (alignment colons kept) |
-| Format horizontal rule | `---` on its own line |
+[^source]: The source, with **formatting** and an ordinary Markdown link.
 
-Preview pauses above 256 KiB, 600 nonblank lines, or 400 table separator
-characters across the note; editing and saving remain available.
+    Indent additional paragraphs by four spaces.
+```
 
-**Preview rendered Markdown** opens a full-screen preview of headings,
-emphasis, lists, quotes, tables and fenced code, including unsaved writing.
-Scroll with the arrow keys, Page Up/Page Down or the mouse; `Esc` returns to the
-same editor selection. It is a read-only snapshot, so reopen it after editing. **Toggle side-by-side
-Markdown preview** keeps a live preview beside the editor that follows your
-typing and cursor; it needs a terminal wider than 80 columns, and below that the
-full preview opens instead. Both previews show checkboxes as ☐/☒ and note links
-as note titles, and neither opens files, browsers or images; raw HTML is not
-rendered. Click a `[[note link]]` in preview to open that note. **Jump to
-heading** lists the note's headings for quick navigation.
+Footnotes appear at the end, numbered by their first reference, not by
+definition order. Repeated references share a number and get separate return
+links. In preview, click a reference to scroll to its definition, or click
+`↩` to return to the paragraph containing the reference. A reference in a
+table returns to that table. HTML exports provide the same local links.
+In full preview, **Ctrl+T** opens **Contents**: choose **Footnote N** to reach
+its definition, or **Return to footnote N reference** to reach its first
+reference using the keyboard. Inline links themselves are not individually
+keyboard-focusable in the terminal widget; pointer backlinks can return to
+each repeated reference separately.
 
-Every formatting command, both previews and the heading outline can have its own
-key in **Ctrl+, → Keyboard shortcuts**; they start unassigned, so your existing
-keys are kept. Clear a field to unassign it; **Reset hotkeys** clears them again.
-**Ctrl+, → Editor** turns Markdown highlighting or list continuation off.
+Labels may contain Unicode, but are case-sensitive and must contain 1–200
+characters with no whitespace or square brackets. Use the same Unicode
+spelling in the reference and definition. Generated IDs are numeric and do
+not contain label text. The label limit keeps malformed imported Markdown
+from causing expensive repeated scans.
 
-There is no second Vim editor. Optional motions are out of scope.
+Undefined references stay visible as `[^missing]`. Unreferenced definitions
+are omitted from rendered output, and the **last definition wins** when a
+label is defined more than once. Fenced and inline code do not create
+footnotes. Inline `^[footnote text]` syntax is not supported. Footnote-like
+syntax outside the label rules is processed as ordinary Markdown instead.
 
-## Outliner
+## Headings and local navigation
 
-Choose **Ctrl+P → Outliner** (type to reach it; it is not on the toolbar or the
-everyday list). Blocks wrap in
-one outline surface. Use arrows or click to navigate, then **Enter** or **F2**
-to edit directly on the selected row. **Ctrl+Tab** or **F6** switches between
-editing text and navigating branches; F6 works in terminals that send Ctrl+Tab
-as plain Tab. **Commands** (Ctrl+P in the outliner) lists every outline
-operation by name with its keys.
+**Ctrl+P → Table of contents** (also available as **Jump to heading**) moves
+the editor to a heading without changing the note. In full preview,
+**Ctrl+T** or **Contents** opens the local heading/footnote picker. The heading
+index understands both `# Heading` and underlined setext headings, including
+headings nested in quotes or lists; code examples are not headings.
 
-| Control | Result |
-| --- | --- |
-| Enter at the beginning of nonempty text | Insert an empty preceding sibling; the original block keeps its children |
-| Enter in the middle or at the end | Split into a sibling after the branch; children stay with the first block |
-| Enter in an empty child | Outdent one level |
-| + Child / Insert child block | Add a child and start editing it |
-| Shift+Enter / Commands → Insert continuation line | Insert a line within the block |
-| Backspace at the start / Merge block | Join with the previous sibling when safe; preserve descendants |
-| Up / Down while editing | Move within wrapped text, then to the neighboring visible block at the boundary |
-| Tab / Shift+Tab, Cmd+] / Cmd+[ | Indent / outdent the selected branches |
-| Alt+Shift+↑ / ↓, Ctrl+↑ / ↓, Ctrl+Shift+↑ / ↓ | Move selected branches among their siblings (the Ctrl forms need no Alt, for macOS without Option-as-Meta) |
-| Ctrl+Space / Fold / disclosure arrow | Collapse or expand the branch |
-| Left / Right while navigating | Collapse or go to parent; expand or go to first child |
-| Home / End while navigating | First / last visible block |
-| Type a letter while navigating | Next visible block beginning with that letter |
-| Alt+→ / Focus | Focus the current branch |
-| Alt+← / clickable breadcrumb | Navigate toward the whole note |
-| Ctrl+Enter / Task | Add a checkbox, then toggle it |
-| Ctrl+F / Find | Search all blocks and ancestor paths, including folded branches |
-| Shift+↑ / ↓ while navigating | Extend branch selection |
-| Ctrl+click / Select or deselect branch | Toggle branch selection |
-| Ctrl+Shift+Backspace / Delete selected branches | Delete selected branches and descendants |
-| Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z | Undo / redo text edits and structural changes |
-| Ctrl+S | Save immediately; autosave also runs while outlining |
-| Ctrl+Tab / F6 | Switch between the tree and the block being edited |
-| F1 | Keyboard cheat sheet, including outliner keys |
-| Esc | Leave text editing, then return to Markdown |
+Use `[Section](#section)` for a local Markdown link, `[[#Heading]]` for a local
+Jotline link, or `[[note#Heading]]` / `[[note-id#section-1]]` for another note's
+heading. Exact note titles containing `#` take priority over interpreting the
+character as a heading separator. Exported wiki links remain plain labels,
+not links to other exported files.
 
-If a terminal sends Shift+Enter as ordinary Enter, use **Commands → Insert
-continuation line** or assign that command a portable shortcut in Settings.
-Every outline command has an optional override under **Settings → Outliner
-shortcuts**. A shortcut already used by an application command cannot also be
-assigned to an outline operation. The command palette and Save honor their
-application shortcut preferences.
+Fragment IDs normalize Unicode to NFC and case-fold it, remove punctuation,
+and replace whitespace with hyphens. Duplicate stems receive `-1`, `-2`, and
+so on without colliding with existing IDs. An empty stem becomes `section`;
+the `jl-footnote-` prefix is reserved for footnotes, so such heading stems are
+prefixed with `section-`.
 
-**Working with several blocks.** Selected rows are highlighted independently
-of the caret. Selecting both a parent and a descendant operates on the parent
-once. The command menu includes **Move selected branches to…**, **Group selected
-sibling branches**, **Duplicate**, **Copy**, **Cut**, and **Paste clipboard as
-outline branches**. Move destinations are within the current note. A parent
-cannot be moved into its own descendant. Grouping preserves branch order.
+Heading anchors remain stable until the heading text or duplicate order
+changes. For a permanent block destination, use Jotline's existing `#^block`
+references instead. A bare `[[note-id]]` inside a heading intentionally stays
+an ID rather than expanding to the current note title, keeping its fragment
+independent of a title lookup or rename; use `[[note-id|Readable label]]` for
+an explicit heading label.
 
-**Pasting.** Outline paste uses text copied within Jotline and retains its
-hierarchy. **Paste clipboard as literal block text** escapes leading structural
-Markdown markers. Multiline terminal paste also defaults to escaping those
-markers, so pasted bullets do not unexpectedly absorb or rearrange children.
-Ordinary text editing still supports Markdown; typing structural Markdown
-updates the outline to match the saved source. A full-height block inspector
-is available in Commands for long passages.
+## Safety and rendering differences
 
-**Navigation and saving.** Note commands, daily logs, formatting, note-link
-completion (`[[`), and snippets (`;;`) are available while outlining, and
-`[[` and `;;` stay quiet inside code there too. Search
-reveals the result's ancestors; **Restore folds after search** restores the
-previous folding state. **Previous / Next outline location** return through
-branch-focus history. Folds, focused branch, caret, and scroll position are
-remembered for unencrypted notes in `.jotline-outline.json`. That file contains
-positions and a revision hash. Encrypted notes keep view state only while open;
-encrypting a note removes its saved view state. External edits invalidate stored positions.
-View operations do not enter text undo history; undo preserves unrelated folds.
-Enable **Settings → Open notes in outliner mode** to make this the default.
+- Rendering is offline. Nothing in the note can fetch a remote resource or
+  read a local image file.
+- Raw HTML is displayed as text, never executed. HTML exports also carry a
+  restrictive Content Security Policy.
+- Images are represented without loading them: an image label/link in HTML,
+  and a terminal image marker with its label in preview.
+- Unsafe link schemes rejected by the Markdown parser (such as `javascript:`)
+  do not become links. Preview never opens external URLs; only supported
+  local heading/footnote and Jotline note links are followed.
+- HTML viewers may open ordinary links when you explicitly click them.
+  Jotline's offline rendering promise does not disable your browser's normal
+  navigation.
+- Fonts, checkbox glyphs, line wrapping, syntax colors, and table layout vary
+  by terminal, browser, and document converter. The source text and parsing
+  rules stay the same.
 
-**Markdown ownership.** List structure follows CommonMark marker widths,
-four-column tab stops, and code-container boundaries. Parent paragraphs after
-nested lists remain part of the parent when a child moves or is deleted.
-Existing Markdown opens without conversion. Non-list containers, including
-block quotes and code, remain editable Markdown blocks. Restructuring a plain
-block explicitly converts it to a bullet. Empty or non-1 numbered children may
-need a blank separator to remain nested in CommonMark; Jotline inserts it.
-Very deep input beyond the parser's nesting limit remains preserved as text
-inside the deepest recognized block. Splitting a block keeps children with the
-first half; merging fenced blocks or completed tasks requires an explicit text
-edit rather than an automatic join.
-
-**Permanent block references.** **Copy permanent block reference** adds a unique
-`^id` only when needed and copies `[[note-id#^id]]`. References survive edits and
-moves within the note. Duplicating or pasting branches creates fresh session
-identities and removes copied anchors. **Open block reference** navigates to the
-target; **Preview referenced branch** opens a read-only preview of its current
-text. Preview is one level deep, so cyclic references do not recurse. This is
-Jotline's explicit Markdown extension, not a promise of complete Logseq graph
-compatibility. Embeds are previews, not independently editable mirrors.
+The regression corpus in `tests/fixtures/markdown_dialect.md` is synthetic and
+covers tables, tasks, footnotes, reference links, raw HTML, unsafe URIs,
+images, code fences, duplicate labels, undefined references, and Unicode.

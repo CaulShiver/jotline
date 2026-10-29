@@ -105,6 +105,7 @@ class Encryption:
                                "The note on disk is unchanged."), severity="error", timeout=10)
             return
         self.load(note)
+        self.notify_storage_warnings()
         if not changed:
             self.notify("This note is already encrypted." if encrypted else "This note is not encrypted.")
             return

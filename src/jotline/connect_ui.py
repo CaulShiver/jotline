@@ -4,6 +4,7 @@ from __future__ import annotations
 from textual import events
 from textual.widgets import Static
 
+from .headings import resolve_heading
 from .links import (
     LinkRef,
     connection_mark,
@@ -147,6 +148,8 @@ class Connections:
                 self.create_from_link(key.removeprefix("create:"))
             elif key.startswith("open:"):
                 self.load_id(key.removeprefix("open:"))
+            elif key.startswith("follow:"):
+                self.follow_wiki_target(key.removeprefix("follow:"))
 
         self.push_screen(Palette(choices, "Connections"), picked)
 
@@ -161,14 +164,13 @@ class Connections:
         resolved = [item for item in outgoing if item.status != "broken"]
         broken = [item for item in outgoing if item.status == "broken"]
         if len(resolved) == 1 and resolved[0].note_id:
-            self.load_id(resolved[0].note_id)
+            self.follow_wiki_target(resolved[0].target)
             return
         if resolved:
-            resolved_ids = {item.note_id for item in resolved}
-            notes = [note for note in self.cached_workspace_notes()
-                     if note.id in resolved_ids]
-            self.push_screen(Palette(self.note_choices(notes), "Follow a link"),
-                             lambda key: self.load_id(key) if key else None)
+            choices = [(self.connection_target(item), item.title + (
+                " · #" + item.target.split('#', 1)[1] if '#' in item.target else "")) for item in resolved]
+            self.push_screen(Palette(choices, "Follow a link"),
+                             lambda key: self.follow_wiki_target(key) if key else None)
             return
         if broken:
             self.follow_wiki_target(broken[0].target)
@@ -176,16 +178,32 @@ class Connections:
         self.notify("No link under the cursor. Place the cursor on [[…]] or insert a note link.")
 
     def follow_wiki_target(self, target: str) -> None:
-        if '#^' in target:
+        # An exact note title wins over fragment syntax (notably titles like C#).
+        exact = self.cached_link_targets().get(target, [])
+        if not exact and '#' in target and '#^' not in target:
+            note_target, fragment = target.split('#', 1)
+            matches = (self.cached_link_targets().get(note_target, []) if note_target else [self.current])
+            if len(matches) == 1:
+                self.open_heading_target(matches[0].id, fragment)
+            elif matches:
+                self.push_screen(Palette(self.note_choices(matches),
+                                         f"“{note_target}” matches {len(matches)} notes"),
+                                 lambda key: self.open_heading_target(key, fragment) if key else None)
+            else:
+                self.notify(f'No note named {note_target}. Check the heading link text.', severity='warning')
+            return
+        if not exact and '#^' in target:
             from .outliner import ANCHOR, Outline
             from .outliner_ui import OutlinerScreen
             note_target, anchor = target.split('#^', 1)
-            matches = self.cached_link_targets().get(note_target, [])
+            matches = self.cached_link_targets().get(note_target, []) if note_target else [self.current]
             if len(matches) != 1:
                 self.notify(f'This block reference points at “{note_target}”, which ' + (
                     f'matches {len(matches)} notes. Copy permanent block reference in the outliner gives a link '
                     'by note ID.' if matches else 'is not a note in this workspace. Check the link text.'),
                     severity='warning')
+                return
+            if not self.save_current(explicit=True):
                 return
             self.load_id(matches[0].id)
             if self.current.id != matches[0].id:
@@ -223,6 +241,53 @@ class Connections:
         self.notify(f"No note named {target}. Create it, or pick another link.")
         self.push_screen(Palette([("create:" + target, f"Create note “{target}”")], "Broken link"),
                          lambda key: self.create_from_link(target) if key else None)
+
+    def open_heading_target(self, note_id: str, fragment: str) -> None:
+        """Open a heading only after the current draft is safely saved."""
+        if not self.save_current(explicit=True):
+            return
+        try:
+            note = self.vault.read(note_id, workspace=self.workspace) if note_id != self.current.id else self.current
+        except (OSError, ValueError) as error:
+            self.notify(failed('Could not open that heading', error), severity='error')
+            return
+        if note.locked:
+            self.prompt_unlock(then=lambda: self.open_heading_target(note_id, fragment))
+            return
+        heading = resolve_heading(note.body, fragment)
+        if heading is None:
+            self.notify(f'Heading “{fragment}” was not found in “{note.title}”.', severity='warning')
+            return
+        if self.current.id != note_id:
+            try:
+                self.load(note)
+            except (OSError, ValueError) as error:
+                self.notify(failed('Could not open that heading', error), severity='error')
+                return
+        if self.current.id != note_id:
+            return
+        self.jump_to_heading_row(heading.row)
+
+    def jump_to_heading_row(self, row: int) -> None:
+        """Move in Markdown, or select the corresponding visible outline block."""
+        from .outliner_ui import OutlinerScreen
+        if isinstance(self.screen, OutlinerScreen):
+            if not self.screen.flush():
+                return
+            self.screen.update_save_status()
+            outline = self.screen.outline
+            if outline.roots:
+                block = outline.at_row(row)
+                self.screen.current, self.screen.zoomed = block, block.parent
+                parent = block.parent
+                while parent:
+                    parent.collapsed = False
+                    parent = parent.parent
+                self.screen.record_location()
+                self.screen.rebuild()
+                return
+        self.editor().move_cursor((row, 0), center=True)
+        self.editor().focus()
 
     def create_from_link(self, target: str) -> None:
         title = " ".join(target.strip().split())
@@ -263,7 +328,7 @@ class Connections:
             choices.append((key, f"← {item.title or item.target}{snippet}"))
         for item in outgoing:
             if item.status == "broken":
-                key = "create:" + item.target
+                key = ("follow:" if '#' in item.target else "create:") + item.target
                 if key in seen:
                     continue
                 seen.add(key)
@@ -272,10 +337,16 @@ class Connections:
                 continue
             if item.status not in {"ok", "ambiguous"}:
                 raise ValueError(f"unknown link status: {item.status}")
-            key = "open:" + (item.note_id or item.target)
+            key = "follow:" + self.connection_target(item)
             if key in seen:
                 continue
             seen.add(key)
             snippet = f" · {item.snippet}" if item.snippet else ""
             choices.append((key, f"{connection_mark(item.status)} {item.title or item.target}{snippet}"))
         return choices
+
+    def connection_target(self, item: LinkRef) -> str:
+        """Keep heading/block destinations when selecting a connection."""
+        if '#' in item.target and not self.cached_link_targets().get(item.target):
+            return (item.note_id or item.target.split('#', 1)[0]) + '#' + item.target.split('#', 1)[1]
+        return item.note_id or item.target
