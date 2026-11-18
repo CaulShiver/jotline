@@ -110,7 +110,7 @@ class OutlinerScreen(Modal[None]):
         Binding('shift+down', 'extend(1)', 'Select next', show=False),
     ]
     CSS = """
-    OutlinerScreen { background: $background; padding: 1 2 0 2; }
+    OutlinerScreen { align: left top; background: $background; padding: 1 2 0 2; }
     #outline-title { height: 1; color: $accent; text-style: bold; }
     #outline-breadcrumb { height: 3; }
     #outline-breadcrumb Button { width: auto; min-width: 6; border: none; }

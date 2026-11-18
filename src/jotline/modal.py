@@ -21,6 +21,10 @@ from . import fuzzy
 
 
 class Modal(ModalScreen[ScreenResultType]):
+    DEFAULT_CSS = """
+    Modal { align: center middle; background: $background 80%; }
+    Modal .dialog { border: round $accent; padding: 1 2; background: $surface; }
+    """
     _dismissed = False
 
     def dismiss(self, result: ScreenResultType | None = None):
@@ -38,8 +42,7 @@ class Palette(Modal[str | None]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
     CSS = """
     Palette { align: center top; background: $background 70%; }
-    #palette { width: 76; max-width: 95%; height: 80%; max-height: 80%; margin-top: 3;
-        border: round $accent; padding: 1 2; background: $surface; }
+    #palette { width: 76; max-width: 95%; height: 80%; max-height: 80%; margin-top: 3; }
     #palette-title { color: $accent; margin-bottom: 1; }
     #palette-help, #command-count { color: $text-muted; }
     #commands { height: 1fr; min-height: 1; border: none; }
@@ -54,7 +57,7 @@ class Palette(Modal[str | None]):
         self.filtered = choices
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="palette"):
+        with Vertical(id="palette", classes="dialog"):
             yield Label(self.heading, id="palette-title")
             yield Input(placeholder="Type to filter…", id="command-query",
                         tooltip="Filter commands by name")
@@ -156,8 +159,7 @@ class TextPrompt(Modal[str | None]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
     CSS = """
     TextPrompt { align: center top; background: $background 70%; }
-    #text-prompt { width: 72; max-width: 95%; height: auto; margin-top: 3;
-        border: round $accent; padding: 1 2; background: $surface; }
+    #text-prompt { width: 72; max-width: 95%; height: auto; margin-top: 3; }
     """
 
     def __init__(self, title: str, placeholder: str, value: str = "", *, password: bool = False):
@@ -165,7 +167,7 @@ class TextPrompt(Modal[str | None]):
         self.heading, self.placeholder, self.value, self.password = title, placeholder, value, password
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="text-prompt"):
+        with Vertical(id="text-prompt", classes="dialog"):
             yield Label(self.heading)
             yield Input(self.value, placeholder=self.placeholder, password=self.password, id="prompt-value",
                         tooltip=self.heading)

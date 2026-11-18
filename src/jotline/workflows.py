@@ -29,8 +29,7 @@ class Arrange(Modal[str | None]):
                 Binding('alt+up', 'move(-1)', 'Move up'), Binding('alt+down', 'move(1)', 'Move down'),
                 Binding('ctrl+d', 'duplicate', 'Duplicate')]
     CSS = '''
-    Arrange { align: center middle; background: $background 80%; }
-    #arrange-panel { width: 80; max-width: 96%; height: 85%; border: round $accent; padding: 1 2; background: $surface; }
+    #arrange-panel { width: 80; max-width: 96%; height: 85%; }
     #arrange-items { height: 1fr; }
     '''
 
@@ -41,7 +40,7 @@ class Arrange(Modal[str | None]):
         self.parts = split_parts(body, paragraphs)
 
     def compose(self) -> ComposeResult:
-        with Vertical(id='arrange-panel'):
+        with Vertical(id='arrange-panel', classes='dialog'):
             yield Label('Arrange paragraphs' if self.separator == '\n\n' else 'Arrange lines')
             yield Static('↑↓ select · Alt+↑↓ move · Ctrl+D duplicate · Ctrl+S apply · Esc cancel')
             yield named(OptionList(id='arrange-items'), 'Items to rearrange')
@@ -78,8 +77,7 @@ class Arrange(Modal[str | None]):
 class SelectNotes(Modal[list[str] | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel'), Binding('ctrl+s', 'apply', 'Choose operation')]
     CSS = '''
-    SelectNotes { align: center middle; background: $background 80%; }
-    #bulk-panel { width: 80; max-width: 96%; height: 85%; border: round $accent; padding: 1 2; background: $surface; }
+    #bulk-panel { width: 80; max-width: 96%; height: 85%; }
     #bulk-items { height: 1fr; }
     '''
 
@@ -88,7 +86,7 @@ class SelectNotes(Modal[list[str] | None]):
         self.choices = choices
 
     def compose(self):
-        with Vertical(id='bulk-panel'):
+        with Vertical(id='bulk-panel', classes='dialog'):
             yield Label('Select notes · Space toggles · Ctrl+S choose operation · Esc cancel')
             yield Static('0 selected', id='bulk-count')
             yield named(SelectionList(*[(Text(label), key) for key, label in self.choices], id='bulk-items'),

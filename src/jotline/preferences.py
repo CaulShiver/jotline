@@ -17,8 +17,7 @@ class Preferences(Modal[Settings | None]):
                 Binding('alt+3', 'jump("shortcuts")', 'Shortcuts'),
                 Binding('alt+4', 'jump("template")', 'Daily template')]
     CSS = '''
-    Preferences { align: center middle; background: $background 80%; }
-    #preferences { width: 78; max-width: 96%; height: 90%; border: round $accent; padding: 1 2; background: $surface; }
+    #preferences { width: 78; max-width: 96%; height: 90%; }
     #preferences-title { height: 2; color: $accent; text-style: bold; }
     #preferences-outline { height: auto; color: $text-muted; margin-bottom: 1; }
     #preferences-scroll { height: 1fr; }
@@ -38,7 +37,7 @@ class Preferences(Modal[Settings | None]):
 
     def compose(self) -> ComposeResult:
         s = self.settings
-        with Vertical(id='preferences'):
+        with Vertical(id='preferences', classes='dialog'):
             yield Label('Make Jotline yours', id='preferences-title')
             yield Static('Alt+1 Appearance · Alt+2 Editor · Alt+3 Shortcuts · Alt+4 Daily template',
                          id='preferences-outline')

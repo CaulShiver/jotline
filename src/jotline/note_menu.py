@@ -117,7 +117,7 @@ class NoteMenu(Modal[str | None]):
     CSS = '''
     NoteMenu { align: left top; background: transparent; }
     #note-menu { width: 38; max-width: 100%; height: auto; max-height: 100%;
-        border: round $accent; background: $surface; padding: 0 1; }
+        padding: 0 1; }
     #note-menu-title { height: 1; color: $accent; text-style: bold; }
     #note-menu-options { height: auto; max-height: 12; border: none; background: $surface; }
     '''
@@ -127,7 +127,7 @@ class NoteMenu(Modal[str | None]):
         self.title_text, self.choices, self.x, self.y = title, choices, x, y
 
     def compose(self):
-        with Vertical(id='note-menu'):
+        with Vertical(id='note-menu', classes='dialog'):
             yield Label(Text(self.title_text), id='note-menu-title')
             yield NoteMenuOptions(*(Option(Text(label), id=key) for key, label in self.choices), id='note-menu-options')
 

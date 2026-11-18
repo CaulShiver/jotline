@@ -24,9 +24,7 @@ from .store import Note
 class MarkdownPreview(Modal[None]):
     BINDINGS = [Binding("escape", "done", "Back to writing"), Binding("ctrl+t", "contents", "Contents")]
     CSS = """
-    MarkdownPreview { align: center middle; background: $background 80%; }
-    #markdown-panel { width: 100; max-width: 96%; height: 94%;
-        border: round $accent; padding: 1 2; background: $surface; }
+    #markdown-panel { width: 100; max-width: 96%; height: 94%; }
     #markdown-scroll { height: 1fr; }
     #preview-buttons { height: 3; }
     #preview-buttons Button { min-width: 0; width: 1fr; }
@@ -37,7 +35,7 @@ class MarkdownPreview(Modal[None]):
         self.body = body
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="markdown-panel"):
+        with Vertical(id="markdown-panel", classes="dialog"):
             yield Label("Markdown preview · Esc to return to writing"
                         + (" · raw HTML blocks are not rendered" if re.search(r"^ {0,3}<[A-Za-z!?/]", self.body, re.M) else ""))
             with VerticalScroll(id="markdown-scroll"):
@@ -86,9 +84,7 @@ class MarkdownPreview(Modal[None]):
 class RevisionPreview(Modal[bool]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
     CSS = """
-    RevisionPreview { align: center middle; background: $background 80%; }
-    #revision-panel { width: 100; max-width: 96%; height: 90%;
-        border: round $accent; padding: 1 2; background: $surface; }
+    #revision-panel { width: 100; max-width: 96%; height: 90%; }
     #revision-text { height: 1fr; }
     #revision-buttons { height: 3; }
     """
@@ -98,7 +94,7 @@ class RevisionPreview(Modal[bool]):
         self.note = note
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="revision-panel"):
+        with Vertical(id="revision-panel", classes="dialog"):
             yield Static("Saved version · " + self.note.title, markup=False)
             yield Static("Restore creates a separate inbox note and keeps the original.")
             yield TextArea(self.note.body, read_only=True, soft_wrap=False, id="revision-text",
@@ -120,8 +116,7 @@ class FindInNote(Modal[None]):
                 Binding("shift+f3", "previous", "Previous")]
     CSS = """
     FindInNote { align: center top; background: $background 70%; }
-    #find-panel { width: 68; max-width: 95%; height: auto; max-height: 90%; margin-top: 1;
-        border: round $accent; padding: 1 2; background: $surface; }
+    #find-panel { width: 68; max-width: 95%; height: auto; max-height: 90%; margin-top: 1; }
     #find-title { color: $accent; margin-bottom: 1; }
     #find-status { height: 2; padding-top: 1; color: $text-muted; }
     #find-context { height: auto; max-height: 3; color: $foreground; background: $background;
@@ -139,7 +134,7 @@ class FindInNote(Modal[None]):
         self.whole_word = False
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="find-panel"):
+        with VerticalScroll(id="find-panel", classes="dialog"):
             yield Label("Find within this note", id="find-title")
             yield Input(placeholder="Type text to find…", id="find-query", tooltip="Find text in this note")
             yield Input(placeholder="Replace with…", id="replace-value", tooltip="Replacement text")

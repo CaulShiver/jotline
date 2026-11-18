@@ -17,8 +17,7 @@ from .terminal import terminal_text
 class ImportPreviewScreen(Modal[bool]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel')]
     CSS = '''
-    ImportPreviewScreen { align: center middle; }
-    #import-dialog { width: 90%; height: 90%; border: round $accent; background: $surface; padding: 1; }
+    #import-dialog { width: 90%; height: 90%; padding: 1; }
     #import-items { height: 1fr; }
     ImportPreviewScreen Button { width: 100%; margin-top: 1; }
     '''
@@ -28,7 +27,7 @@ class ImportPreviewScreen(Modal[bool]):
         self.plan = plan
 
     def compose(self):
-        with Vertical(id='import-dialog'):
+        with Vertical(id='import-dialog', classes='dialog'):
             yield Label('Review import')
             yield Label(self.plan.summary())
             yield Label('Original files remain untouched. Matching bodies or Drafts UUIDs are skipped.')
