@@ -212,6 +212,10 @@ class ThemePicker(Palette):
         super().__init__([(theme, theme_label(theme) + (' · current' if theme == current else ''))
                           for theme in names], 'Change theme')
 
+    def on_mount(self) -> None:
+        super().on_mount()
+        self.query_one('#palette-help', Static).update('↑↓ preview · Enter keep · Esc put back')
+
     @on(OptionList.OptionHighlighted)
     def preview(self, event: OptionList.OptionHighlighted) -> None:
         if not self._dismissed:

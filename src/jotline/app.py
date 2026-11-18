@@ -35,7 +35,6 @@ from .modal import Palette, TextPrompt
 from .navigation import Views, Walkthrough
 from .note_menu import NoteList, NoteMenu
 from .omarchy import OmarchySync
-from .themes import CURSOR_LINE_CSS, register_themes
 from .outliner_ui import OutlinerScreen
 from .preferences import Preferences, ThemePicker
 from .recovery_ui import HealthScreen
@@ -49,6 +48,7 @@ from .store import (COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, d
 from .sync import sync_guide
 from .templates import GUIDE, REVIEW, TEMPLATE_ENCRYPTED, Templates
 from .terminal import terminal_text
+from .themes import CURSOR_LINE_CSS, register_themes
 from .workflows import Workflows
 
 class Row(NamedTuple):

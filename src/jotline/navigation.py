@@ -9,7 +9,7 @@ from rich.text import Text
 
 from .modal import Modal, Palette
 from .messages import failed, key_name
-from .settings import HOTKEY_ACTIONS, SORT_ORDERS, THEMES, VIEW_COLLECTIONS, validate_view_name
+from .settings import HOTKEY_ACTIONS, SORT_ORDERS, THEMES, VIEW_COLLECTIONS, theme_label, validate_view_name
 
 
 class ViewEditor(Modal[tuple[str, dict] | None]):
@@ -44,7 +44,7 @@ class ViewEditor(Modal[tuple[str, dict] | None]):
                          value=self.view['sort'], allow_blank=False, id='view-sort',
                          tooltip='Sort order')
             yield Label('Theme')
-            yield Select([('Use settings theme', '')] + [(x, x) for x in THEMES],
+            yield Select([('Use settings theme', '')] + [(theme_label(x), x) for x in THEMES],
                          value=self.view['theme'], allow_blank=False, id='view-theme',
                          tooltip='Theme for this view')
             yield Static('', id='view-error', markup=False)
