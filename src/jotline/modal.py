@@ -21,6 +21,10 @@ from . import fuzzy
 
 
 class Modal(ModalScreen[ScreenResultType]):
+    DEFAULT_CSS = """
+    Modal { align: center middle; background: $background 80%; }
+    Modal .dialog { border: round $accent; padding: 1 2; background: $surface; }
+    """
     _dismissed = False
 
     def dismiss(self, result: ScreenResultType | None = None):
@@ -38,27 +42,28 @@ class Palette(Modal[str | None]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
     CSS = """
     Palette { align: center top; background: $background 70%; }
-    #palette { width: 76; max-width: 95%; height: 80%; max-height: 80%; margin-top: 3;
-        border: round $accent; padding: 1 2; background: $surface; }
+    #palette { width: 76; max-width: 95%; height: 80%; max-height: 80%; margin-top: 3; }
     #palette-title { color: $accent; margin-bottom: 1; }
     #palette-help, #command-count { color: $text-muted; }
     #commands { height: 1fr; min-height: 1; border: none; }
     """
 
     def __init__(self, choices: list[tuple[str, str]], title: str = "Run a command",
-                 *, everyday: frozenset[str] | None = None):
+                 *, everyday: frozenset[str] | None = None,
+                 help: str = "Type to filter · ↑↓ choose · Enter run · Esc cancel"):
         super().__init__()
         self.choices = choices
+        self.help = help
         self.heading = title
         self.everyday = everyday
         self.filtered = choices
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="palette"):
+        with Vertical(id="palette", classes="dialog"):
             yield Label(self.heading, id="palette-title")
             yield Input(placeholder="Type to filter…", id="command-query",
                         tooltip="Filter commands by name")
-            yield Static("Type to filter · ↑↓ choose · Enter run · Esc cancel", id="palette-help")
+            yield Static(self.help, id="palette-help")
             yield Static("", id="command-count", markup=False)
             yield OptionList(id="commands")
 
@@ -107,17 +112,12 @@ class Palette(Modal[str | None]):
         options.clear_options()
         options.add_options([Option(label, id=key) for key, label in rows])
         count = self.query_one("#command-count", Static)
-        hidden = 0 if self.everyday is None else len(self.choices) - len(pool)
-        if self.filtered:
-            count.update(f"{len(self.filtered)} result" + ("" if len(self.filtered) == 1 else "s")
-                         + (f" · type to see {hidden} more" if hidden else ""))
-        else:
+        if not self.filtered:
             count.update("No matching commands · adjust the filter or press Esc")
-        help_text = self.query_one("#palette-help", Static)
-        if hidden:
-            help_text.update("Everyday writing · type to see everything else")
+        elif len(pool) < len(self.choices):
+            count.update(f"Everyday writing · {len(pool)} shown · type to search all {len(self.choices)}")
         else:
-            help_text.update("Type to filter · ↑↓ choose · Enter run · Esc cancel")
+            count.update(f"{len(self.filtered)} result" + ("" if len(self.filtered) == 1 else "s"))
         if self.filtered:
             options.highlighted = 0
 
@@ -156,8 +156,7 @@ class TextPrompt(Modal[str | None]):
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
     CSS = """
     TextPrompt { align: center top; background: $background 70%; }
-    #text-prompt { width: 72; max-width: 95%; height: auto; margin-top: 3;
-        border: round $accent; padding: 1 2; background: $surface; }
+    #text-prompt { width: 72; max-width: 95%; height: auto; margin-top: 3; }
     """
 
     def __init__(self, title: str, placeholder: str, value: str = "", *, password: bool = False):
@@ -165,7 +164,7 @@ class TextPrompt(Modal[str | None]):
         self.heading, self.placeholder, self.value, self.password = title, placeholder, value, password
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="text-prompt"):
+        with Vertical(id="text-prompt", classes="dialog"):
             yield Label(self.heading)
             yield Input(self.value, placeholder=self.placeholder, password=self.password, id="prompt-value",
                         tooltip=self.heading)

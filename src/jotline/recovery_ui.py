@@ -13,8 +13,7 @@ COMPARE_LIMIT = 100_000
 class RecoveryScreen(Modal[str | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Keep editing')]
     CSS = '''
-    RecoveryScreen { align: center middle; }
-    #recovery-dialog { width: 90%; height: 90%; border: round $accent; background: $surface; padding: 1; }
+    #recovery-dialog { width: 90%; height: 90%; padding: 1; }
     #recovery-scroll { height: 1fr; }
     RecoveryScreen TextArea { height: 10; min-height: 5; }
     RecoveryScreen Button { width: 100%; margin-top: 1; }
@@ -25,7 +24,7 @@ class RecoveryScreen(Modal[str | None]):
         self.local_body, self.external_body, self.external_error = local_body, external_body, external_error
 
     def compose(self):
-        with Vertical(id='recovery-dialog'):
+        with Vertical(id='recovery-dialog', classes='dialog'):
             yield Label('This note changed outside Jotline')
             with VerticalScroll(id='recovery-scroll'):
                 yield Label('Your on-screen draft (unsaved)')
@@ -54,8 +53,7 @@ class RecoveryScreen(Modal[str | None]):
 class HealthScreen(Modal[None]):
     BINDINGS = [Binding('escape', 'cancel', 'Back to writing')]
     CSS = '''
-    HealthScreen { align: center middle; }
-    #health-dialog { width: 90%; height: 90%; border: round $accent; background: $surface; padding: 1; }
+    #health-dialog { width: 90%; height: 90%; padding: 1; }
     #health-text { height: 1fr; }
     HealthScreen Button { width: 100%; margin-top: 1; }
     '''
@@ -65,7 +63,7 @@ class HealthScreen(Modal[None]):
         self.report = report
 
     def compose(self):
-        with Vertical(id='health-dialog'):
+        with Vertical(id='health-dialog', classes='dialog'):
             yield Label('Vault health')
             yield TextArea(self.report, read_only=True, id='health-text')
             yield Button('Back to writing', id='health-close')

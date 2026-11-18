@@ -3,9 +3,15 @@
 Open Settings with **Ctrl+,**, or **Ctrl+P → Settings** if your terminal does
 not send Ctrl+,. Change preferences with Tab, arrows and Space, then choose
 **Save** (or Ctrl+S) to apply them. Escape cancels. **Use defaults** fills the
-form with the original settings; nothing changes until you save.
+form with the original settings; nothing is kept until you save.
 
-- **Themes:** twenty-two built-in palettes, plus optional Omarchy desktop follow
+Themes preview as you browse: Save keeps the theme on screen, and Cancel or
+Escape puts the previous one back. **Ctrl+P → Change theme** (type `theme`) is
+the quick way: arrows preview each theme, Enter keeps and saves it, and Esc
+goes back. A saved view with its own theme shows **(modified)** after you
+choose another.
+
+- **Themes:** thirty built-in palettes, plus optional Omarchy desktop follow
   on Linux. See [Omarchy](omarchy.md).
 - **Editor:** line numbers, wrapping, current-line highlighting, Markdown
   highlighting, and list continuation on Enter.

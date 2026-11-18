@@ -29,8 +29,7 @@ STEP_LABELS = {'uppercase': 'Uppercase text', 'lowercase': 'Lowercase text', 'st
 class ActionReport(Modal):
     BINDINGS = [Binding('escape', 'close', 'Close')]
     CSS = '''
-    ActionReport { align: center middle; background: $background 80%; }
-    #action-report { width: 90; max-width: 96%; height: 90%; border: round $accent; padding: 1; background: $surface; }
+    #action-report { width: 90; max-width: 96%; height: 90%; padding: 1; }
     #action-report TextArea { height: 1fr; }
     '''
 
@@ -39,7 +38,7 @@ class ActionReport(Modal):
         self.title_text, self.report = title, text
 
     def compose(self):
-        with Vertical(id='action-report'):
+        with Vertical(id='action-report', classes='dialog'):
             yield Label(self.title_text)
             yield TextArea(self.report, read_only=True, tooltip=self.title_text)
             yield Button('Close', id='report-close')
@@ -52,8 +51,7 @@ class ActionReport(Modal):
 class ActionEditor(Modal[tuple | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel'), Binding('ctrl+s', 'save', 'Save recipe')]
     CSS = '''
-    ActionEditor { align: center middle; background: $background 80%; }
-    #action-editor { width: 90; max-width: 98%; height: 95%; border: round $accent; padding: 1; background: $surface; }
+    #action-editor { width: 90; max-width: 98%; height: 95%; padding: 1; }
     #action-editor-scroll { height: 1fr; }
     #recipe-steps { height: 7; min-height: 3; }
     #step-value { height: 6; min-height: 3; }
@@ -71,7 +69,7 @@ class ActionEditor(Modal[tuple | None]):
         self.steps = deepcopy(steps or [{'type': 'strip'}])
 
     def compose(self):
-        with Vertical(id='action-editor'):
+        with Vertical(id='action-editor', classes='dialog'):
             yield Label('Action builder · Ctrl+S save · Esc cancel')
             with VerticalScroll(id='action-editor-scroll'):
                 yield Input(self.recipe_name, placeholder='Name: lowercase letters, numbers, hyphens',

@@ -9,15 +9,13 @@ from rich.text import Text
 
 from .modal import Modal, Palette
 from .messages import failed, key_name
-from .settings import HOTKEY_ACTIONS, SORT_ORDERS, THEMES, VIEW_COLLECTIONS, validate_view_name
+from .settings import HOTKEY_ACTIONS, SORT_ORDERS, THEMES, VIEW_COLLECTIONS, theme_label, validate_view_name
 
 
 class ViewEditor(Modal[tuple[str, dict] | None]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel'), Binding('ctrl+s', 'save_view', 'Apply')]
     CSS = '''
-    ViewEditor { align: center middle; background: $background 80%; }
-    #view-editor { width: 72; max-width: 96%; height: auto; max-height: 94%;
-        padding: 1 2; border: round $accent; background: $surface; }
+    #view-editor { width: 72; max-width: 96%; height: auto; max-height: 94%; }
     #view-buttons { height: 3; }
     #view-error { height: auto; color: $error; }
     '''
@@ -28,7 +26,7 @@ class ViewEditor(Modal[tuple[str, dict] | None]):
         self.original, self.filters = original, filters
 
     def compose(self):
-        with VerticalScroll(id='view-editor'):
+        with VerticalScroll(id='view-editor', classes='dialog'):
             yield Label('Filter notes' if self.filters else 'Edit saved view' if self.original else 'Save a view')
             if not self.filters:
                 yield Label('Name · lowercase letters, numbers, - or _')
@@ -46,7 +44,7 @@ class ViewEditor(Modal[tuple[str, dict] | None]):
                          value=self.view['sort'], allow_blank=False, id='view-sort',
                          tooltip='Sort order')
             yield Label('Theme')
-            yield Select([('Use settings theme', '')] + [(x, x) for x in THEMES],
+            yield Select([('Use settings theme', '')] + [(theme_label(x), x) for x in THEMES],
                          value=self.view['theme'], allow_blank=False, id='view-theme',
                          tooltip='Theme for this view')
             yield Static('', id='view-error', markup=False)
@@ -86,9 +84,7 @@ class ViewEditor(Modal[tuple[str, dict] | None]):
 class Walkthrough(Modal[None]):
     BINDINGS = [Binding('escape', 'done', 'Back to writing')]
     CSS = """
-    Walkthrough { align: center middle; background: $background 80%; }
-    #walkthrough-panel { width: 82; max-width: 96%; height: auto; max-height: 90%;
-        border: round $accent; padding: 1 2; background: $surface; }
+    #walkthrough-panel { width: 82; max-width: 96%; height: auto; max-height: 90%; }
     #walkthrough-text { height: auto; }
     """
 
@@ -97,7 +93,7 @@ class Walkthrough(Modal[None]):
         self.body = body
 
     def compose(self):
-        with VerticalScroll(id='walkthrough-panel'):
+        with VerticalScroll(id='walkthrough-panel', classes='dialog'):
             yield Static(self.body, id='walkthrough-text', markup=False)
             yield Button('Back to writing', id='walkthrough-close')
 
@@ -178,9 +174,7 @@ def key_sheet(hotkeys: dict[str, str], outline: dict[str, list[str]]) -> Text:
 class KeySheet(Modal[None]):
     BINDINGS = [Binding('escape', 'done', 'Close')]
     CSS = """
-    KeySheet { align: center middle; background: $background 80%; }
-    #keys-panel { width: 82; max-width: 96%; height: auto; max-height: 90%;
-        border: round $accent; padding: 1 2; background: $surface; }
+    #keys-panel { width: 82; max-width: 96%; height: auto; max-height: 90%; }
     #keys-text { height: auto; }
     """
 
@@ -189,7 +183,7 @@ class KeySheet(Modal[None]):
         self.body = body
 
     def compose(self):
-        with VerticalScroll(id='keys-panel'):
+        with VerticalScroll(id='keys-panel', classes='dialog'):
             yield Static(self.body, id='keys-text', markup=False)
             yield Button('Close', id='keys-close')
 

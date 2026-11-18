@@ -17,19 +17,26 @@ from .limits import MAX_SETTINGS_BYTES
 from .messages import key_name
 from .search import compile_query
 from .store import COLLECTIONS, validate_workspace
+from .themes import PALETTES
 
 
-THEMES = ('jotline', 'nord', 'gruvbox', 'catppuccin-mocha', 'dracula', 'tokyo-night',
-          'solarized-dark', 'solarized-light', 'textual-light',
-          'monokai', 'flexoki', 'catppuccin-latte', 'catppuccin-frappe',
-          'catppuccin-macchiato', 'rose-pine', 'rose-pine-moon', 'rose-pine-dawn',
-          'ansi-dark', 'ansi-light', 'atom-one-dark', 'atom-one-light', 'textual-dark', 'omarchy')
+BUILTIN_THEMES = ('nord', 'gruvbox', 'catppuccin-mocha', 'dracula', 'tokyo-night',
+                  'solarized-dark', 'solarized-light', 'textual-light',
+                  'monokai', 'flexoki', 'catppuccin-latte', 'catppuccin-frappe',
+                  'catppuccin-macchiato', 'rose-pine', 'rose-pine-moon', 'rose-pine-dawn',
+                  'ansi-dark', 'ansi-light', 'atom-one-dark', 'atom-one-light', 'textual-dark')
+THEMES = (*PALETTES, *BUILTIN_THEMES, 'omarchy')
 SORT_ORDERS = ('updated', 'created', 'title')
 # What a view or the sidebar can show; new thoughts can only land somewhere not archived.
 VIEW_COLLECTIONS = ('all', 'starred', *COLLECTIONS)
 DEFAULT_COLLECTIONS = ('inbox', 'projects', 'areas', 'resources')
 BOOLEAN_SETTINGS = ('line_numbers', 'soft_wrap', 'highlight_line', 'markdown_highlighting', 'smart_lists',
                     'focus_on_start', 'show_hints', 'outliner_on_start', 'readable_filenames')
+
+
+def theme_label(theme: str) -> str:
+    """How a theme name reads in Settings and in Change theme."""
+    return 'Omarchy (follow desktop)' if theme == 'omarchy' else theme.replace('-', ' ').title()
 
 
 HOTKEY_ACTIONS = {

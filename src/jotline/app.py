@@ -29,14 +29,14 @@ from .encryption_ui import Encryption
 from .external_editor import ENCRYPTED, NO_EDITOR, UNSAVED, configured_editor, run_editor
 from .import_ui import RecoveryImport
 from .links import wiki_link_at, wiki_target_from_href
-from .markdown_editor import JOTLINE_THEME, MarkdownEditor, UndoStash
+from .markdown_editor import MarkdownEditor, UndoStash
 from .messages import TOO_LARGE, failed, key_name, reason
 from .modal import Palette, TextPrompt
 from .navigation import Views, Walkthrough
 from .note_menu import NoteList, NoteMenu
 from .omarchy import OmarchySync
 from .outliner_ui import OutlinerScreen
-from .preferences import Preferences
+from .preferences import Preferences, ThemePicker
 from .recovery_ui import HealthScreen
 from .rendering import PreviewMarkdown
 from .review_ui import Review
@@ -48,6 +48,7 @@ from .store import (COLLECTIONS, EDIT_LIMIT_BYTES, ConflictError, Note, Vault, d
 from .sync import sync_guide
 from .templates import GUIDE, REVIEW, TEMPLATE_ENCRYPTED, Templates
 from .terminal import terminal_text
+from .themes import CURSOR_LINE_CSS, register_themes
 from .workflows import Workflows
 
 class Row(NamedTuple):
@@ -109,6 +110,8 @@ class Jotline(App):
     CSS = """
     Screen { background: $background; color: $foreground; }
     Tooltip { visibility: hidden; }
+    * { scrollbar-background: $surface; scrollbar-color: $primary 60%; scrollbar-color-hover: $primary;
+        scrollbar-color-active: $accent; scrollbar-corner-color: $surface; }
     #brand { height: 1; padding: 0 2; color: $accent; text-style: bold; }
     #workspace { height: 1fr; }
     #sidebar { width: 32; min-width: 22; border-right: solid $primary-muted; padding: 0 1; }
@@ -125,8 +128,7 @@ class Jotline(App):
                                padding: 0 1; border: none; background: $surface; color: $foreground; }
     #markdown-toolbar Button:hover, #markdown-toolbar Button:focus { background: $primary-muted; color: $accent; text-style: bold; }
     #editor { height: 1fr; border: none; background: $background; }
-    TextArea .text-area--cursor-line { background: $foreground 18%; }
-    TextArea .text-area--cursor-gutter { background: $foreground 18%; text-style: bold; }
+    """ + CURSOR_LINE_CSS + """
     #live-preview { width: 1fr; border-left: solid $primary-muted; padding: 0 2; }
     #status { height: 1; color: $text-muted; }
     #connections { height: auto; max-height: 4; color: $text-muted; }
@@ -156,7 +158,7 @@ class Jotline(App):
         self.settings, self.settings_warning = Settings.load(self.settings_path)
         self.vault.readable_filenames = self.settings.readable_filenames
         self.workspace = validate_workspace(self.settings.active_workspace if workspace is None else workspace)
-        self.register_theme(JOTLINE_THEME)
+        register_themes(self)
         self.omarchy_sync = OmarchySync(self)
         self.current = self.new_note()
         self.collection = self.settings.default_collection
@@ -201,17 +203,13 @@ class Jotline(App):
         yield Static("›_ jotline     /     " + self.workspace, id="brand", markup=False)
         with Horizontal(id="workspace"):
             with Vertical(id="sidebar"):
-                with Horizontal(classes="navigation-row"):
-                    yield Button("Collections", id="nav-collections")
-                    yield Button("Views", id="nav-views")
-                with Horizontal(classes="navigation-row"):
-                    yield Button("Filters", id="nav-filters")
-                    yield Button("Quick start", id="nav-help")
-                with Horizontal(classes="navigation-row"):
-                    yield Button("Format", id="nav-format")
-                    yield Button("Actions", id="nav-actions")
-                with Horizontal(classes="navigation-row"):
-                    yield Button("Import", id="nav-import")
+                # Three rows fit the default 32-column sidebar without clipping a label.
+                for row in (("Collections", "collections"), ("Views", "views")), \
+                           (("Filters", "filters"), ("Format", "format"), ("Help", "help")), \
+                           (("Actions", "actions"), ("Import", "import")):
+                    with Horizontal(classes="navigation-row"):
+                        for label, name in row:
+                            yield Button(label, id="nav-" + name)
                 yield Static("INBOX", id="collection", markup=False)
                 yield SearchBox(placeholder="Search words or #tags", id="search",
                                 tooltip="Search this workspace by words or #tags · Enter opens the top result")
@@ -339,7 +337,17 @@ class Jotline(App):
                       lambda match: key_name(keys.get(match[0].lower(), match[0].lower())), text, flags=re.I)
 
     def action_settings(self) -> None:
-        self.push_screen(Preferences(self.settings), self.save_settings)
+        theme = self.theme
+        self.push_screen(Preferences(self.settings), lambda settings: self.save_settings(settings, theme))
+
+    def change_theme(self) -> None:
+        # A saved view may show its own theme. Choosing another saves it as the
+        # settings theme and shows it, as Settings does, and the view reads
+        # (modified) until it is opened again. Escape, or Enter on the current
+        # entry, leaves the view's theme on screen and the settings unchanged.
+        theme = self.theme
+        self.push_screen(ThemePicker(theme), lambda choice: self.save_settings(
+            replace(self.settings, theme=choice) if choice and choice != theme else None, theme))
 
     def replace_settings(self, **changes):
         settings = replace(self.settings, **changes)
@@ -357,18 +365,25 @@ class Jotline(App):
             kind = 'view' if field == 'saved_views' else 'action'
             self.notify(failed(f'Could not delete the {kind} “{name}”', error, 'It is still saved.'), severity='error')
 
-    def save_settings(self, settings: Settings | None) -> None:
+    def save_settings(self, settings: Settings | None, restore_theme: str = "") -> None:
+        """Save and apply settings. Theme pickers preview as the user browses,
+        so a cancelled or failed save puts restore_theme back on screen.
+        """
+        asked_for_readable = False
+        if settings is not None:
+            # The switch must not rename files. Migration is the path that backs up first.
+            asked_for_readable = settings.readable_filenames and not self.settings.readable_filenames
+            if asked_for_readable:
+                settings = replace(settings, readable_filenames=False)
+            try:
+                settings.save(self.settings_path)
+            except (OSError, ValueError) as error:
+                self.notify(failed('Settings were not saved', error, 'Your previous settings stay in effect.'),
+                            severity='error', timeout=10)
+                settings = None
         if settings is None:
-            return
-        # The switch must not rename files. Migration is the path that backs up first.
-        asked_for_readable = settings.readable_filenames and not self.settings.readable_filenames
-        if asked_for_readable:
-            settings = replace(settings, readable_filenames=False)
-        try:
-            settings.save(self.settings_path)
-        except (OSError, ValueError) as error:
-            self.notify(failed('Settings were not saved', error, 'Your previous settings stay in effect.'),
-                        severity='error', timeout=10)
+            if restore_theme:
+                self.theme = restore_theme
             return
         self.settings = settings
         self.vault.readable_filenames = settings.readable_filenames
@@ -1297,6 +1312,7 @@ class Jotline(App):
             Command("move-workspace", "Move note to workspace", self.prompt_move_workspace),
             Command("settings", "Settings · appearance, editor, hotkeys · Ctrl+,", self.action_settings,
                     group="everyday"),
+            Command("change-theme", "Change theme", self.change_theme),
             Command("new", "New thought", self.action_new, "new", group="everyday"),
             Command("daily", "Open today's daily log", self.action_daily, "daily", group="everyday"),
             Command("search", "Search notes", self.action_search, "search", group="everyday"),
