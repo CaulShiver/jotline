@@ -34,6 +34,11 @@ BOOLEAN_SETTINGS = ('line_numbers', 'soft_wrap', 'highlight_line', 'markdown_hig
                     'focus_on_start', 'show_hints', 'outliner_on_start', 'readable_filenames')
 
 
+def theme_label(theme: str) -> str:
+    """How a theme name reads in Settings and in Change theme."""
+    return 'Omarchy (follow desktop)' if theme == 'omarchy' else theme.replace('-', ' ').title()
+
+
 HOTKEY_ACTIONS = {
     "new": ("ctrl+n", "New thought"),
     "tags": ("ctrl+t", "Browse tags"),

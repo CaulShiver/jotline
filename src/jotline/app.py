@@ -37,7 +37,7 @@ from .note_menu import NoteList, NoteMenu
 from .omarchy import OmarchySync
 from .themes import CURSOR_LINE_CSS, register_themes
 from .outliner_ui import OutlinerScreen
-from .preferences import Preferences
+from .preferences import Preferences, ThemePicker
 from .recovery_ui import HealthScreen
 from .rendering import PreviewMarkdown
 from .review_ui import Review
@@ -337,7 +337,16 @@ class Jotline(App):
                       lambda match: key_name(keys.get(match[0].lower(), match[0].lower())), text, flags=re.I)
 
     def action_settings(self) -> None:
-        self.push_screen(Preferences(self.settings), self.save_settings)
+        theme = self.theme
+        self.push_screen(Preferences(self.settings), lambda settings: self.save_settings(settings, theme))
+
+    def change_theme(self) -> None:
+        # A saved view may show its own theme. Choosing here saves the settings
+        # theme and shows it, as Settings does, and the view reads (modified)
+        # until it is opened again. Escape leaves the view's theme on screen.
+        theme = self.theme
+        self.push_screen(ThemePicker(theme), lambda choice: self.save_settings(
+            replace(self.settings, theme=choice) if choice else None, theme))
 
     def replace_settings(self, **changes):
         settings = replace(self.settings, **changes)
@@ -355,8 +364,13 @@ class Jotline(App):
             kind = 'view' if field == 'saved_views' else 'action'
             self.notify(failed(f'Could not delete the {kind} “{name}”', error, 'It is still saved.'), severity='error')
 
-    def save_settings(self, settings: Settings | None) -> None:
+    def save_settings(self, settings: Settings | None, restore_theme: str = "") -> None:
+        """Save and apply settings. Theme pickers preview as the user browses,
+        so a cancelled or failed save puts restore_theme back on screen.
+        """
         if settings is None:
+            if restore_theme:
+                self.theme = restore_theme
             return
         # The switch must not rename files. Migration is the path that backs up first.
         asked_for_readable = settings.readable_filenames and not self.settings.readable_filenames
@@ -367,6 +381,8 @@ class Jotline(App):
         except (OSError, ValueError) as error:
             self.notify(failed('Settings were not saved', error, 'Your previous settings stay in effect.'),
                         severity='error', timeout=10)
+            if restore_theme:
+                self.theme = restore_theme
             return
         self.settings = settings
         self.vault.readable_filenames = settings.readable_filenames
@@ -1295,6 +1311,7 @@ class Jotline(App):
             Command("move-workspace", "Move note to workspace", self.prompt_move_workspace),
             Command("settings", "Settings · appearance, editor, hotkeys · Ctrl+,", self.action_settings,
                     group="everyday"),
+            Command("change-theme", "Change theme", self.change_theme),
             Command("new", "New thought", self.action_new, "new", group="everyday"),
             Command("daily", "Open today's daily log", self.action_daily, "daily", group="everyday"),
             Command("search", "Search notes", self.action_search, "search", group="everyday"),

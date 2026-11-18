@@ -1,13 +1,15 @@
 """Keyboard-accessible preferences with explicit Save and Cancel."""
 from dataclasses import asdict
+from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Button, Input, Label, Select, Static, Switch, TextArea
+from textual.widgets import Button, Input, Label, OptionList, Select, Static, Switch, TextArea
 
 from .messages import key_name
-from .modal import Modal
-from .settings import BOOLEAN_SETTINGS, DEFAULT_COLLECTIONS, HOTKEY_ACTIONS, YIELDING_HOTKEYS, Settings, THEMES
+from .modal import Modal, Palette
+from .settings import (BOOLEAN_SETTINGS, DEFAULT_COLLECTIONS, HOTKEY_ACTIONS, YIELDING_HOTKEYS, Settings, THEMES,
+                       theme_label)
 
 
 class Preferences(Modal[Settings | None]):
@@ -34,6 +36,7 @@ class Preferences(Modal[Settings | None]):
     def __init__(self, settings: Settings):
         super().__init__()
         self.settings = settings
+        self.theme_choice = settings.theme
 
     def compose(self) -> ComposeResult:
         s = self.settings
@@ -44,8 +47,7 @@ class Preferences(Modal[Settings | None]):
             with VerticalScroll(id='preferences-scroll'):
                 yield Label('Appearance', classes='pref-section')
                 yield Label('Theme', classes='pref-label')
-                yield Select([('Omarchy (follow desktop)' if t == 'omarchy' else t.replace('-', ' ').title(), t)
-                              for t in THEMES], value=s.theme, allow_blank=False, id='pref-theme',
+                yield Select([(theme_label(t), t) for t in THEMES], value=s.theme, allow_blank=False, id='pref-theme',
                              tooltip='Color theme')
                 for name, title, options in (
                     ('sort_order', 'Sort notes (stars stay first)', [('Last edited', 'updated'), ('Newest created', 'created'), ('Title A–Z', 'title')]),
@@ -105,6 +107,15 @@ class Preferences(Modal[Settings | None]):
                 yield Button('Save', variant='primary', id='save-preferences')
                 yield Button('Cancel', id='cancel-preferences')
                 yield Button('Use defaults', id='default-preferences')
+
+    @on(Select.Changed, '#pref-theme')
+    def preview_theme(self, event: Select.Changed) -> None:
+        # Show each theme behind the dialog as it is chosen, including through
+        # Use defaults. The Select also reports its starting value, which is
+        # skipped so a saved view's own theme stays on screen until the user
+        # picks another. The app puts the opening theme back on Cancel.
+        if event.value != self.theme_choice and not self._dismissed:
+            self.theme_choice = self.app.theme = event.value
 
     def action_jump(self, section: str):
         targets = {
@@ -187,3 +198,21 @@ class Preferences(Modal[Settings | None]):
                     widget = self.query_one('#pref-' + name)
                     widget.value = str(value) if isinstance(widget, Input) else value
             self.query_one('#preferences-error', Static).update('Defaults loaded. Save to apply, or Cancel to keep your settings.')
+
+
+class ThemePicker(Palette):
+    """The command palette over theme names, previewing the highlighted one.
+
+    The current theme is listed first, so opening the picker changes nothing.
+    The app puts the opening theme back when it closes without a choice.
+    """
+
+    def __init__(self, current: str):
+        names = sorted(THEMES, key=lambda theme: theme != current)
+        super().__init__([(theme, theme_label(theme) + (' · current' if theme == current else ''))
+                          for theme in names], 'Change theme')
+
+    @on(OptionList.OptionHighlighted)
+    def preview(self, event: OptionList.OptionHighlighted) -> None:
+        if not self._dismissed:
+            self.app.theme = event.option.id
