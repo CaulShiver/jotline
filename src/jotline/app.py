@@ -110,7 +110,7 @@ class Jotline(App):
     CSS = """
     Screen { background: $background; color: $foreground; }
     Tooltip { visibility: hidden; }
-    * { scrollbar-background: $surface; scrollbar-color: $primary-muted; scrollbar-color-hover: $primary;
+    * { scrollbar-background: $surface; scrollbar-color: $primary 60%; scrollbar-color-hover: $primary;
         scrollbar-color-active: $accent; scrollbar-corner-color: $surface; }
     #brand { height: 1; padding: 0 2; color: $accent; text-style: bold; }
     #workspace { height: 1fr; }
@@ -341,12 +341,13 @@ class Jotline(App):
         self.push_screen(Preferences(self.settings), lambda settings: self.save_settings(settings, theme))
 
     def change_theme(self) -> None:
-        # A saved view may show its own theme. Choosing here saves the settings
-        # theme and shows it, as Settings does, and the view reads (modified)
-        # until it is opened again. Escape leaves the view's theme on screen.
+        # A saved view may show its own theme. Choosing another saves it as the
+        # settings theme and shows it, as Settings does, and the view reads
+        # (modified) until it is opened again. Escape, or Enter on the current
+        # entry, leaves the view's theme on screen and the settings unchanged.
         theme = self.theme
         self.push_screen(ThemePicker(theme), lambda choice: self.save_settings(
-            replace(self.settings, theme=choice) if choice else None, theme))
+            replace(self.settings, theme=choice) if choice and choice != theme else None, theme))
 
     def replace_settings(self, **changes):
         settings = replace(self.settings, **changes)
@@ -368,19 +369,19 @@ class Jotline(App):
         """Save and apply settings. Theme pickers preview as the user browses,
         so a cancelled or failed save puts restore_theme back on screen.
         """
+        asked_for_readable = False
+        if settings is not None:
+            # The switch must not rename files. Migration is the path that backs up first.
+            asked_for_readable = settings.readable_filenames and not self.settings.readable_filenames
+            if asked_for_readable:
+                settings = replace(settings, readable_filenames=False)
+            try:
+                settings.save(self.settings_path)
+            except (OSError, ValueError) as error:
+                self.notify(failed('Settings were not saved', error, 'Your previous settings stay in effect.'),
+                            severity='error', timeout=10)
+                settings = None
         if settings is None:
-            if restore_theme:
-                self.theme = restore_theme
-            return
-        # The switch must not rename files. Migration is the path that backs up first.
-        asked_for_readable = settings.readable_filenames and not self.settings.readable_filenames
-        if asked_for_readable:
-            settings = replace(settings, readable_filenames=False)
-        try:
-            settings.save(self.settings_path)
-        except (OSError, ValueError) as error:
-            self.notify(failed('Settings were not saved', error, 'Your previous settings stay in effect.'),
-                        severity='error', timeout=10)
             if restore_theme:
                 self.theme = restore_theme
             return

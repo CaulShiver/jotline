@@ -1,7 +1,7 @@
 """Palettes Jotline defines itself, as plain data so settings can list the names.
 
-Textual is imported only when themes are registered, which keeps the
-``jotline capture`` start-up path light. Each palette is the keyword set for
+Textual is imported only when themes are built, so settings.py can list the
+names without importing Textual. Each palette is the keyword set for
 ``textual.theme.Theme``; ``dark`` defaults to True. Hex values come from each
 project's published palette (see docs/theme-research.md), with a few accents
 darkened within the family so they reach 4.5:1 against the background.
@@ -20,7 +20,7 @@ PALETTES: dict[str, dict] = {
         error='#e67e80', success='#a7c080', foreground='#d3c6aa',
         background='#2d353b', surface='#343f44', panel='#3d484d'),
     'everforest-light': dict(
-        dark=False, primary='#2d759e', secondary='#8f4f8f', accent='#5f7300', warning='#9a5a00',
+        dark=False, primary='#2a6f96', secondary='#8f4f8f', accent='#5f7300', warning='#9a5a00',
         error='#c8312e', success='#5f7300', foreground='#5c6a72',
         background='#fdf6e3', surface='#f4f0d9', panel='#efebd4'),
     'kanagawa': dict(
@@ -30,11 +30,11 @@ PALETTES: dict[str, dict] = {
     'gruvbox-light': dict(
         dark=False, primary='#076678', secondary='#8f3f71', accent='#3b7050', warning='#8f5c06',
         error='#9d0006', success='#3b7050', foreground='#3c3836',
-        background='#fbf1c7', surface='#ebdbb2', panel='#d5c4a1'),
+        background='#fbf1c7', surface='#f2e5bc', panel='#ebdbb2'),
     'tokyo-night-day': dict(
         dark=False, primary='#2e5ab0', secondary='#7847bd', accent='#006c8f', warning='#8c5c00',
-        error='#c4194a', success='#587539', foreground='#3760bf',
-        background='#e1e2e7', surface='#d0d5e3', panel='#c4c8da'),
+        error='#c4194a', success='#4b6631', foreground='#3760bf',
+        background='#e1e2e7', surface='#e9e9ec', panel='#d0d5e3'),
     'ayu-mirage': dict(
         primary='#73d0ff', secondary='#dfbfff', accent='#ffcc66', warning='#ffa759',
         error='#ff6666', success='#87d96c', foreground='#cccac2',
@@ -54,10 +54,10 @@ TextArea:light .text-area--cursor-line, TextArea:light .text-area--cursor-gutter
 """
 
 
-def jotline_theme(name: str = 'jotline'):
-    """A palette as a Textual theme; any other name (Omarchy's fallback) gets the default colours."""
+def jotline_theme(name: str = 'jotline', palette: str | None = None):
+    """A palette as a Textual theme. ``palette`` borrows another palette's colours under ``name``."""
     from textual.theme import Theme
-    return Theme(name=name, **PALETTES.get(name, PALETTES['jotline']))
+    return Theme(name=name, **PALETTES[palette or name])
 
 
 def register_themes(app) -> None:

@@ -208,6 +208,20 @@ async def test_change_theme_command_previews_and_escape_restores(tmp_path):
         assert not app.settings_path.exists()
 
 
+async def test_change_theme_enter_on_current_changes_nothing(tmp_path):
+    # A saved view can show its own theme; keeping it must not make it the settings theme.
+    app = Jotline(Vault(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        app.theme = 'gruvbox'
+        app.command('change-theme')
+        await pilot.pause()
+        await pilot.press('enter')
+        await pilot.pause()
+        assert not isinstance(app.screen, ThemePicker)
+        assert app.theme == 'gruvbox' and app.settings.theme == 'jotline'
+        assert not app.settings_path.exists()
+
+
 async def test_change_theme_command_saves_on_enter(tmp_path):
     app = Jotline(Vault(tmp_path))
     async with app.run_test(size=(110, 40)) as pilot:

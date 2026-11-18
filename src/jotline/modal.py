@@ -49,9 +49,11 @@ class Palette(Modal[str | None]):
     """
 
     def __init__(self, choices: list[tuple[str, str]], title: str = "Run a command",
-                 *, everyday: frozenset[str] | None = None):
+                 *, everyday: frozenset[str] | None = None,
+                 help: str = "Type to filter · ↑↓ choose · Enter run · Esc cancel"):
         super().__init__()
         self.choices = choices
+        self.help = help
         self.heading = title
         self.everyday = everyday
         self.filtered = choices
@@ -61,7 +63,7 @@ class Palette(Modal[str | None]):
             yield Label(self.heading, id="palette-title")
             yield Input(placeholder="Type to filter…", id="command-query",
                         tooltip="Filter commands by name")
-            yield Static("Type to filter · ↑↓ choose · Enter run · Esc cancel", id="palette-help")
+            yield Static(self.help, id="palette-help")
             yield Static("", id="command-count", markup=False)
             yield OptionList(id="commands")
 

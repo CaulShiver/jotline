@@ -29,7 +29,8 @@ def test_theme_names_keep_default_first_and_omarchy_last():
 def test_palette_text_and_accents_are_readable(name):
     palette = PALETTES[name]
     for role in ('foreground', 'primary', 'accent'):
-        assert contrast(palette[role], palette['background']) >= 4.5, (name, role)
+        for ground in ('background', 'surface'):
+            assert contrast(palette[role], palette[ground]) >= 4.5, (name, role, ground)
     assert jotline_theme(name).dark == palette.get('dark', True)
 
 

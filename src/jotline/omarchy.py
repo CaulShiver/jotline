@@ -91,7 +91,7 @@ class OmarchySync:
 
     def __init__(self, app: App):
         self.app = app
-        self.palette = load_omarchy_theme() or jotline_theme('omarchy')
+        self.palette = load_omarchy_theme() or jotline_theme('omarchy', 'jotline')
         self._timer = None
         app.register_theme(self.palette)
 
