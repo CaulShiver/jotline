@@ -113,10 +113,10 @@ class Jotline(App):
         scrollbar-color-active: $accent; scrollbar-corner-color: $surface; }
     #brand { height: 1; padding: 0 2; color: $accent; text-style: bold; }
     #workspace { height: 1fr; }
-    #sidebar { width: 32; min-width: 34; border-right: solid $primary-muted; padding: 0 1; }
+    #sidebar { width: 32; min-width: 22; border-right: solid $primary-muted; padding: 0 1; }
     #collection { height: 2; padding-left: 1; color: $text-muted; }
     .navigation-row { height: 1; }
-    .navigation-row Button { height: 1; min-height: 1; min-width: 0; width: auto; padding: 0; border: none; }
+    .navigation-row Button { height: 1; min-height: 1; min-width: 0; width: 1fr; padding: 0; border: none; }
     #empty-notes { height: auto; max-height: 5; color: $text-muted; }
     #search { margin-bottom: 1; border: tall $primary-muted; background: $surface; }
     #notes { border: none; background: $background; height: 1fr; }
@@ -203,15 +203,13 @@ class Jotline(App):
         yield Static("›_ jotline     /     " + self.workspace, id="brand", markup=False)
         with Horizontal(id="workspace"):
             with Vertical(id="sidebar"):
-                with Horizontal(classes="navigation-row"):
-                    yield Button("Collections", id="nav-collections")
-                    yield Button("Views", id="nav-views")
-                    yield Button("Filters", id="nav-filters")
-                with Horizontal(classes="navigation-row"):
-                    yield Button("Format", id="nav-format")
-                    yield Button("Actions", id="nav-actions")
-                    yield Button("Import", id="nav-import")
-                    yield Button("Help", id="nav-help")
+                # Three rows fit the default 32-column sidebar without clipping a label.
+                for row in (("Collections", "collections"), ("Views", "views")), \
+                           (("Filters", "filters"), ("Format", "format"), ("Help", "help")), \
+                           (("Actions", "actions"), ("Import", "import")):
+                    with Horizontal(classes="navigation-row"):
+                        for label, name in row:
+                            yield Button(label, id="nav-" + name)
                 yield Static("INBOX", id="collection", markup=False)
                 yield SearchBox(placeholder="Search words or #tags", id="search",
                                 tooltip="Search this workspace by words or #tags · Enter opens the top result")
