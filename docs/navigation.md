@@ -2,7 +2,7 @@
 
 Start typing to capture a thought. Jotline opens the editor directly. The **Quick start** walkthrough opens by itself the first time `jotline` runs on an empty vault, and after that is available above the note list or through Commands. It never adds a guide note to your vault.
 
-The sidebar exposes **Collections**, **Views**, **Filters**, **Actions**, **Import**, and **Quick start**. Tab moves between controls; Enter activates a focused button. On small terminals the sidebar stays hidden until you use your search shortcut (Ctrl+F by default); Esc returns to writing. Collection commands continue to work through the palette. Connections stay reachable too: the status line shows `←N →N`, and Alt+K (or Ctrl+P → Show connections) opens incoming and outgoing notes with the line that contains each link.
+The sidebar exposes **Collections**, **Views**, **Filters**, **Actions**, **Import**, and **Help** (the Quick start walkthrough). Tab moves between controls; Enter activates a focused button. On small terminals the sidebar stays hidden until you use your search shortcut (Ctrl+F by default); Esc returns to writing. Collection commands continue to work through the palette. Connections stay reachable too: the status line shows `←N →N`, and Alt+K (or Ctrl+P → Show connections) opens incoming and outgoing notes with the line that contains each link.
 
 **Collections** chooses inbox, projects, areas, resources, archive, trash, starred, or all. The list heading shows the collection and result count. Empty inbox, trash, starred, and PARA lists say what to do next; malformed searches clear stale results and show an error. On 80×24 terminals those messages stay to one line.
 

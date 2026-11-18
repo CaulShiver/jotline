@@ -110,17 +110,12 @@ class Palette(Modal[str | None]):
         options.clear_options()
         options.add_options([Option(label, id=key) for key, label in rows])
         count = self.query_one("#command-count", Static)
-        hidden = 0 if self.everyday is None else len(self.choices) - len(pool)
-        if self.filtered:
-            count.update(f"{len(self.filtered)} result" + ("" if len(self.filtered) == 1 else "s")
-                         + (f" · type to see {hidden} more" if hidden else ""))
-        else:
+        if not self.filtered:
             count.update("No matching commands · adjust the filter or press Esc")
-        help_text = self.query_one("#palette-help", Static)
-        if hidden:
-            help_text.update("Everyday writing · type to see everything else")
+        elif len(pool) < len(self.choices):
+            count.update(f"Everyday writing · {len(pool)} shown · type to search all {len(self.choices)}")
         else:
-            help_text.update("Type to filter · ↑↓ choose · Enter run · Esc cancel")
+            count.update(f"{len(self.filtered)} result" + ("" if len(self.filtered) == 1 else "s"))
         if self.filtered:
             options.highlighted = 0
 

@@ -58,7 +58,7 @@ async def test_command_palette_opens_on_everyday_commands(tmp_path):
         assert "format:bold" not in keys
         assert "move:projects" not in keys
         assert "encrypt" not in keys
-        assert "type to see" in str(palette.query_one("#command-count", Static).render())
+        assert "type to search all" in str(palette.query_one("#command-count", Static).render())
         palette.query_one("#command-query", Input).value = "format bold"
         await pilot.pause()
         keys = {key for key, _ in palette.filtered}
