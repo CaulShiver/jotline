@@ -6,7 +6,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import Static, TextArea
 
-from .markdown_editor import JOTLINE_THEME
+from .themes import CURSOR_LINE_CSS, register_themes
 from .omarchy import OmarchySync
 
 HINT = "Ctrl+S save · Esc cancel"
@@ -21,7 +21,7 @@ class QuickCapture(App[str | None]):
     Tooltip { visibility: hidden; }
     #capture-title { height: 1; padding: 0 2; color: $accent; text-style: bold; }
     #capture-editor { height: 1fr; border: none; background: $background; margin: 0 1; }
-    TextArea .text-area--cursor-line { background: $foreground 18%; }
+    """ + CURSOR_LINE_CSS + """
     #capture-hint { height: 1; padding: 0 2; color: $text-muted; }
     """
     BINDINGS = [Binding("ctrl+s", "save", "Save", priority=True),
@@ -32,7 +32,7 @@ class QuickCapture(App[str | None]):
         self.destination = destination
         self.preferred_theme = theme
         self.discard_armed = False
-        self.register_theme(JOTLINE_THEME)
+        register_themes(self)
         self.omarchy_sync = OmarchySync(self)
 
     def compose(self) -> ComposeResult:

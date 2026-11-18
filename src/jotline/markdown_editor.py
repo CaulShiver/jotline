@@ -20,7 +20,6 @@ from rich.style import Style
 from textual import events
 from textual.binding import Binding
 from textual.color import Color
-from textual.theme import Theme
 from textual.widgets import TextArea
 from textual.widgets.text_area import Edit, TextAreaTheme
 
@@ -40,10 +39,6 @@ HIGHLIGHT_MAX_LINE_WORK = 64 * 1024
 
 # Insertions at least this long are checked against the note file limit.
 LARGE_EDIT_CHARS = 4096
-
-# The default palette, shared by the main app and the quick-capture window.
-JOTLINE_THEME = Theme(name="jotline", primary="#a8d5a2", accent="#a8d5a2", foreground="#d6ddd8",
-                      background="#101619", surface="#162024", panel="#162024")
 
 HEADING = re.compile(r"(?P<indent> {0,3})(?P<marker>#{1,6})(?:(?P<gap>[ \t]+)(?P<text>.*))?$")
 # A closing run of # counts only after whitespace, so "C#" keeps its hash.
@@ -592,6 +587,9 @@ def reading_line_style(theme, background: Color) -> Style:
     """
     if theme.ansi:
         return Style(bgcolor=Color.parse("ansi_bright_black").rich_color)
+    if not theme.dark:
+        # A mid-gray band would sink coloured heading text; a faint shade is enough on paper.
+        return Style(bgcolor=background.darken(0.07).rich_color)
     lighter = background.lighten(0.24)
     darker = background.darken(0.18)
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Eight new colour themes.** `jotline-light`, `everforest-dark`,
+  `everforest-light`, `kanagawa`, `gruvbox-light`, `tokyo-night-day`,
+  `ayu-mirage` and `high-contrast` join the Settings theme picker. Every
+  palette keeps body text, links and headings at 4.5:1 contrast or better.
+  All Jotline-defined palettes now live in `themes.py`. The current-line band
+  on light themes is a faint shade of the page instead of a heavy gray, so
+  coloured headings stay readable on the line being edited.
+
 ## 0.9.12 — 2026-10-12
 
 - **`export`, `append`, `tag`, `done`, `encrypt`, `decrypt`, `trash` and

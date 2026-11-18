@@ -1,5 +1,4 @@
 """Read Omarchy's active palette without changing desktop configuration."""
-from dataclasses import replace
 import os
 from pathlib import Path
 import re
@@ -10,7 +9,7 @@ from textual.app import App
 from textual.color import Color
 from textual.theme import Theme
 
-from .markdown_editor import JOTLINE_THEME
+from .themes import jotline_theme
 
 MAX_PALETTE_BYTES = 64 * 1024
 
@@ -92,7 +91,7 @@ class OmarchySync:
 
     def __init__(self, app: App):
         self.app = app
-        self.palette = load_omarchy_theme() or replace(JOTLINE_THEME, name='omarchy')
+        self.palette = load_omarchy_theme() or jotline_theme('omarchy')
         self._timer = None
         app.register_theme(self.palette)
 
