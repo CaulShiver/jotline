@@ -29,12 +29,13 @@ from .encryption_ui import Encryption
 from .external_editor import ENCRYPTED, NO_EDITOR, UNSAVED, configured_editor, run_editor
 from .import_ui import RecoveryImport
 from .links import wiki_link_at, wiki_target_from_href
-from .markdown_editor import JOTLINE_THEME, MarkdownEditor, UndoStash
+from .markdown_editor import MarkdownEditor, UndoStash
 from .messages import TOO_LARGE, failed, key_name, reason
 from .modal import Palette, TextPrompt
 from .navigation import Views, Walkthrough
 from .note_menu import NoteList, NoteMenu
 from .omarchy import OmarchySync
+from .themes import CURSOR_LINE_CSS, register_themes
 from .outliner_ui import OutlinerScreen
 from .preferences import Preferences
 from .recovery_ui import HealthScreen
@@ -127,8 +128,7 @@ class Jotline(App):
                                padding: 0 1; border: none; background: $surface; color: $foreground; }
     #markdown-toolbar Button:hover, #markdown-toolbar Button:focus { background: $primary-muted; color: $accent; text-style: bold; }
     #editor { height: 1fr; border: none; background: $background; }
-    TextArea .text-area--cursor-line { background: $foreground 18%; }
-    TextArea .text-area--cursor-gutter { background: $foreground 18%; text-style: bold; }
+    """ + CURSOR_LINE_CSS + """
     #live-preview { width: 1fr; border-left: solid $primary-muted; padding: 0 2; }
     #status { height: 1; color: $text-muted; }
     #connections { height: auto; max-height: 4; color: $text-muted; }
@@ -158,7 +158,7 @@ class Jotline(App):
         self.settings, self.settings_warning = Settings.load(self.settings_path)
         self.vault.readable_filenames = self.settings.readable_filenames
         self.workspace = validate_workspace(self.settings.active_workspace if workspace is None else workspace)
-        self.register_theme(JOTLINE_THEME)
+        register_themes(self)
         self.omarchy_sync = OmarchySync(self)
         self.current = self.new_note()
         self.collection = self.settings.default_collection
