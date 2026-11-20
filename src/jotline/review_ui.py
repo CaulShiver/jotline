@@ -13,7 +13,8 @@ from .markdown_editor import MarkdownEditor
 from .messages import failed
 from .modal import Palette, TextPrompt
 from .screens import MarkdownPreview
-from .tasks import gather, set_done
+from .store import ConflictError
+from .tasks import Task, gather, set_done
 
 INBOX_CLEAR = "Inbox is clear. A capture leaves the inbox when you move it to another collection."
 
@@ -77,21 +78,18 @@ class Review:
     def open_tasks(self, due_by: str | None = None):
         return gather(self.vault.search(workspace=self.workspace), due_by=due_by)
 
-    def task_picker(self, title: str, empty: str, due_by: str | None = None) -> list[tuple[str, str]] | None:
-        """Choices for a task picker, or None when there is nothing to pick."""
-        found = self.open_tasks(due_by)
+    def task_choices(self, found: list[Task], empty: str) -> list[tuple[str, str]]:
         if not found:
             self.notify(empty)
-            return None
         today = date.today()
         return [(task.reference(), self.task_label(task, today)) for task in found]
 
     def show_tasks(self) -> None:
         if not self.save_current():
             return
-        choices = self.task_picker(
-            "tasks", "No open tasks in this workspace. Start a line with - [ ] in any note to add one.")
-        if choices is None:
+        choices = self.task_choices(
+            self.open_tasks(), "No open tasks in this workspace. Start a line with - [ ] in any note to add one.")
+        if not choices:
             return
         self.push_screen(Palette(choices, f"Open tasks · {len(choices)}"), self.open_task)
 
@@ -104,34 +102,32 @@ class Review:
         if not self.save_current():
             return
         today = date.today()
-        choices = self.task_picker("due", f"Nothing is due by {today.isoformat()}. Open tasks lists the rest.",
-                                   due_by=today.isoformat())
-        if choices is None:
+        choices = self.task_choices(
+            self.open_tasks(due_by=today.isoformat()), f"Nothing is due by {today.isoformat()}. Open tasks lists the rest.")
+        if not choices:
             return
         self.push_screen(Palette(choices, f"Due today or overdue · {len(choices)}"), self.open_task)
 
     def choose_task_to_tick(self) -> None:
         if not self.save_current():
             return
-        choices = self.task_picker("tick", "No open tasks in this workspace.")
-        if choices is None:
+        notes = self.vault.search(workspace=self.workspace)
+        tasks = gather(notes)
+        choices = self.task_choices(tasks, "No open tasks in this workspace.")
+        if not choices:
             return
-        self.push_screen(Palette(choices, "Tick off a task"), self.tick_task)
+        task_notes = {task.note_id for task in tasks}
+        originals = {note.id: note.original for note in notes if note.id in task_notes}
+        self.push_screen(Palette(choices, "Tick off a task"), lambda ref: self.tick_task(ref, originals))
 
-    def tick_task(self, reference: str | None) -> None:
-        """Check a task off where it lives, without leaving the list to do it.
-
-        The note is rewritten line for line by set_done, the same call the
-        `jotline done` command uses, so a task ticked here and one ticked from
-        the shell leave the file in the same state.
-        """
+    def tick_task(self, reference: str | None, originals: dict[str, str | None]) -> None:
         if not reference:
             return
         note_id, _, line = reference.rpartition(":")
         try:
             note = self.vault.read(note_id)
             if note.locked:
-                self.prompt_unlock(then=lambda: self.tick_task(reference))
+                self.prompt_unlock(then=lambda: self.tick_task(reference, originals))
                 return
             checked = {}
 
@@ -139,7 +135,12 @@ class Review:
                 updated, checked["task"] = set_done(body, int(line), True)
                 return updated
 
-            note = self.vault.update_body(note_id, self.workspace, check)
+            note = self.vault.update_body(note_id, self.workspace, check, expected_original=originals[note_id])
+        except (ConflictError, FileNotFoundError):
+            self.vault.invalidate_cache()
+            self.notify("The note changed on disk. No task was checked off.", severity="warning", timeout=10)
+            self.choose_task_to_tick()
+            return
         except (OSError, ValueError) as error:
             self.notify(failed("The task was not ticked", error, "Open the note and tick it there."),
                         severity="error", timeout=12)

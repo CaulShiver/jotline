@@ -59,7 +59,9 @@ Write `- [ ] Call the plumber due:2026-10-03` anywhere. `Ctrl+L` toggles the
 task on the current line. **Open tasks across notes** lists every open task,
 dated ones first, and jumps to the one you pick; **Open tasks due today or
 overdue** narrows it to what is owed now; **Tick off a task** checks one off
-without leaving the list. The shell gives the same answers with `jotline tasks`,
+without opening its note. If that note changed on disk while the picker was
+open, Jotline refreshes the list without checking anything off.
+The shell gives the same answers with `jotline tasks`,
 `jotline tasks --due today` and `jotline done NOTE:LINE` ([details](shell.md#tasks)).
 Obsidian's 📅 due marker is understood alongside `due:`.
 

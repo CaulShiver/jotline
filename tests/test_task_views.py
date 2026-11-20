@@ -6,6 +6,8 @@ and the only way to check one off was to navigate to its note and edit the line.
 """
 from datetime import date, timedelta
 
+import pytest
+
 from jotline.app import Jotline, Palette
 from jotline.store import Vault
 from jotline.tasks import Task, gather
@@ -82,9 +84,10 @@ async def test_ticking_a_task_off_the_list_writes_it_to_the_note(tmp_path):
     vault = vault_with_tasks(tmp_path)
     app = Jotline(vault)
     async with app.run_test(size=(110, 34)) as pilot:
-        await pilot.pause()
         task = next(t for t in gather(vault.search(workspace='default')) if 'plumber' in t.text)
-        app.tick_task(task.reference())
+        app.command("task-done")
+        await pilot.pause()
+        await pilot.press(*"plumber", "enter")
         await pilot.pause()
         assert '- [x] Call the plumber' in vault.read(task.note_id).body
         assert not any('plumber' in t.text for t in gather(vault.search(workspace='default')))
@@ -97,22 +100,70 @@ async def test_ticking_the_note_on_screen_refreshes_what_is_shown(tmp_path):
     app = Jotline(vault)
     async with app.run_test(size=(110, 34)) as pilot:
         app.load_id(note.id)
+        app.command("task-done")
         await pilot.pause()
-        app.tick_task(f'{note.id}:3')
+        await pilot.press("enter")
         await pilot.pause()
         assert '- [x] Call the plumber' in app.editor().text
 
 
-async def test_a_line_that_is_not_a_task_is_reported_and_changes_nothing(tmp_path):
+@pytest.mark.parametrize(("before", "external", "first_label"), [
+    ("- [ ] Call Sam\n- [ ] Call Taylor\n", "- [ ] Call Taylor\n- [ ] Call Sam\n", "Call Taylor"),
+    ("## Home\n\n- [ ] Call Sam\n\n## Work\n\n- [ ] Call Sam\n",
+     "## Work\n\n- [ ] Call Sam\n\n## Home\n\n- [ ] Call Sam\n", "Call Sam"),
+])
+async def test_stale_selection_leaves_an_externally_reordered_note_untouched(
+    tmp_path, before, external, first_label
+):
     vault = Vault(tmp_path)
-    note = vault.new('# Today\n\nJust a paragraph.\n')
+    note = vault.new("# Errands\n\n" + before)
+    vault.save(note)
+    app = Jotline(vault)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.press("ctrl+p", *"tick off a task", "enter")
+        await pilot.pause()
+        assert "Call Sam" in labels(app, "Tick off a task")[0]
+        path = vault.file(note.id)
+        raw = path.read_text(encoding="utf-8").replace(before, external)
+        path.write_text(raw, encoding="utf-8")
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert path.read_text(encoding="utf-8") == raw
+        assert first_label in labels(app, "Tick off a task")[0]
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert vault.read(note.id).body == "# Errands\n\n" + external.replace("- [ ]", "- [x]", 1)
+
+
+@pytest.mark.parametrize("edit", ["remove task", "move note", "delete note"])
+async def test_task_no_longer_in_the_workspace_clears_the_picker(tmp_path, edit):
+    vault = Vault(tmp_path)
+    note = vault.new('# Today\n\n- [ ] Call the plumber\n')
     vault.save(note)
     app = Jotline(vault)
     async with app.run_test(size=(110, 34)) as pilot:
+        app.command("task-done")
         await pilot.pause()
-        app.tick_task(f'{note.id}:3')
+        assert "Call the plumber" in labels(app, "Tick off a task")[0]
+        path = vault.file(note.id)
+        if edit == "delete note":
+            path.unlink()
+        else:
+            writer = Vault(tmp_path)
+            external = writer.read(note.id)
+            if edit == "move note":
+                external.workspace = "work"
+            else:
+                external.body = '# Today\n\nJust a paragraph.\n'
+            writer.save(external)
+        expected = path.read_bytes() if path.exists() else None
+
+        await pilot.press("enter")
         await pilot.pause()
-        assert vault.read(note.id).body == '# Today\n\nJust a paragraph.\n'
+        assert not isinstance(app.screen, Palette)
+        assert (path.read_bytes() if path.exists() else None) == expected
 
 
 async def test_an_empty_due_list_explains_itself_rather_than_opening(tmp_path):
