@@ -13,6 +13,7 @@ from jotline import backup_restore
 from jotline.app import Jotline
 from jotline.backup_restore import check_destination, preview_backup, restore_backup
 from jotline.modal import Palette, TextPrompt
+from jotline.outliner_ui import OutlinerScreen
 from jotline.recovery_ui import BackupRestorePreview
 from jotline.settings import Settings
 from jotline.store import Vault
@@ -199,7 +200,8 @@ def test_cli_can_preview_and_restore_copied_zip_without_an_active_vault(tmp_path
     assert not active.exists()
 
 
-async def test_app_can_preview_cancel_and_restore_into_a_separate_vault(tmp_path):
+@pytest.mark.parametrize("from_outliner", [False, True])
+async def test_app_can_preview_cancel_and_restore_into_a_separate_vault(tmp_path, from_outliner):
     vault = Vault(tmp_path / "current")
     Settings(walkthrough_shown=True).save(vault.path / ".jotline-settings.json")
     note = vault.new("# Backup version")
@@ -210,9 +212,14 @@ async def test_app_can_preview_cancel_and_restore_into_a_separate_vault(tmp_path
     vault.save(note)
     current = vault.file(note.id).read_bytes()
     destination = tmp_path / "current-restored"
-    app = Jotline(vault)
+    app = Jotline(vault, initial_note=note)
 
     async with app.run_test() as pilot:
+        if from_outliner:
+            app.action_outliner()
+            await pilot.pause()
+            assert isinstance(app.screen, OutlinerScreen)
+
         async def open_preview():
             await pilot.press("ctrl+p")
             assert isinstance(app.screen, Palette)

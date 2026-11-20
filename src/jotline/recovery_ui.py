@@ -114,9 +114,10 @@ class BackupRestorePreview(Modal[bool]):
 class BackupRecovery:
     def prompt_backup_restore(self) -> None:
         vault = self.vault
+        origin = self.screen
 
         def show_choices(paths: list[tuple[str, str]]) -> None:
-            if self.screen is self.screen_stack[0]:
+            if self.screen is origin:
                 self.push_screen(Palette(paths + [("", "Enter another ZIP path…")], "Choose a backup to restore"),
                                  choose)
 
@@ -140,9 +141,10 @@ class BackupRecovery:
         if not value:
             return
         active = self.vault.path
+        origin = self.screen
 
         def choose_destination(preview: BackupPreview, initial: Path) -> None:
-            if self.screen is not self.screen_stack[0]:
+            if self.screen is not origin:
                 return
 
             def review(path: str | None) -> None:
