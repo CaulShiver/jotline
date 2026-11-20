@@ -137,7 +137,8 @@ async def test_stale_selection_leaves_an_externally_reordered_note_untouched(
         assert vault.read(note.id).body == "# Errands\n\n" + external.replace("- [ ]", "- [x]", 1)
 
 
-async def test_removing_the_last_task_while_the_picker_is_open_changes_nothing(tmp_path):
+@pytest.mark.parametrize("edit", ["remove task", "move note", "delete note"])
+async def test_task_no_longer_in_the_workspace_clears_the_picker(tmp_path, edit):
     vault = Vault(tmp_path)
     note = vault.new('# Today\n\n- [ ] Call the plumber\n')
     vault.save(note)
@@ -146,15 +147,23 @@ async def test_removing_the_last_task_while_the_picker_is_open_changes_nothing(t
         app.command("task-done")
         await pilot.pause()
         assert "Call the plumber" in labels(app, "Tick off a task")[0]
-        writer = Vault(tmp_path)
-        external = writer.read(note.id)
-        external.body = '# Today\n\nJust a paragraph.\n'
-        writer.save(external)
+        path = vault.file(note.id)
+        if edit == "delete note":
+            path.unlink()
+        else:
+            writer = Vault(tmp_path)
+            external = writer.read(note.id)
+            if edit == "move note":
+                external.workspace = "work"
+            else:
+                external.body = '# Today\n\nJust a paragraph.\n'
+            writer.save(external)
+        expected = path.read_bytes() if path.exists() else None
 
         await pilot.press("enter")
         await pilot.pause()
         assert not isinstance(app.screen, Palette)
-        assert vault.read(note.id).body == external.body
+        assert (path.read_bytes() if path.exists() else None) == expected
 
 
 async def test_an_empty_due_list_explains_itself_rather_than_opening(tmp_path):

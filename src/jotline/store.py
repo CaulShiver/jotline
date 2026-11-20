@@ -1274,9 +1274,11 @@ class Vault:
     def update_body(self, note_id: str, workspace: str, change, *, expected_original: str | None = None) -> Note:
         """Replace a note's text with change(text) under one lock."""
         with self.write_lock() as directory:
-            note = self.read(note_id, workspace=workspace, directory=directory)
+            note = self.read(note_id, directory=directory)
             if expected_original is not None and note.original != expected_original:
                 raise ConflictError("The note changed on disk")
+            if note.workspace != workspace:
+                raise ValueError(OTHER_WORKSPACE)
             if note.locked:
                 raise ValueError(LOCKED)
             note.body = change(note.body)
