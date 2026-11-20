@@ -47,7 +47,7 @@ from .importing import apply_import, preview_import
 from .limits import MAX_NOTE_BYTES
 from .links import connection_mark
 from .settings import SORT_ORDERS, Settings, action_dicts
-from .store import (OTHER_WORKSPACE, Note, Vault, parse_calendar_date, read_regular_file, tagged_body,
+from .store import (COLLECTIONS, OTHER_WORKSPACE, Note, Vault, parse_calendar_date, read_regular_file, tagged_body,
                     validate_workspace)
 from .tasks import due_limit, gather, parse_reference, set_done, short_ids
 
@@ -203,7 +203,7 @@ def _can_unlock_for_titles(vault: Vault, passphrase_failed: bool) -> bool:
 
 
 # Moving or retitling a note on a guess needs a yes. Other commands take the closest title.
-CLOSEST_NEEDS_CONFIRMATION = frozenset({"trash", "rename"})
+CLOSEST_NEEDS_CONFIRMATION = frozenset({"move", "trash", "rename"})
 
 
 def read_terminal_line(prompt: str) -> str:
@@ -252,7 +252,7 @@ def resolve_command_note(vault: Vault, reference: str, workspace: str, *, passph
     """The note a command named, unlocking when a locked title may be the match.
 
     An ID, a unique prefix and an exact title are used as named. The closest
-    title is used too, except `trash` and `rename` ask first (or take `--yes`).
+    title is used too, except `move`, `trash` and `rename` ask first (or take `--yes`).
     """
     try:
         return resolve_note(vault, reference, workspace, fuzzy=False)
@@ -416,7 +416,7 @@ def encryption_in_help() -> bool:
 
 
 def command_epilog(*, encryption: bool) -> str:
-    notes = "tag, edit, trash, rename, actions, run"
+    notes = "move, tag, edit, trash, rename, actions, run"
     vault = "backup, backups, recoveries, doctor, stats, filenames"
     if encryption:
         notes += ", encrypt, decrypt"
@@ -435,6 +435,7 @@ examples:
   jotline capture "Call Sam about the venue #work"
   echo "half an idea" | jotline capture --daily
   jotline search venue
+  jotline move NOTE_ID projects
   jotline open venue
   jotline edit venue
   jotline tasks --due today
@@ -508,6 +509,11 @@ def build_parser() -> argparse.ArgumentParser:
     editing = add_command("edit", help="Open a note in $EDITOR")
     editing.add_argument("id", metavar="NOTE", help=NOTE_HELP)
     editing.add_argument("--json", action="store_true", help="Print note metadata as JSON after the editor exits")
+    moving = add_command("move", help="Move a note to another collection without opening the editor")
+    moving.add_argument("id", metavar="NOTE", help=NOTE_HELP)
+    moving.add_argument("collection", choices=tuple(name for name in COLLECTIONS if name != "trash"))
+    moving.add_argument("--yes", action="store_true", help="Use the closest title match without asking")
+    moving.add_argument("--json", action="store_true", help="Print note metadata as JSON")
     trashing = add_command("trash", help="Move a note to the trash collection")
     trashing.add_argument("id", metavar="NOTE", help=NOTE_HELP)
     trashing.add_argument("--yes", action="store_true", help="Use the closest title match without asking")
@@ -880,6 +886,19 @@ def run_edit(run: Invocation) -> None:
     print_note(updated, f"Edited {updated.title} ({updated.id})", run.args.json)
 
 
+def run_move(run: Invocation) -> None:
+    note = read_note_here(run, run.args.id)
+    if note.collection == "trash":
+        raise ValueError("Restore this note from the trash in the app before moving it")
+    destination = run.args.collection
+    if note.collection == destination:
+        print_note(note, f"Already in {destination}: {note.title}", run.args.json)
+        return
+    note.collection = destination
+    run.vault.save(note)
+    print_note(note, f"Moved to {destination}: {note.title}", run.args.json)
+
+
 def run_trash(run: Invocation) -> None:
     note = read_note_here(run, run.args.id)
     if note.collection == "trash":
@@ -1184,7 +1203,7 @@ def run_without_vault(run: Invocation) -> None:
         else:
             print(terminal_text(no_vault_message(path)))
         return
-    if command in ("export", "backlinks", "edit", "trash", "rename"):
+    if command in ("export", "backlinks", "edit", "move", "trash", "rename"):
         raise NoMatchingNote(f"No note with ID or title {args.id}; there is no vault yet at {path}")
     if command == "actions":
         run_actions(run)
@@ -1229,15 +1248,15 @@ COMMANDS = {
     "append": run_append, "prepend": run_append, "actions": run_actions, "run": run_action,
     "list": run_list, "tag": run_tag, "export": run_export, "backlinks": run_backlinks,
     "tasks": run_tasks, "done": run_done, "stats": run_stats, "daily": run_app,
-    "edit": run_edit, "trash": run_trash, "rename": run_rename,
+    "edit": run_edit, "move": run_move, "trash": run_trash, "rename": run_rename,
     "encrypt": run_sealing, "decrypt": run_sealing, "encryption": run_encryption,
     "workspaces": run_workspaces, "tags": run_tags, "doctor": run_doctor,
     "filenames": run_filenames, "open": run_app, None: run_app,
 }
-# Commands that must not turn a mistyped path into a new vault. edit, trash and
-# rename change a note, but only one that already exists.
+# Commands that must not turn a mistyped path into a new vault. Some change a
+# note, but only one that already exists.
 READ_ONLY_COMMANDS = {"list", "actions", "export", "workspaces", "tags", "tasks", "doctor",
-                      "stats", "backlinks", "backups", "recoveries", "edit", "trash", "rename"}
+                      "stats", "backlinks", "backups", "recoveries", "edit", "move", "trash", "rename"}
 # Commands that do not look inside a workspace, so --workspace is not checked for them.
 ANY_WORKSPACE_COMMANDS = {"actions", "backup", "backups", "doctor", "encryption", "filenames"}
 

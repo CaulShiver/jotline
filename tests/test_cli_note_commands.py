@@ -1,4 +1,4 @@
-"""One note resolver, shell edit/trash/rename, and the shell output fixes."""
+"""One note resolver and shell commands that act on existing notes."""
 import json
 import os
 from pathlib import Path
@@ -106,7 +106,7 @@ def test_trash_and_other_workspaces_stay_out_of_a_title_match(tmp_path):
     assert "Note is in another workspace" in error(run_cli(tmp_path, "export", "Client plan"))
 
 
-# edit, trash, rename ------------------------------------------------------
+# edit, move, trash, rename ------------------------------------------------
 
 def editor_env(tool: str) -> dict[str, str]:
     return {**os.environ, "JOTLINE_EDITOR": tool, "VISUAL": "", "EDITOR": ""}
@@ -160,6 +160,48 @@ def test_edit_refuses_an_encrypted_note(tmp_path):
     assert "Secret" not in vault.file(note.id).read_text()
 
 
+def test_move_round_trips_a_note_without_opening_the_editor(tmp_path):
+    vault = Vault(tmp_path)
+    note = saved(vault, "# Buy milk\n\nFor tomorrow\n", "abcd1234", starred=True)
+    assert run_cli(tmp_path, "search", "milk").stdout == b"abcd1234\tinbox\tBuy milk\n"
+    result = run_cli(tmp_path, "move", "abcd", "projects", "--json", detached=True)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert (payload["id"], payload["collection"], payload["starred"]) == (note.id, "projects", True)
+    assert run_cli(tmp_path, "search", "milk").stdout == b"abcd1234\tprojects\tBuy milk\n"
+    assert run_cli(tmp_path, "export", note.id).stdout.decode() == note.body
+    path = vault.file(note.id)
+    filed = path.read_bytes()
+    again = run_cli(tmp_path, "move", note.id, "projects")
+    assert again.returncode == 0 and again.stdout == b"abcd1234\n"
+    assert path.read_bytes() == filed
+
+
+def test_move_reports_the_destination_at_a_terminal(tmp_path, monkeypatch, capsys):
+    saved(Vault(tmp_path), "Buy milk")
+    monkeypatch.setattr(sys, "argv", ["jotline", "--vault", str(tmp_path), "move", "Buy milk", "projects"])
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    cli.main()
+    assert capsys.readouterr().out == "Moved to projects: Buy milk\n"
+    cli.main()
+    assert capsys.readouterr().out == "Already in projects: Buy milk\n"
+
+
+def test_move_refuses_trash_and_notes_in_other_workspaces(tmp_path):
+    vault = Vault(tmp_path)
+    normal = saved(vault, "Buy milk")
+    trashed = saved(vault, "Old idea", collection="trash")
+    other = saved(vault, "Secret plan", workspace="work")
+    for destination in ("trash", "unknown"):
+        result = run_cli(tmp_path, "move", normal.id, destination)
+        assert result.returncode == 2 and "invalid choice" in error(result)
+    result = run_cli(tmp_path, "move", trashed.id, "inbox")
+    assert result.returncode == 1 and "Restore this note" in error(result)
+    result = run_cli(tmp_path, "move", other.id, "projects")
+    assert result.returncode == 1 and "workspace" in error(result)
+    assert [vault.read(note.id).collection for note in (normal, trashed, other)] == ["inbox", "trash", "inbox"]
+
+
 def test_trash_moves_the_note_and_leaves_the_file(tmp_path):
     vault = Vault(tmp_path)
     note = saved(vault, "Buy milk")
@@ -200,11 +242,11 @@ def test_rename_sentences_at_a_terminal(tmp_path, monkeypatch, capsys):
     assert capsys.readouterr().out == f"Renamed to Oat milk ({note.id})\n"
 
 
-def test_trash_and_rename_refuse_a_closest_title_without_confirmation(tmp_path):
+def test_move_trash_and_rename_refuse_a_closest_title_without_confirmation(tmp_path):
     vault = Vault(tmp_path)
     note = saved(vault, "Buy milk")
     other = saved(vault, "remind me later ok")
-    for command in (("trash", "milk", "--json"), ("rename", "milk", "Oat milk")):
+    for command in (("move", "milk", "projects"), ("trash", "milk", "--json"), ("rename", "milk", "Oat milk")):
         result = run_cli(tmp_path, *command, detached=True)
         message = error(result)
         assert result.returncode == 1 and result.stdout == b"", message
@@ -217,10 +259,13 @@ def test_trash_and_rename_refuse_a_closest_title_without_confirmation(tmp_path):
     assert exported.returncode == 0 and exported.stdout == b"Buy milk\n"
 
 
-def test_yes_accepts_the_closest_title_for_trash_and_rename(tmp_path):
+def test_yes_accepts_the_closest_title_for_move_trash_and_rename(tmp_path):
     vault = Vault(tmp_path)
     note = saved(vault, "Buy milk")
     other = saved(vault, "remind me later ok")
+    moved = run_cli(tmp_path, "move", "milk", "projects", "--yes", detached=True)
+    assert moved.returncode == 0 and moved.stdout.decode().strip() == note.id
+    assert vault.read(note.id).collection == "projects"
     trashed = run_cli(tmp_path, "trash", "milk", "--yes", "--json", detached=True)
     assert trashed.returncode == 0, trashed.stderr
     assert json.loads(trashed.stdout)["id"] == note.id
@@ -374,10 +419,10 @@ def test_list_limit_and_sort(tmp_path):
 def test_new_commands_are_in_help_and_do_not_create_a_missing_vault(tmp_path):
     help_text = subprocess.run([sys.executable, "-m", "jotline", "--help"], capture_output=True, text=True,
                                check=False, timeout=30).stdout
-    for name in ("edit", "trash", "rename"):
+    for name in ("edit", "move", "trash", "rename"):
         assert name in help_text
     missing = tmp_path / "absent"
-    for command in (("edit", "milk"), ("trash", "milk"), ("rename", "milk", "Other")):
+    for command in (("edit", "milk"), ("move", "milk", "projects"), ("trash", "milk"), ("rename", "milk", "Other")):
         result = run_cli(missing, *command)
         assert result.returncode == 1 and "there is no vault yet" in error(result)
     assert not missing.exists()
