@@ -114,6 +114,15 @@ def test_preview_refuses_link_duplicate_corrupt_and_oversize_members(tmp_path, m
         preview_backup(source)
 
 
+def test_preview_reports_an_unsupported_zip_version(tmp_path):
+    source = tmp_path / "unsupported.zip"
+    entry = zipfile.ZipInfo("note.md")
+    entry.extract_version = 255
+    write_zip(source, (entry, "Note body"))
+    with pytest.raises(ValueError, match="Invalid backup ZIP"):
+        preview_backup(source)
+
+
 def test_restore_refuses_existing_nested_or_aliased_targets(tmp_path):
     active = tmp_path / "active"
     active.mkdir()

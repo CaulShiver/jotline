@@ -67,7 +67,7 @@ def _archive(source: Path):
         try:
             with zipfile.ZipFile(stream) as archive:
                 yield archive, fd, before
-        except (zipfile.BadZipFile, zlib.error, EOFError) as error:
+        except (zipfile.BadZipFile, zlib.error, EOFError, NotImplementedError) as error:
             raise ValueError(f"Invalid backup ZIP: {error}") from error
 
 
