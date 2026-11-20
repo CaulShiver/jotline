@@ -235,4 +235,8 @@ def restore_backup(preview: BackupPreview, path: Path, active_vault: Path) -> Pa
             except FileExistsError as error:
                 raise ValueError("Restore destination already exists; choose a new folder") from error
             undo.pop_all()
+            try:
+                os.fsync(parent)
+            except OSError as error:
+                raise OSError(f"Files were restored to {target}, but the folder could not be synced: {error}") from error
     return target

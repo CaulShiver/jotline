@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import stat
 import subprocess
@@ -155,6 +156,23 @@ def test_restore_does_not_publish_when_archive_or_destination_changes(tmp_path, 
     assert not active.exists()
     assert list(destination.iterdir()) == [destination / "keep.md"]
     assert not list(tmp_path.glob(".jotline-restore-*"))
+
+
+def test_restore_syncs_parent_after_publishing(tmp_path, monkeypatch):
+    source = tmp_path / "backup.zip"
+    target = tmp_path / "restored"
+    write_zip(source, ("note.md", "Recovered"))
+    fsync = os.fsync
+    synced = []
+
+    def check_sync(fd):
+        if os.path.samestat(os.fstat(fd), tmp_path.stat()):
+            synced.append((target / "note.md").is_file())
+        fsync(fd)
+
+    monkeypatch.setattr(backup_restore.os, "fsync", check_sync)
+    restore_backup(preview_backup(source), target, tmp_path / "current")
+    assert synced == [True]
 
 
 def test_cli_can_preview_and_restore_copied_zip_without_an_active_vault(tmp_path):
