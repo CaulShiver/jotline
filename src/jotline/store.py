@@ -529,6 +529,14 @@ class Vault:
         self._cache.clear()
         self._locations.clear()
 
+    def directory_stamp(self) -> tuple[int, int, int, int] | None:
+        """Atomic Jotline writes change directory entries, even for existing notes."""
+        try:
+            info = os.stat(self.path, follow_symlinks=False)
+        except OSError:
+            return None
+        return info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns
+
     def recover_displaced(self) -> list[str]:
         """Put back displaced originals whose note file is missing.
 

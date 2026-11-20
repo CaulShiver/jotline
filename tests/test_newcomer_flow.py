@@ -3,7 +3,7 @@ from dataclasses import replace
 import sys
 
 from textual.screen import ModalScreen
-from textual.widgets import Input, OptionList, TextArea
+from textual.widgets import Input, OptionList, Static, TextArea
 
 from jotline import cli
 from jotline.app import Jotline
@@ -75,24 +75,32 @@ async def test_newcomer_open_type_find_process_and_recover(tmp_path):
         assert vault.read(project.id).body == "someone else added rice"
 
 
-async def test_first_launch_of_an_empty_vault_shows_the_walkthrough_once(tmp_path):
+async def test_first_launch_accepts_typing_and_offers_the_walkthrough_without_opening_it(tmp_path):
     from jotline.navigation import Walkthrough
     app = Jotline(Vault(tmp_path / "vault"), first_run=True)
     async with app.run_test(size=(110, 40)) as pilot:
-        await pilot.pause()
+        app.autosave_timer.stop()
+        assert app.editor().has_focus
+        assert "Type to capture" in str(app.query_one("#status", Static).render())
+        assert app.vault.notes() == []
+        await pilot.press(*"first thought")
+        assert app.editor().text == "first thought"
+        await pilot.press("ctrl+p", *"quick start", "enter")
         assert isinstance(app.screen, Walkthrough)
         assert "Capture, find, and use your notes" in app.screen.body
         await pilot.press("escape")
         assert app.editor().has_focus
-    assert app.vault.notes() == []
+        assert app.editor().text == "first thought"
+        assert app.vault.notes() == []
     assert Settings.load(app.settings_path)[0].walkthrough_shown
     again = Jotline(Vault(tmp_path / "vault"), first_run=True)
     async with again.run_test(size=(110, 40)) as pilot:
-        await pilot.pause()
         assert not isinstance(again.screen, ModalScreen)
+        assert again.editor().has_focus
+        assert "Type to capture" not in str(again.query_one("#status", Static).render())
 
 
-async def test_first_run_walkthrough_skips_filled_vaults_and_note_launches(tmp_path):
+async def test_first_run_tip_skips_filled_vaults_and_note_launches(tmp_path):
     vault = Vault(tmp_path / "empty")
     note = vault.new("# Opened from the shell")
     filled = Vault(tmp_path / "filled")

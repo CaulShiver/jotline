@@ -5,7 +5,7 @@ from datetime import date
 from pathlib import Path
 
 from textual.containers import VerticalScroll
-from textual.widgets import Markdown
+from textual.widgets import Input, Markdown
 
 from .export import FORMAT_NAMES, ExportError, export_bytes, printable_markdown, suggested_name, write_export
 from .headings import heading_choices, heading_index
@@ -27,8 +27,6 @@ class Review:
             Command("tasks", "Open tasks across notes", self.show_tasks, group="everyday"),
             Command("tasks-due", "Open tasks due today or overdue", self.show_tasks_due, group="everyday"),
             Command("task-done", "Tick off a task", self.choose_task_to_tick, group="everyday"),
-            Command("process-inbox", "Process next inbox note", self.action_process_inbox, "process_inbox",
-                    group="everyday"),
             Command("export-html", "Export note as HTML…", lambda: self.prompt_export("html")),
             Command("export-docx", "Export note as Word document…", lambda: self.prompt_export("docx")),
             Command("export-pdf", "Export note as PDF…", lambda: self.prompt_export("pdf")),
@@ -41,10 +39,10 @@ class Review:
         if not queue:
             self.notify(INBOX_CLEAR)
             return
-        target = queue[0]
+        self.active_view = None
         self.collection = "inbox"
-        if self.current.id != target.id:
-            self.load_id(target.id)
+        self.query_one("#search", Input).value = ""
+        self.load_id(queue[0].id)
         remaining = len(self.vault.inbox_captures(self.workspace))
         self.refresh_notes()
         self.notify(f"Process this capture · {remaining} in inbox")

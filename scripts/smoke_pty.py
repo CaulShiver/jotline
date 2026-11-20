@@ -56,12 +56,8 @@ def main():
                 raise AssertionError('Terminal workflow timed out or exited unexpectedly')
 
         try:
-            collect_until(lambda: b'jotline' in output)
-            # An empty vault opens the quick start. Esc closes it; Ctrl+Q does not.
-            collect_until(lambda: b'Capture, find' in output)
-            os.write(master, b'\x1b')
-            dismissed = time.monotonic()
-            collect_until(lambda: time.monotonic() >= dismissed + 2)
+            collect_until(lambda: b'Type to capture' in output)
+            # The empty vault accepts the first keystroke without dismissing a modal.
             body = 'PTY caf\u00e9 \u65e5\u672c\u8a9e smoke'
             # Bracketed paste exercises the terminal input path without depending
             # on a desktop clipboard or IME being configured on the machine.

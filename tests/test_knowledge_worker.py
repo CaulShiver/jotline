@@ -1,8 +1,8 @@
 from datetime import date, timedelta
 
-from textual.widgets import Input, Static, TextArea
+from textual.widgets import Input, OptionList, Static, TextArea
 
-from jotline.app import Jotline, TextPrompt
+from jotline.app import Jotline, Palette, TextPrompt
 from jotline.markdown_editor import MarkdownEditor
 from jotline.store import Vault, daily_id, wiki_link
 
@@ -123,9 +123,14 @@ async def test_process_inbox_skips_dailies_and_opens_next_after_filing(tmp_path)
         app.autosave_timer.stop()
         assert "2 inbox" in str(app.query_one("#status", Static).render())
         assert app.inbox_capture_count == 2
-        app.command("process-inbox")
-        await pilot.pause()
+        await pilot.press("ctrl+f", *"not in inbox", "ctrl+p")
+        assert isinstance(app.screen, Palette)
+        options = app.screen.query_one(OptionList)
+        index = options.get_option_index("process-inbox")
+        await pilot.press(*(["down"] * index), "enter")
         assert app.current.id == older.id
+        assert app.editor().has_focus
+        assert app.query_one("#search", Input).value == ""
         app.command("move:projects")
         await pilot.pause()
         assert vault.read(older.id).collection == "projects"
