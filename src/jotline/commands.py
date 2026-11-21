@@ -9,6 +9,7 @@ from typing import Callable
 EVERYDAY_COMMANDS = frozenset({
     "new",
     "daily",
+    "process-inbox",
     "search",
     "open",
     "recent",

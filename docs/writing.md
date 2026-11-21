@@ -17,7 +17,7 @@ start.
    **Show connections**) lists who links here and where this note points.
    `Ctrl+G` follows the link under the cursor, or offers to create the missing
    note.
-4. **Review.** **Process next inbox note** opens the oldest capture (daily logs
+4. **Review.** **Ctrl+P → Process next inbox note** opens the oldest capture (daily logs
    stay out of that queue). File it with **Move note to** a collection and the
    next capture opens; the status line shows how many remain. **Start weekly
    review** opens a checklist as a new note, saved only once you type into it.

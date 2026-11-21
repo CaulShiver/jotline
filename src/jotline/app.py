@@ -71,6 +71,7 @@ STATUS_SUMMARY_SECONDS = 0.25
 # How long the note list waits for a pause in typing before it rebuilds. Rebuilding
 # measures the height of every row, so a burst of keys pays for one pass, not one per key.
 SEARCH_DEBOUNCE_SECONDS = 0.2
+VAULT_POLL_SECONDS = 1.0
 REFRESH_HINT = "Use Ctrl+P → Refresh vault from disk to update the list."
 # One footer row. These are the ways off the page; F1 lists every other key.
 FOOTER_LABELS = {
@@ -177,6 +178,7 @@ class Jotline(App):
         self._search_timer = None
         self._listed_query: str | None = None
         self._listed_rows: list[Row] | None = None
+        self._listed_vault_stamp: tuple[int, int, int, int] | None = None
         self.inbox_capture_count = 0
         self.recent_note_ids = []
         self.note_positions = {}
@@ -247,15 +249,16 @@ class Jotline(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        if (self.first_run and not self.settings.walkthrough_shown and not self.settings_warning
-                and next(self.vault.path.glob("*.md"), None) is None):
-            self.call_after_refresh(self.first_run_walkthrough)
+        first_capture = (self.first_run and self.settings.startup == "new" and not self.settings.outliner_on_start
+                         and not self.settings.walkthrough_shown and not self.settings_warning
+                         and next(self.vault.path.glob("*.md"), None) is None)
         self.apply_settings(startup=True)
         self.omarchy_sync.start()
         self.update_responsive_layout()
         self.refresh_notes()
-        self.status("Ready")
+        self.status(self.shortcut_text("Type to capture · ctrl+p Quick start") if first_capture else "Ready")
         self.autosave_timer = self.set_interval(self.settings.autosave_seconds, self.autosave)
+        self.set_interval(VAULT_POLL_SECONDS, self.poll_visible_notes)
         if self.initial_note is not None:
             self.collection = self.initial_note.collection
             self.load(self.initial_note)
@@ -266,6 +269,11 @@ class Jotline(App):
             self.notify(self.settings_warning, severity='warning', timeout=10)
         self.editor().focus()
         self.notify_storage_warnings()
+        if first_capture:
+            try:
+                self.replace_settings(walkthrough_shown=True)
+            except (OSError, ValueError):
+                pass
         if self.settings.outliner_on_start:
             self.call_after_refresh(self.action_outliner)
 
@@ -439,10 +447,20 @@ class Jotline(App):
             marked.stylize("bold", start, stop)
         return marked
 
-    def refresh_notes(self) -> None:
+    def poll_visible_notes(self) -> None:
+        if len(self.screen_stack) != 1 or self.query_one("#sidebar").has_class("hidden"):
+            return
+        if self._search_timer is not None:
+            return  # The pending query refresh reads the same disk changes.
+        stamp = self.vault.directory_stamp()
+        if stamp is not None and stamp != self._listed_vault_stamp:
+            self.refresh_notes(keep_selection=True)
+
+    def refresh_notes(self, *, keep_selection: bool = False) -> None:
         if self._search_timer is not None:
             self._search_timer.stop()
             self._search_timer = None
+        self._listed_vault_stamp = self.vault.directory_stamp()
         snapshot = self.vault.notes()
         self.inbox_capture_count = len(self.vault.inbox_captures(self.workspace, notes=snapshot))
         self.status(self._status_message)
@@ -467,6 +485,8 @@ class Jotline(App):
             # between notes the query matched equally well.
             notes.sort(key=lambda n: -matches[n.id].score)
         listing = self.query_one("#notes", OptionList)
+        highlighted = listing.highlighted_option
+        selected_id = highlighted.id if keep_selection and listing.has_focus and highlighted else self.current.id
         rows = [self.note_row(note, matches.get(note.id)) for note in notes]
         # Rebuilding measures and wraps every row, and a save or a filter that leaves the
         # same rows on screen is common, so redraw only when the rows themselves changed.
@@ -477,7 +497,7 @@ class Jotline(App):
             listing.clear_options()
             listing.add_options([Option(self.marked_row(row), id=row.id) for row in rows])
         listing.highlighted = next((index for index, note in enumerate(notes)
-                                    if note.id == self.current.id), None)
+                                    if note.id == selected_id), None)
         label = f"{self.collection.upper()} / {len(notes)}"
         if self.active_view and self.active_view in self.settings.saved_views:
             view = self.settings.saved_views[self.active_view]
@@ -1316,6 +1336,8 @@ class Jotline(App):
             Command("change-theme", "Change theme", self.change_theme),
             Command("new", "New thought", self.action_new, "new", group="everyday"),
             Command("daily", "Open today's daily log", self.action_daily, "daily", group="everyday"),
+            Command("process-inbox", "Process next inbox note", self.action_process_inbox, "process_inbox",
+                    group="everyday"),
             Command("search", "Search notes", self.action_search, "search", group="everyday"),
             Command("save", "Save note", self.action_save, "save", group="everyday"),
             Command("quit", "Save and quit", self.action_quit, "quit", group="everyday"),
@@ -1509,14 +1531,6 @@ class Jotline(App):
         """Open a filled-in draft that, like a new thought, is saved only once it is typed into."""
         if self.save_current():
             self.load(self.vault.new(self.shortcut_text(body), workspace=self.workspace))
-
-    def first_run_walkthrough(self) -> None:
-        try:
-            self.replace_settings(walkthrough_shown=True)
-        except (OSError, ValueError):
-            pass
-        self.show_walkthrough()
-
 
 _bind_capabilities(Jotline, Encryption, Review, RecoveryImport, BackupRecovery, ActionWorkflows, Views, Workflows,
                    Connections)

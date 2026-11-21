@@ -1,12 +1,12 @@
 # Find your way around Jotline
 
-Start typing to capture a thought. Jotline opens the editor directly. The **Quick start** walkthrough opens by itself the first time `jotline` runs on an empty vault, and after that is available above the note list or through Commands. It never adds a guide note to your vault.
+Start typing to capture a thought. Jotline opens the editor directly, even on an empty vault. Open the **Quick start walkthrough** from the sidebar's **Help** button or search for it in Commands. It never adds a guide note to your vault.
 
 The sidebar exposes **Collections**, **Views**, **Filters**, **Actions**, **Import**, and **Help** (the Quick start walkthrough). Tab moves between controls; Enter activates a focused button. On small terminals the sidebar stays hidden until you use your search shortcut (Ctrl+F by default); Esc returns to writing. Collection commands continue to work through the palette. Connections stay reachable too: the status line shows `←N →N`, and Alt+K (or Ctrl+P → Show connections) opens incoming and outgoing notes with the line that contains each link.
 
 **Collections** chooses inbox, projects, areas, resources, archive, trash, starred, or all. The list heading shows the collection and result count. Empty inbox, trash, starred, and PARA lists say what to do next; malformed searches clear stale results and show an error. On 80×24 terminals those messages stay to one line.
 
-The search box searches as you type. Enter opens the top result with the cursor in the editor, Down moves into the list, and Esc clears the query (a second Esc returns to writing). See [keyboard](keyboard.md#the-search-box).
+The search box searches as you type. Shell captures in the same workspace appear automatically in matching results while the list is visible. Enter opens the top result with the cursor in the editor, Down moves into the list, and Esc clears the query (a second Esc returns to writing). See [keyboard](keyboard.md#the-search-box).
 
 **Filters** edits the search, collection, sort order, and theme in a form. Search supports words, tags, exclusions, and date operators. Invalid queries stay in the form with an explanation. Applying filters does not create a saved view.
 

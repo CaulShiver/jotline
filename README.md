@@ -47,8 +47,8 @@ uv run pytest
 
 ## Your first notes in five minutes
 
-1. **Launch.** Run `jotline`. On an empty vault the quick start walkthrough opens
-   once; Esc closes it.
+1. **Launch.** Run `jotline` and start typing. For a tour, press `Ctrl+P` and
+   search for **Quick start walkthrough**.
 2. **Type.** The page is already a note. It saves as you write; there is no
    title, folder or tag to fill in.
 3. **Start another.** `Ctrl+N` begins a new thought.

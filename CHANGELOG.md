@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Capture, find and process notes without extra steps.** The first launch
+  focuses the editor instead of opening a modal. Matching shell captures
+  appear automatically in visible search results. **Process next inbox note**
+  is in the default command palette.
 - **Eight new colour themes.** `jotline-light`, `everforest-dark`,
   `everforest-light`, `kanagawa`, `gruvbox-light`, `tokyo-night-day`,
   `ayu-mirage` and `high-contrast` join the Settings theme picker. Every
