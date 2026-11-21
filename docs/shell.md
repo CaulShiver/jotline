@@ -11,7 +11,7 @@ with examples, and `jotline COMMAND --help` shows one command's options.
 | Capture | `capture`, `append`, `prepend`, `daily` |
 | Find | `list` (or `search`), `open`, `backlinks`, `tags`, `workspaces` |
 | Tasks | `tasks`, `done` |
-| Notes | `tag`, `edit`, `trash`, `rename`, `actions`, `run`, and `encrypt` / `decrypt` when encryption is available |
+| Notes | `move`, `tag`, `edit`, `trash`, `rename`, `actions`, `run`, and `encrypt` / `decrypt` when encryption is available |
 | Export and import | `export`, `import` |
 | Vault care | `backup`, `backups`, `restore-backup`, `recoveries`, `doctor`, `stats`, `filenames`, and `encryption` when a key or the extra is present |
 | Setup | `path`, `completion`, `desktop` |
@@ -34,6 +34,7 @@ jotline list '#work'
 jotline search 'tag:work -blocked' --json
 jotline open milk
 jotline edit milk
+jotline move "Buy milk" projects
 jotline trash "Buy milk"
 jotline trash milk --yes
 jotline rename milk "Oat milk"
@@ -92,7 +93,7 @@ jotline list '#team' --workspace work
 ## Naming a note
 
 Every command that takes a note uses the same rule: `open`, `export`, `append`,
-`prepend`, `tag`, `backlinks`, `done`, `run`, `edit`, `trash`, `rename`, and
+`prepend`, `tag`, `backlinks`, `done`, `run`, `edit`, `move`, `trash`, `rename`, and
 `encrypt` / `decrypt`. In order:
 
 1. a file named exactly that, without `.md` (`jotline export buy-milk--a1b2c3`),
@@ -104,7 +105,7 @@ Every command that takes a note uses the same rule: `open`, `export`, `append`,
 4. the one title that clearly matches best (`jotline export milk`).
 
 `export`, `append`, `prepend`, `tag`, `backlinks`, `done`, `run`, `edit`,
-`encrypt` and `decrypt` take that closest title on their own. `trash` and
+`encrypt` and `decrypt` take that closest title on their own. `move`, `trash` and
 `rename` do not. At a terminal they ask first. Pass `--yes` to accept it
 without asking. Outside a terminal, without `--yes`, they refuse and list the
 candidates. An ID, a unique prefix, or an exact title is used immediately.
@@ -142,6 +143,27 @@ encoding, pass `--encoding NAME` (for example `latin-1` or `cp1252`), or
 startup-page preference. Both need a terminal. If stdin or stdout is not a
 TTY they exit with an error instead of drawing the app into a pipe. Every
 update uses the normal locking, history and conflict detection.
+
+## Capture, read and file without opening the app
+
+Use these plain-text commands if your screen reader does not reliably announce
+selections in the full-screen app. Run them directly in your terminal, without
+redirecting output, to get plain-text confirmation sentences.
+
+```sh
+jotline capture 'Orchard plan'
+jotline search orchard
+jotline export NOTE_ID
+jotline move NOTE_ID projects
+jotline search orchard
+```
+
+Replace `NOTE_ID` with the ID from the search result. `export` prints the note
+as Markdown; `open` launches the full-screen app. `move` changes the collection
+without changing the note's ID or text and confirms the destination and title.
+Choose `inbox`, `projects`, `areas`, `resources`, or `archive`. Use `trash` to
+send a note to the trash, and restore it from the app before moving it again.
+When redirected, `move` prints just the note ID; `--json` prints its metadata.
 
 ## Edit, trash and rename
 

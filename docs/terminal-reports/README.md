@@ -14,6 +14,7 @@ automatically qualify newly added behavior.
 | Report | Covers | Does not cover |
 | --- | --- | --- |
 | [macos-27-terminal.md](macos-27-terminal.md) | Terminal.app 2.15 on macOS 27: capture, keyboard, themes, Unicode paste, U.S. Option dead-key IME, `pbcopy` copy, recovery, quit | VoiceOver announcements (issue #3); iTerm2; Ghostty |
+| [ubuntu-22.04-orca.md](ubuntu-22.04-orca.md) | Native Orca 42 and GNOME Terminal 3.44: capture, find/open, and file; announcement failures and shell comparison | Human-user sign-off, VoiceOver, or full Linux terminal qualification |
 
 ## Required for 1.0
 

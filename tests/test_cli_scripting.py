@@ -304,6 +304,8 @@ BASH_CASES = [
     ("jotline list --lim", {"--limit"}),
     ("jotline list --sort ", {"updated", "created", "title"}),
     ("jotline edi", {"edit"}),
+    ("jotline mo", {"move"}),
+    ("jotline move abcd1234 ", {"inbox", "projects", "areas", "resources", "archive"}),
     ("jotline tras", {"trash"}),
     ("jotline rena", {"rename"}),
     ("jotline edit --j", {"--json"}),
