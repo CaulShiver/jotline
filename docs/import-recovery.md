@@ -99,3 +99,8 @@ recovery note. **Review external change and recover draft** reopens the comparis
 
 The same dialog is the recovery path after Git or Syncthing replaces a file.
 See [sync this vault](sync.md). There is no Jotline cloud.
+
+## Recover an entire vault from a backup
+
+Use [Restore backup to a new vault](vault.md#history-and-backups) to preview a
+Jotline ZIP and recover a separate copy, without changing your current notes.

@@ -122,7 +122,8 @@ command, `--json` output and environment variables.
   earlier version as a new note. Trashed notes come back from the Trash
   collection; there is no permanent delete.
 - **Whole vault:** a ZIP backup is made each day you edit, in `.jotline-backups/`
-  (`jotline backups` lists them; `jotline backup` makes one now).
+  (`jotline backups` lists them; `jotline backup` makes one now). **Ctrl+P →
+  Restore backup to a new vault** previews a ZIP and restores a separate copy.
 - **Something seems off:** `jotline doctor` checks the vault and says what to fix.
 
 Save conflicts, recovery copies and sync are covered in
