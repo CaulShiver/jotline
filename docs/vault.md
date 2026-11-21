@@ -135,9 +135,18 @@ backups. **Ctrl+P → Back up vault now** or `jotline backup` makes one
 immediately. The latest seven archives stay in `.jotline-backups/`, including
 today's automatic one. `jotline backups` lists them and checks they open.
 
-For whole-vault recovery, extract a ZIP into a separate folder and run
-`jotline --vault /path/to/recovered-folder`. Backups stay on this computer; copy
-an archive elsewhere to protect against disk loss.
+For whole-vault recovery, choose **Ctrl+P → Restore backup to a new vault**.
+Pick a local backup or enter the path to a copied ZIP, then choose a new folder.
+Review the backup date, files included, and any files skipped when backing up.
+Choose **Restore to new vault** to write the copy, or cancel to write nothing.
+You can also [preview and restore from the shell](shell.md#vault-care).
+
+The destination must not exist and must sit outside the current vault, under
+an existing parent folder. Restore never merges or overwrites files, and the
+app stays in your current vault. Run `jotline --vault /path/to/recovered-folder`
+to open the copy. Encrypted notes still need the passphrase from when that
+backup was made. Backups stay on this computer; copy an archive elsewhere to
+protect against disk loss.
 
 ## Encrypted notes
 

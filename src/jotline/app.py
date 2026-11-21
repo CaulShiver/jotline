@@ -37,7 +37,7 @@ from .note_menu import NoteList, NoteMenu
 from .omarchy import OmarchySync
 from .outliner_ui import OutlinerScreen
 from .preferences import Preferences, ThemePicker
-from .recovery_ui import HealthScreen
+from .recovery_ui import BackupRecovery, HealthScreen
 from .rendering import PreviewMarkdown
 from .review_ui import Review
 from .screens import FindInNote, MarkdownPreview, RevisionPreview
@@ -1300,6 +1300,7 @@ class Jotline(App):
                     group="everyday"),
             Command("browse-history", "Browse saved note history", self.browse_history),
             Command("backup", "Back up vault now", self.action_backup, group="everyday"),
+            Command("restore-backup", "Restore backup to a new vault", self.prompt_backup_restore),
             Command("doctor", "Check vault health", self.action_doctor, group="everyday"),
             Command("recoveries", "Open a recovery copy", self.action_recoveries, group="everyday"),
             Command("preview", "Preview rendered Markdown", self.action_preview, "preview", group="everyday"),
@@ -1517,4 +1518,5 @@ class Jotline(App):
         self.show_walkthrough()
 
 
-_bind_capabilities(Jotline, Encryption, Review, RecoveryImport, ActionWorkflows, Views, Workflows, Connections)
+_bind_capabilities(Jotline, Encryption, Review, RecoveryImport, BackupRecovery, ActionWorkflows, Views, Workflows,
+                   Connections)

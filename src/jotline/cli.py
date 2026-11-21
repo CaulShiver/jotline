@@ -14,11 +14,13 @@ import json
 import os
 from pathlib import Path
 import re
+from shlex import quote
 import sys
 
 from . import __version__, history
 from .action_history import run_recorded_action
 from .actions import ActionCommitError, preview_action
+from .backup_restore import check_destination, preview_backup, restore_backup
 from .cli_doctor import (
     doctor_report as _doctor_report,
     missing_vault_report,
@@ -417,7 +419,7 @@ def encryption_in_help() -> bool:
 
 def command_epilog(*, encryption: bool) -> str:
     notes = "move, tag, edit, trash, rename, actions, run"
-    vault = "backup, backups, recoveries, doctor, stats, filenames"
+    vault = "backup, backups, restore-backup, recoveries, doctor, stats, filenames"
     if encryption:
         notes += ", encrypt, decrypt"
         vault += ", encryption"
@@ -578,6 +580,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_command("backup", help="Back up notes, settings and templates to a local ZIP")
     backups = add_command("backups", help="List local ZIP backups and verify they open")
     backups.add_argument("--json", action="store_true", help="Print backup names and validity as JSON")
+    restore = add_command("restore-backup", help="Preview a Jotline ZIP and restore it into a new vault")
+    restore.add_argument("archive", type=Path, metavar="ZIP", help="Path to a Jotline backup ZIP")
+    restore.add_argument("--to", type=vault_path, metavar="NEW_FOLDER", help="New folder outside the current vault")
+    restore.add_argument("--apply", action="store_true", help="Restore into --to instead of just previewing")
     recoveries = add_command("recoveries", help="List inbox copies saved after an external change")
     recoveries.add_argument("--json", action="store_true", help="Print recovery copies as JSON")
     add_command("path", help="Print the vault path")
@@ -785,6 +791,22 @@ def run_filenames(run: Invocation) -> None:
 
 def run_backup(run: Invocation) -> None:
     print(terminal_text(run.vault.backup()))
+
+
+def run_restore_backup(args, parser: argparse.ArgumentParser) -> None:
+    if args.apply and args.to is None:
+        parser.error("--apply requires --to NEW_FOLDER")
+    preview = preview_backup(args.archive)
+    destination = check_destination(args.to, args.vault) if args.to is not None else None
+    print(preview.describe())
+    if destination is not None:
+        print(f"Restore destination: {terminal_text(destination)}")
+    if not args.apply:
+        print("Preview only. No files written. Use --to NEW_FOLDER --apply to restore.")
+        return
+    target = restore_backup(preview, destination, args.vault)
+    print(f"Restored to {terminal_text(target)}. Your current vault was not changed.")
+    print(f"Open it with: jotline --vault {terminal_text(quote(str(target)))}")
 
 
 def run_backups(run: Invocation) -> None:
@@ -1335,6 +1357,9 @@ def main() -> None:
             return
         if args.command == "desktop":
             run_desktop_command(args)
+            return
+        if args.command == "restore-backup":
+            run_restore_backup(args, command_parser)
             return
         run = prepare(command_parser, args)
         if run.vault is None:

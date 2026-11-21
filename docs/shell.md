@@ -13,7 +13,7 @@ with examples, and `jotline COMMAND --help` shows one command's options.
 | Tasks | `tasks`, `done` |
 | Notes | `move`, `tag`, `edit`, `trash`, `rename`, `actions`, `run`, and `encrypt` / `decrypt` when encryption is available |
 | Export and import | `export`, `import` |
-| Vault care | `backup`, `backups`, `recoveries`, `doctor`, `stats`, `filenames`, and `encryption` when a key or the extra is present |
+| Vault care | `backup`, `backups`, `restore-backup`, `recoveries`, `doctor`, `stats`, `filenames`, and `encryption` when a key or the extra is present |
 | Setup | `path`, `completion`, `desktop` |
 
 `encrypt`, `decrypt` and `encryption` stay off this list until the
@@ -50,6 +50,7 @@ jotline stats
 jotline doctor
 jotline backup
 jotline backups
+jotline restore-backup ~/Downloads/backup.zip
 jotline recoveries
 jotline filenames migrate --dry-run
 jotline filenames migrate
@@ -76,7 +77,7 @@ A `--workspace` that names no existing workspace is refused rather than quietly
 starting a new one. Read commands report `No workspace named X`; captures,
 imports and other writes ask you to add `--new-workspace` to create it.
 Workspaces created in the app, and `default`, always count. `actions`, `backup`,
-`backups`, `doctor`, `encryption` and `filenames` cover the whole vault and do
+`backups`, `restore-backup`, `doctor`, `encryption` and `filenames` cover the whole vault and do
 not check the name. A desktop capture launcher bound to a workspace adds
 `--new-workspace` for you, so its first capture can create it.
 
@@ -294,6 +295,22 @@ Settings switch does not rename files; this command is how readable filenames
 are turned on. `stats` prints workspace counts (notes, inbox
 captures, open tasks, tags) without note bodies. See
 [your vault](vault.md#history-and-backups).
+
+`restore-backup ZIP` validates the archive and previews its date, note and
+template counts, settings, encryption key, and skipped files without writing
+anything. Pass `--to` to check a destination, and add `--apply` to restore:
+
+```sh
+jotline restore-backup ~/Downloads/backup.zip --to ~/recovered-notes
+jotline restore-backup ~/Downloads/backup.zip --to ~/recovered-notes --apply
+jotline --vault ~/recovered-notes
+```
+
+The destination must be a new folder under an existing parent, outside the
+active vault. If you use a non-default vault, pass its path with `--vault`
+(the destination is still set separately with `--to`). The command can also
+recover a copied ZIP when the original vault no longer exists. It never
+restores into or switches the current vault.
 
 ## Scripts and empty results
 
